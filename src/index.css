@@ -266,8 +266,8 @@ input:focus,select:focus{border-color:var(--brand)}
 /* ---------- print ---------- */
 .a4-page.landscape{page:vyro-landscape}
 .a4-page.portrait{page:vyro-portrait}
-@page vyro-portrait{size:A4 portrait;margin:0}
-@page vyro-landscape{size:A4 landscape;margin:0}
+@page vyro-portrait{size:A4 portrait;margin:0 0 12mm;@bottom-center{content:counter(page);font-size:10pt;font-family:Arial,sans-serif;color:#666}}
+@page vyro-landscape{size:A4 landscape;margin:0 0 12mm;@bottom-center{content:counter(page);font-size:10pt;font-family:Arial,sans-serif;color:#666}}
 @media print{
   body{background:#fff}
   .editor-top,.ribbon-wrap,.status-bar,.toast,.banner,.appbar{display:none!important}
@@ -276,7 +276,11 @@ input:focus,select:focus{border-color:var(--brand)}
   .page-scaler{width:auto!important;height:auto!important}
   .page-scale-inner{position:static!important;transform:none!important}
   .a4-page{box-shadow:none;margin:0}
+  /* the 12mm bottom @page margin (page-number strip) is reserved on every sheet,
+     so shrink the page element by the same amount or a one-page doc spills over */
+  .a4-page.portrait{min-height:calc(297mm - 12mm)!important}
+  .a4-page.landscape{min-height:calc(210mm - 12mm)!important}
   .a4-page hr.page-break{border:0!important;margin:0;break-after:page}
   .a4-page hr.page-break::after{content:''}
-  @page{size:A4;margin:0}
+  @page{size:A4;margin:0 0 12mm;@bottom-center{content:counter(page);font-size:10pt;font-family:Arial,sans-serif;color:#666}}
 }

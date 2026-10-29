@@ -71,7 +71,7 @@ export default function App(){
   const doRestore=(id:string)=>{ setDocs(prev=>restoreDoc(prev,id)); setPurgeId(null) }
   const doPurge=(id:string)=>{ setDocs(prev=>purgeDoc(prev,id)); setPurgeId(null) }
   const dir=uiDir(lang)
-  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={()=>setTheme(th=>th==='dark'?'light':'dark')} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
+  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={()=>setTheme(th=>th==='dark'?'light':'dark')} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
   return <div className={`app${lang==='fa'?' fa':''}`} dir={dir}>
     <header className="appbar"><div className="appbar-inner">
       <div className="logo big"><span className="vmark">V</span><span>Vyro Web</span></div>

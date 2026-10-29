@@ -13,6 +13,7 @@ import CharacterCount from '@tiptap/extension-character-count'
 import { Node, mergeAttributes } from '@tiptap/core'
 import type { VyroDoc } from '../lib/types'
 import { exportDocx, jsonToPlainText, escapeHtml, isSafeLinkUrl } from '../lib/docx'
+import { formatDocDate } from '../lib/date'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 
 const PageBreak = Node.create({
@@ -34,7 +35,7 @@ const TABS: { id:string; key:I18nKey }[] = [
   { id:'Layout', key:'tabLayout' }, { id:'References', key:'tabReferences' }, { id:'Review', key:'tabReview' }, { id:'View', key:'tabView' },
 ]
 
-export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void }){
+export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean }){
   const t=(k:I18nKey)=>tr(lang,k)
   const [tab,setTab]=useState('Home')
   const [zoom,setZoom]=useState(100)
@@ -60,6 +61,16 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // Flush any debounced edit before the editor unmounts (doc switch / back) so the last keystrokes are never lost.
   useEffect(()=>()=>{ flushRef.current() },[])
   const goBack=()=>{ flushSave(); onBack() }
+  // Warn before leaving the page ONLY while work is not safely stored: a debounced
+  // save is still pending ('saving' state / pending JSON), or the last write to
+  // browser storage failed (saveFailed from the parent). Never warn when all saved.
+  const unsavedRef=useRef(false)
+  unsavedRef.current = saveState==='saving' || pendingJson.current!=null || !!saveFailed
+  useEffect(()=>{
+    const handler=(e:BeforeUnloadEvent)=>{ if(unsavedRef.current){ e.preventDefault(); e.returnValue=true } }
+    window.addEventListener('beforeunload', handler)
+    return ()=>window.removeEventListener('beforeunload', handler)
+  },[])
 
   const editor=useEditor({
     extensions:[
@@ -115,6 +126,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const download=(name:string, text:string, type:string)=>{ const b=new Blob([text],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000) }
   const exportTxt=()=> download(`${doc.title}.txt`, jsonToPlainText(editor.getJSON()), 'text/plain')
   const exportHtml=()=> download(`${doc.title}.html`, `<!doctype html><html dir="${doc.dir}"><head><meta charset="utf-8"><title>${escapeHtml(doc.title)}</title></head><body>${editor.getHTML()}</body></html>`, 'text/html')
+  const insertDate=()=>{ editor.chain().focus().insertContent({ type:'text', text: formatDocDate(doc.dir) }).run() }
   const insertToc=()=>{ const items:{level:number;text:string}[]=[]; editor.state.doc.descendants((n:any)=>{ if(n.type.name==='heading') items.push({level:n.attrs.level, text:n.textContent}) }); if(!items.length){ setToast(t('noHeadings')); return } const html=`<h2>${escapeHtml(t('tocHeading'))}</h2>`+items.map(i=>`<p style="margin-left:${(i.level-1)*18}px">${escapeHtml(i.text)}</p>`).join(''); editor.chain().focus().insertContent(html).run() }
 
   const onImport=async(e:React.ChangeEvent<HTMLInputElement>)=>{ const f=e.target.files?.[0]; if(!f) return; try{
@@ -176,6 +188,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('groupTable')}><Btn onClick={()=>editor.chain().focus().insertTable({rows:3,cols:3,withHeaderRow:true}).run()}>{t('insertTable')}</Btn><Btn onClick={()=>editor.chain().focus().addRowAfter().run()}>{t('addRow')}</Btn><Btn onClick={()=>editor.chain().focus().addColumnAfter().run()}>{t('addColumn')}</Btn><Btn onClick={()=>editor.chain().focus().deleteTable().run()}>{t('deleteTable')}</Btn></Group>
         <Group label={t('groupMedia')}><Btn onClick={()=>fileImgRef.current?.click()}>{t('imageLocal')}</Btn></Group>
         <Group label={t('groupLinksBreaks')}><Btn active={editor.isActive('link')} onClick={openLink}>{t('link')}</Btn><Btn onClick={()=>editor.chain().focus().setHorizontalRule().run()}>{t('horizontalLine')}</Btn><Btn onClick={()=>editor.chain().focus().insertPageBreak().run()}>{t('pageBreak')}</Btn></Group>
+        <Group label={t('groupText')}><Btn onClick={insertDate}>{t('insertDate')}</Btn></Group>
       </>}
       {tab==='Layout' && <>
         <Group label={t('groupMargins')}><Btn active={(doc.margins||'normal')==='narrow'} onClick={()=>onChange({margins:'narrow'})}>{t('narrow')}</Btn><Btn active={(doc.margins||'normal')==='normal'} onClick={()=>onChange({margins:'normal'})}>{t('normal')}</Btn><Btn active={(doc.margins||'normal')==='wide'} onClick={()=>onChange({margins:'wide'})}>{t('wide')}</Btn></Group>
