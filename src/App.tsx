@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Editor from './components/Editor'
 import type { VyroDoc } from './lib/types'
-import { loadDocs, saveDocs, createDoc, deleteDoc, duplicateDoc, renameDoc, toggleFavorite, updateDoc, filterDocs, listFolders } from './lib/store'
+import { loadDocs, saveDocs, createDoc, duplicateDoc, renameDoc, toggleFavorite, updateDoc, filterDocs, listFolders, sortDocs, trashDoc, restoreDoc, purgeDoc, listTrashed, SORT_KEY, type SortMode } from './lib/store'
 import { TEMPLATES, getTemplate, templateName, templateDesc } from './lib/templates'
 import { supabase, isSupabaseConfigured } from './lib/supabase'
 import { computeEntitlement } from './lib/entitlement'
@@ -41,6 +41,9 @@ export default function App(){
   const [menuId,setMenuId]=useState<string|null>(null)
   const [cardEdit,setCardEdit]=useState<CardEdit|null>(null)
   const [deleteId,setDeleteId]=useState<string|null>(null)
+  const [purgeId,setPurgeId]=useState<string|null>(null)
+  const [view,setView]=useState<'docs'|'trash'>('docs')
+  const [sort,setSort]=useState<SortMode>(()=>{ try{ const s=localStorage.getItem(SORT_KEY); return s==='name'||s==='created'||s==='updated'? s : 'updated' }catch{ return 'updated' } })
   const [tplModal,setTplModal]=useState(false); const [tplName,setTplName]=useState('')
   const saveErrorShown=useRef(false)
   const t=(k:I18nKey)=>tr(lang,k)
@@ -49,10 +52,13 @@ export default function App(){
   useEffect(()=>{ const ok=saveDocs(localStorage, docs); if(!ok && !saveErrorShown.current){ saveErrorShown.current=true; setSaveError(true) } if(ok){ saveErrorShown.current=false; setSaveError(false) } },[docs])
   useEffect(()=>{ document.documentElement.dataset.theme=theme; localStorage.setItem('vyro-web-theme',theme) },[theme])
   useEffect(()=>{ saveUiLang(localStorage, lang); document.documentElement.lang = lang==='fa' ? 'fa' : 'en' },[lang])
+  useEffect(()=>{ try{ localStorage.setItem(SORT_KEY, sort) }catch{ /* best-effort */ } },[sort])
   useEffect(()=>{ if(!supabase) return; (async()=>{ const {data}=await supabase.auth.getUser(); setUser(data.user??null) })(); const {data:sub}=supabase.auth.onAuthStateChange(async()=>{ if(!supabase) return; const {data}=await supabase.auth.getUser(); setUser(data.user??null) }); return ()=>sub.subscription.unsubscribe() },[])
-  const filtered=useMemo(()=>filterDocs(docs,{query,folder: folder||undefined, favoritesOnly:favOnly}),[docs,query,folder,favOnly])
+  const liveDocs=useMemo(()=>docs.filter(d=>!d.deletedAt),[docs])
+  const filtered=useMemo(()=>sortDocs(filterDocs(docs,{query,folder: folder||undefined, favoritesOnly:favOnly}), sort),[docs,query,folder,favOnly,sort])
+  const trashed=useMemo(()=>listTrashed(docs),[docs])
   const folders=listFolders(docs)
-  const openDoc=docs.find(d=>d.id===openId)
+  const openDoc=docs.find(d=>d.id===openId && !d.deletedAt)
   const createFromTemplate=(tid:string)=>{ const tpl=getTemplate(tid); const {docs:nd, doc}=createDoc(docs,{title: tpl&&tpl.id!=='blank'? tpl.name+' — Untitled':'Untitled document', content: JSON.parse(JSON.stringify(tpl?.content||{type:'doc',content:[{type:'paragraph'}]})), dir: tpl?.dir||'ltr', templateId:tid}); setDocs(nd); setOpenId(doc.id) }
   const openCustomTemplate=()=>{ if(!isPremium){ setShowPremium(true); return } setTplName(''); setTplModal(true) }
   const createCustomTemplate=()=>{ const name=tplName.trim(); if(!name) return; const {docs:nd,doc}=createDoc(docs,{title:name, content:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Custom template — edit and reuse.'}]}]}}); setDocs(nd); setTplModal(false); setOpenId(doc.id) }
@@ -61,7 +67,9 @@ export default function App(){
   const startCardEdit=(d:VyroDoc, kind:'rename'|'folder')=>{ setMenuId(null); setDeleteId(null); setCardEdit({id:d.id, kind}) }
   const commitCardEdit=(id:string, kind:'rename'|'folder', value:string)=>{ if(kind==='rename'){ if(value.trim()) setDocs(prev=>renameDoc(prev,id,value)) } else { setDocs(prev=>updateDoc(prev,id,{folder:value.trim()})) } setCardEdit(null) }
   const askDelete=(id:string)=>{ setMenuId(null); setCardEdit(null); setDeleteId(id) }
-  const doDelete=(id:string)=>{ setDocs(prev=>deleteDoc(prev,id)); setDeleteId(null) }
+  const doTrash=(id:string)=>{ setDocs(prev=>trashDoc(prev,id)); setDeleteId(null) }
+  const doRestore=(id:string)=>{ setDocs(prev=>restoreDoc(prev,id)); setPurgeId(null) }
+  const doPurge=(id:string)=>{ setDocs(prev=>purgeDoc(prev,id)); setPurgeId(null) }
   const dir=uiDir(lang)
   if(openDoc) return <div className={`app${lang==='fa'?' fa':''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={()=>setTheme(th=>th==='dark'?'light':'dark')} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
   return <div className={`app${lang==='fa'?' fa':''}`} dir={dir}>
@@ -84,9 +92,10 @@ export default function App(){
       <aside className="sidebar">
         <nav className="side-nav" aria-label={t('foldersHeading')}>
           <div className="side-nav-heading">{t('foldersHeading')}</div>
-          <button className={`side-nav-item${folder===''&&!favOnly?' active':''}`} onClick={()=>{ setFolder(''); setFavOnly(false) }}>{t('allDocuments')}<span className="side-nav-count">{docs.length}</span></button>
-          {folders.map(f=><button key={f} className={`side-nav-item${folder===f?' active':''}`} onClick={()=>setFolder(folder===f?'':f)}><span dir="auto">{f}</span><span className="side-nav-count">{docs.filter(d=>d.folder===f).length}</span></button>)}
-          <button className={`side-nav-item${favOnly?' active':''}`} aria-pressed={favOnly} onClick={()=>setFavOnly(v=>!v)}><span>★ {t('favoritesOnly')}</span><span className="side-nav-count">{docs.filter(d=>d.favorite).length}</span></button>
+          <button className={`side-nav-item${view==='docs'&&folder===''&&!favOnly?' active':''}`} onClick={()=>{ setView('docs'); setFolder(''); setFavOnly(false) }}>{t('allDocuments')}<span className="side-nav-count">{liveDocs.length}</span></button>
+          {folders.map(f=><button key={f} className={`side-nav-item${view==='docs'&&folder===f?' active':''}`} onClick={()=>{ setView('docs'); setFolder(folder===f?'':f) }}><span dir="auto">{f}</span><span className="side-nav-count">{liveDocs.filter(d=>d.folder===f).length}</span></button>)}
+          <button className={`side-nav-item${view==='docs'&&favOnly?' active':''}`} aria-pressed={favOnly} onClick={()=>{ setView('docs'); setFavOnly(v=>!v) }}><span>★ {t('favoritesOnly')}</span><span className="side-nav-count">{liveDocs.filter(d=>d.favorite).length}</span></button>
+          <button className={`side-nav-item${view==='trash'?' active':''}`} aria-pressed={view==='trash'} onClick={()=>setView('trash')}><span>🗑 {t('trash')}</span><span className="side-nav-count">{trashed.length}</span></button>
         </nav>
         <div className="card sub-card"><h3>{t('profileSubscription')}</h3>
           {!isSupabaseConfigured ? <><p><b>{t('localFree')}</b></p><p className="muted">{t('noAccount')}</p></> : user ? <><p>{user.email}</p><p>{(user.user_metadata?.display_name)||t('noDisplayName')}</p><p><b>{entitlement.isPremium?`${t('premiumActive')} — ${entitlement.status}`: entitlement.status==='expired'? t('premiumExpired'): t('free')}</b></p>{entitlement.premiumUntil && <p className="muted">{t('until')} {entitlement.premiumUntil.toLocaleString()}</p>}<button className="rbtn" onClick={()=>authAction('out')}>{t('signOut')}</button>{!entitlement.isPremium && <button className="primary small" onClick={()=>setShowPremium(true)}>{t('goPremium')}</button>}</> : <>
@@ -96,6 +105,19 @@ export default function App(){
         </div>
       </aside>
       <main className="main">
+        {view==='trash' ? <section aria-label={t('trash')}>
+          <div className="list-toolbar"><h2 className="section-title">{t('trash')}</h2><button className="rbtn" onClick={()=>setView('docs')}>← {t('allDocuments')}</button></div>
+          {trashed.length===0
+            ? <div className="empty"><p><b>{t('trashEmpty')}</b></p><p className="muted">{t('trashEmptyText')}</p></div>
+            : <div className="doc-grid">{trashed.map(d=><article key={d.id} className="doc-card">
+                <div className="doc-head"><div className="doc-open-static"><span className="doc-title" dir="auto">{d.title}</span><span className="doc-meta">{t('deletedOn')} {new Date(d.deletedAt!).toLocaleString()}</span></div></div>
+                <div className="doc-badges"><span className="bdg dir">{d.dir==='rtl' ? 'RTL · دری/فارسی' : 'LTR · English'}</span>{d.folder && <span className="bdg" dir="auto">{d.folder}</span>}</div>
+                {purgeId===d.id
+                  ? <div className="inline-confirm" role="alertdialog" aria-label={t('deleteForever')}><p>{t('deleteForeverConfirm')} <b dir="auto">“{d.title}”</b></p><div className="row"><button className="danger-btn" onClick={()=>doPurge(d.id)}>{t('deleteForever')}</button><button className="rbtn" onClick={()=>setPurgeId(null)}>{t('cancel')}</button></div></div>
+                  : <div className="row"><button className="primary small" onClick={()=>doRestore(d.id)}>{t('restore')}</button><button className="danger-btn" onClick={()=>setPurgeId(d.id)}>{t('deleteForever')}</button></div>}
+              </article>)}
+            </div>}
+        </section> : <>
         <section aria-label={t('templatesHeading')}>
           <h2 className="section-title">{t('templatesHeading')}</h2>
           <div className="create-row">
@@ -114,8 +136,8 @@ export default function App(){
           </div>
         </section>
         <section aria-label={t('recentDocuments')}>
-          <h2 className="section-title">{t('recentDocuments')}</h2>
-          {filtered.length===0 && (docs.length===0
+          <div className="list-toolbar"><h2 className="section-title">{t('recentDocuments')}</h2><label className="sort-select">{t('sortBy')}<select value={sort} onChange={e=>setSort(e.target.value as SortMode)} aria-label={t('sortBy')}><option value="updated">{t('sortUpdated')}</option><option value="name">{t('sortName')}</option><option value="created">{t('sortCreated')}</option></select></label></div>
+          {filtered.length===0 && (liveDocs.length===0
             ? <div className="empty"><p><b>{t('noDocuments')}</b></p><p className="muted">{t('noDocumentsText')}</p><button className="primary" onClick={()=>createFromTemplate('blank')}>{t('createFirst')}</button></div>
             : <div className="empty"><p><b>{t('noMatches')}</b></p><button className="primary" onClick={()=>{ setQuery(''); setFolder(''); setFavOnly(false) }}>{t('clearFilters')}</button></div>)}
           <div className="doc-grid">{filtered.map(d=><article key={d.id} className="doc-card">
@@ -133,7 +155,7 @@ export default function App(){
                     <button role="menuitem" onClick={()=>startCardEdit(d,'rename')}>{t('rename')}</button>
                     <button role="menuitem" onClick={()=>startCardEdit(d,'folder')}>{t('folder')}</button>
                     <button role="menuitem" onClick={()=>{ setMenuId(null); setDocs(prev=>duplicateDoc(prev,d.id)) }}>{t('duplicate')}</button>
-                    <button role="menuitem" className="danger" onClick={()=>askDelete(d.id)}>{t('delete')}</button>
+                    <button role="menuitem" className="danger" onClick={()=>askDelete(d.id)}>{t('moveToTrash')}</button>
                   </div>
                 </>}
               </div>
@@ -149,13 +171,14 @@ export default function App(){
               saveLabel={t('save')} cancelLabel={t('cancel')}
               onCommit={v=>commitCardEdit(d.id, cardEdit.kind, v)}
               onCancel={()=>setCardEdit(null)}/>}
-            {deleteId===d.id && <div className="inline-confirm" role="alertdialog" aria-label={t('delete')}>
-              <p>{t('deleteConfirm')} <b dir="auto">“{d.title}”</b></p>
-              <div className="row"><button className="danger-btn" onClick={()=>doDelete(d.id)}>{t('delete')}</button><button className="rbtn" onClick={()=>setDeleteId(null)}>{t('cancel')}</button></div>
+            {deleteId===d.id && <div className="inline-confirm" role="alertdialog" aria-label={t('moveToTrash')}>
+              <p>{t('moveToTrashConfirm')} <b dir="auto">“{d.title}”</b></p>
+              <div className="row"><button className="danger-btn" onClick={()=>doTrash(d.id)}>{t('moveToTrash')}</button><button className="rbtn" onClick={()=>setDeleteId(null)}>{t('cancel')}</button></div>
             </div>}
           </article>)}
           </div>
         </section>
+        </>}
       </main>
     </div>
     {tplModal && <div className="modal-backdrop" onClick={()=>setTplModal(false)}><form className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); createCustomTemplate() }}><h2>{t('customTemplate')}</h2><label className="field">{t('customTemplatePrompt')}<input autoFocus value={tplName} dir="auto" onChange={e=>setTplName(e.target.value)}/></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setTplModal(false)}>{t('cancel')}</button><button type="submit" className="primary small" disabled={!tplName.trim()}>{t('create')}</button></div></form></div>}
