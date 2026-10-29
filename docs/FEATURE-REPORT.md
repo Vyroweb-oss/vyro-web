@@ -52,3 +52,14 @@
 - **Font size control** is a set-size dropdown that does not reflect the size at the current selection (TipTap attribute read-back not wired) — pre-existing, unchanged.
 - **Bundle size:** main chunk ~943 kB (gzip ~292 kB) — TipTap + docx + Supabase; code-splitting is a future task (mammoth is already lazily imported).
 - **Not interactively browser-tested:** this round, like round 1, was verified by build + unit tests + code audit only. An interactive browser pass (typing, Dari RTL editing, print preview, FA chrome) is a separate step and is **not** claimed here.
+
+## Night mission additions (2026-10-29/30, all live-verified on Render)
+- Dashboard sorting (updated / name A–Z locale-aware / created), persisted; legacy documents without a created timestamp fall back safely.
+- Trash: move-to-trash with inline confirm, Trash view with restore and delete-forever, count badge; additive `deletedAt` field — older stored documents load unchanged.
+- Insert date (Insert tab → Text): locale-aware — Jalali (fa-AF) for RTL documents, Gregorian (en-GB) for LTR; verified live in both.
+- Unsaved-changes guard: closing/refreshing warns only while a save is in flight or has failed; the header never claims Saved on failure.
+- Print page numbers via CSS margin boxes (bottom-centre), with the bottom margin compensated so body text is not clipped.
+- Two new Dari RTL templates: صورت‌جلسه (meeting minutes) and درخواست رسمی (official request), each with FA + EN names/descriptions.
+- Line spacing control (Home → Style): Default / 1 / 1.15 / 1.5 / 2 with live read-back; stored as the standard textStyle lineHeight attribute, honoured in print.
+- Round-1 fixes (earlier the same night): template row no longer clips on smaller windows; font size/family controls read back the current selection; dashboard rename typing fixed (a re-render was resetting the caret selection on every keystroke); template names localised in the FA UI.
+Known remaining limitations (unchanged): no true Word-style pagination (continuous A4 page, print paginates); DOCX import/export fidelity is basic; Save-as-PDF is the browser print flow; automated mobile-viewport testing is not possible with the current test browser — mobile behaviour is verified by the owner on his phone.
