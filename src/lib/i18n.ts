@@ -173,6 +173,16 @@ const en = {
   payStep3: 'The owner activates Premium on your account server-side — it appears after your next sign-in / refresh',
   close: 'Close',
   zoom: 'Zoom',
+  commandPalette: 'Command palette',
+  commandPalettePlaceholder: 'Type a command…',
+  commandPaletteNoResults: 'No matching commands.',
+  commandPaletteRecent: 'Recent',
+  commandPaletteAll: 'All commands',
+  switchToPersian: 'Switch to Persian (فارسی)',
+  switchToEnglish: 'Switch to English',
+  zoomIn: 'Zoom in',
+  zoomOut: 'Zoom out',
+  zoomReset: 'Reset zoom',
 } as const
 
 export type I18nKey = keyof typeof en
@@ -348,6 +358,16 @@ const fa: Record<I18nKey, string> = {
   payStep3: 'مالک، پریمیوم را از سمت سرور روی حسابتان فعال می‌کند — پس از ورود/تازه‌سازی بعدی نمایان می‌شود',
   close: 'بستن',
   zoom: 'بزرگ‌نمایی',
+  commandPalette: 'پالت فرمان',
+  commandPalettePlaceholder: 'فرمانی بنویسید…',
+  commandPaletteNoResults: 'فرمانی همخوانی ندارد.',
+  commandPaletteRecent: 'اخیر',
+  commandPaletteAll: 'همهٔ فرمان‌ها',
+  switchToPersian: 'تغییر به فارسی',
+  switchToEnglish: 'تغییر به انگلیسی',
+  zoomIn: 'بزرگ‌نمایی بیشتر',
+  zoomOut: 'بزرگ‌نمایی کمتر',
+  zoomReset: 'بازنشانی بزرگ‌نمایی',
 }
 
 export const STRINGS: Record<UiLang, Record<I18nKey, string>> = { en, fa }

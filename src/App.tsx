@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import Editor from './components/Editor'
+import Editor, { type EditorPaletteActions } from './components/Editor'
+import CommandPalette from './components/CommandPalette'
+import { buildCommands, isPaletteShortcut } from './lib/commands'
 import type { VyroDoc } from './lib/types'
 import { loadDocs, saveDocs, createDoc, duplicateDoc, renameDoc, toggleFavorite, updateDoc, filterDocs, listFolders, sortDocs, trashDoc, restoreDoc, purgeDoc, listTrashed, SORT_KEY, type SortMode } from './lib/store'
 import { TEMPLATES, getTemplate, templateName, templateDesc } from './lib/templates'
@@ -45,6 +47,17 @@ export default function App(){
   const [view,setView]=useState<'docs'|'trash'>('docs')
   const [sort,setSort]=useState<SortMode>(()=>{ try{ const s=localStorage.getItem(SORT_KEY); return s==='name'||s==='created'||s==='updated'? s : 'updated' }catch{ return 'updated' } })
   const [tplModal,setTplModal]=useState(false); const [tplName,setTplName]=useState('')
+  // Command palette (M2-1): app-level so it works on dashboard and in editor.
+  const [paletteOpen,setPaletteOpen]=useState(false)
+  const [editorActions,setEditorActions]=useState<EditorPaletteActions|null>(null)
+  const paletteReturnFocus=useRef<Element|null>(null)
+  const openPalette=()=>{ paletteReturnFocus.current=document.activeElement; setPaletteOpen(true) }
+  const closePalette=()=>{ setPaletteOpen(false); const el=paletteReturnFocus.current; if(el instanceof HTMLElement) el.focus() }
+  useEffect(()=>{
+    const handler=(e:KeyboardEvent)=>{ if(isPaletteShortcut(e)){ e.preventDefault(); if(paletteOpen) closePalette(); else openPalette() } }
+    window.addEventListener('keydown', handler)
+    return ()=>window.removeEventListener('keydown', handler)
+  },[paletteOpen])
   const saveErrorShown=useRef(false)
   const t=(k:I18nKey)=>tr(lang,k)
   const entitlement=useMemo(()=> computeEntitlement(user, new Date()),[user])
@@ -60,6 +73,17 @@ export default function App(){
   const folders=listFolders(docs)
   const openDoc=docs.find(d=>d.id===openId && !d.deletedAt)
   const createFromTemplate=(tid:string)=>{ const tpl=getTemplate(tid); const {docs:nd, doc}=createDoc(docs,{title: tpl&&tpl.id!=='blank'? tpl.name+' — Untitled':'Untitled document', content: JSON.parse(JSON.stringify(tpl?.content||{type:'doc',content:[{type:'paragraph'}]})), dir: tpl?.dir||'ltr', templateId:tid}); setDocs(nd); setOpenId(doc.id) }
+  const paletteCommands=useMemo(()=>buildCommands({
+    createBlank: ()=>createFromTemplate('blank'),
+    createFromTemplate,
+    goDashboard: ()=>setOpenId(null),
+    toggleTheme: ()=>setTheme(th=>th==='dark'?'light':'dark'),
+    toggleLanguage: ()=>setLang(l=>l==='en'?'fa':'en'),
+    theme, lang, templates: TEMPLATES,
+    ...(editorActions||{}),
+  // `docs` is a dep on purpose: createFromTemplate closes over it, and a
+  // stale copy would overwrite documents created after the palette's last build.
+  }),[theme, lang, editorActions, docs])
   const openCustomTemplate=()=>{ if(!isPremium){ setShowPremium(true); return } setTplName(''); setTplModal(true) }
   const createCustomTemplate=()=>{ const name=tplName.trim(); if(!name) return; const {docs:nd,doc}=createDoc(docs,{title:name, content:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Custom template — edit and reuse.'}]}]}}); setDocs(nd); setTplModal(false); setOpenId(doc.id) }
   const patchDoc=(id:string, patch:Partial<VyroDoc>, content?:any)=>{ setDocs(prev=>prev.map(d=> d.id===id? {...d, ...patch, ...(content?{content}:{}), updatedAt:new Date().toISOString()}:d)) }
@@ -71,7 +95,7 @@ export default function App(){
   const doRestore=(id:string)=>{ setDocs(prev=>restoreDoc(prev,id)); setPurgeId(null) }
   const doPurge=(id:string)=>{ setDocs(prev=>purgeDoc(prev,id)); setPurgeId(null) }
   const dir=uiDir(lang)
-  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={()=>setTheme(th=>th==='dark'?'light':'dark')} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
+  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={()=>setTheme(th=>th==='dark'?'light':'dark')} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
   return <div className={`app${lang==='fa'?' fa':''}`} dir={dir}>
     <header className="appbar"><div className="appbar-inner">
       <div className="logo big"><span className="vmark">V</span><span>Vyro Web</span></div>
@@ -81,6 +105,7 @@ export default function App(){
         {query && <button className="search-clear" onClick={()=>setQuery('')} aria-label={t('cancel')}>×</button>}
       </div>
       <div className="appbar-actions">
+        <button className="rbtn" onClick={openPalette} title="Ctrl+K" aria-label={t('commandPalette')}>⌘K</button>
         <div className="lang-toggle" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>setLang('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>setLang('fa')}>فارسی</button></div>
         <button className="rbtn" onClick={()=>setTheme(th=>th==='dark'?'light':'dark')} aria-label={theme==='dark'? t('lightUi'):t('darkUi')}>{theme==='dark'?'☀':'☾'}</button>
         <button className="chip-btn" onClick={()=>setShowPremium(true)}>{isPremium? `★ ${t('premiumActive')}` : user? t('free') : t('localFree')}</button>
@@ -181,6 +206,7 @@ export default function App(){
         </>}
       </main>
     </div>
+    <CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>
     {tplModal && <div className="modal-backdrop" onClick={()=>setTplModal(false)}><form className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); createCustomTemplate() }}><h2>{t('customTemplate')}</h2><label className="field">{t('customTemplatePrompt')}<input autoFocus value={tplName} dir="auto" onChange={e=>setTplName(e.target.value)}/></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setTplModal(false)}>{t('cancel')}</button><button type="submit" className="primary small" disabled={!tplName.trim()}>{t('create')}</button></div></form></div>}
     {showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}
   </div>

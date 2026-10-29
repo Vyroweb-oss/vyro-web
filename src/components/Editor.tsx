@@ -16,6 +16,16 @@ import { exportDocx, jsonToPlainText, escapeHtml, isSafeLinkUrl } from '../lib/d
 import { formatDocDate } from '../lib/date'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 
+export interface EditorPaletteActions {
+  insertTable: () => void
+  insertDate: () => void
+  exportTxt: () => void
+  exportHtml: () => void
+  zoomIn: () => void
+  zoomOut: () => void
+  zoomReset: () => void
+}
+
 const PageBreak = Node.create({
   name:'pageBreak', group:'block', atom:true,
   parseHTML(){ return [{tag:'hr[data-page-break]'}] },
@@ -36,7 +46,7 @@ const TABS: { id:string; key:I18nKey }[] = [
   { id:'Layout', key:'tabLayout' }, { id:'References', key:'tabReferences' }, { id:'Review', key:'tabReview' }, { id:'View', key:'tabView' },
 ]
 
-export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean }){
+export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed, onPaletteOpen, onEditorActions }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void }){
   const t=(k:I18nKey)=>tr(lang,k)
   const [tab,setTab]=useState('Home')
   const [zoom,setZoom]=useState(100)
@@ -119,6 +129,28 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   useEffect(()=>{ const el=pageRef.current; if(!el) return; const upd=()=>setPagePxH(el.offsetHeight); upd(); const ro=new ResizeObserver(upd); ro.observe(el); return ()=>ro.disconnect() },[editor, doc.orientation, doc.margins])
   const effScale=Math.max(0.1, fitScale*(zoom/100))
 
+  // Expose the editor's real actions to the app-level command palette while
+  // this editor is mounted; cleared on unmount so the palette never offers
+  // editor commands on the dashboard. (Hooks below this line are conditional
+  // on `editor` only in the sense that the early return above already fired
+  // when it is null — this effect therefore always runs with an editor.)
+  useEffect(()=>{
+    if(!editor || !onEditorActions) return
+    onEditorActions({
+      insertTable: ()=>editor.chain().focus().insertTable({rows:3,cols:3,withHeaderRow:true}).run(),
+      insertDate: ()=>editor.chain().focus().insertContent({ type:'text', text: formatDocDate(doc.dir) }).run(),
+      exportTxt: ()=>download(`${doc.title}.txt`, jsonToPlainText(editor.getJSON()), 'text/plain'),
+      exportHtml: ()=>download(`${doc.title}.html`, `<!doctype html><html dir="${doc.dir}"><head><meta charset="utf-8"><title>${escapeHtml(doc.title)}</title></head><body>${editor.getHTML()}</body></html>`, 'text/html'),
+      zoomIn: ()=>setZoom(z=>Math.min(200,z+10)),
+      zoomOut: ()=>setZoom(z=>Math.max(50,z-10)),
+      zoomReset: ()=>setZoom(100),
+    })
+    return ()=>onEditorActions(null)
+    // doc.title/dir are deps on purpose: export filenames and the inserted
+    // date follow the document's current title/direction, not its mount-time ones.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[editor, doc.title, doc.dir])
+
   if(!editor) return <div className="loading">{t('loadingEditor')}</div>
   const words = editor.getText().trim()? editor.getText().trim().split(/\s+/).length:0
   const chars = (editor.storage as any).characterCount?.characters?.() ?? editor.getText().length
@@ -166,6 +198,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <div className="top-end">
         <span className="saved" role="status">{saveText}</span>
         <span className="badge">{isPremium? t('premiumActive') : t('free')}</span>
+        {onPaletteOpen && <button className="rbtn" onClick={onPaletteOpen} title="Ctrl+K" aria-label={t('commandPalette')}>⌘K</button>}
         {onLangChange && <div className="lang-toggle mini" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>onLangChange('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>onLangChange('fa')}>فا</button></div>}
         <button className="rbtn" onClick={onToggleTheme} title={theme==='dark'? t('lightUi'):t('darkUi')} aria-label={theme==='dark'? t('lightUi'):t('darkUi')}>{theme==='dark'?'☀':'☾'}</button>
       </div>

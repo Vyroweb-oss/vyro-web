@@ -284,3 +284,17 @@ input:focus,select:focus{border-color:var(--brand)}
   .a4-page hr.page-break::after{content:''}
   @page{size:A4;margin:0 0 12mm;@bottom-center{content:counter(page);font-size:10pt;font-family:Arial,sans-serif;color:#666}}
 }
+
+/* ---------- command palette (M2-1) ---------- */
+.cmd-backdrop{align-items:flex-start;padding-top:12vh}
+.cmd-palette{background:var(--surface);color:var(--text);border-radius:var(--r-lg);width:100%;max-width:560px;box-shadow:var(--shadow-lg);overflow:hidden;border:1px solid var(--border)}
+.cmd-search-row{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.cmd-search-row input{border:0;flex:1;padding:4px 2px;font-size:16px;background:transparent}
+.cmd-search-row input:focus{outline:none;border:0}
+.cmd-list{max-height:46vh;overflow:auto;padding:8px}
+.cmd-section{padding:10px 12px 4px;font-size:12px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.04em}
+.cmd-item{display:flex;width:100%;align-items:center;justify-content:space-between;gap:12px;text-align:start;background:transparent;border:0;border-radius:var(--r-sm);padding:11px 12px;color:var(--text);font-size:15px}
+.cmd-item.selected{background:var(--brand-soft);color:var(--brand-ink)}
+.cmd-shortcut{font-family:inherit;font-size:12px;color:var(--text-2);background:var(--surface-2);border:1px solid var(--border);border-bottom-width:2px;border-radius:6px;padding:2px 7px;white-space:nowrap}
+.cmd-empty{padding:18px 12px;color:var(--text-2);text-align:center}
+@media print{ .cmd-backdrop,.cmd-palette{display:none!important} }
