@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, useEditorState } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import TextAlign from '@tiptap/extension-text-align'
@@ -28,6 +28,7 @@ const MARGINS = { narrow:'12.7mm', normal:'25.4mm', wide:'38.1mm' } as const
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const MM_PX = 96 / 25.4
 const FONT_FAMILIES = ['Vazirmatn', 'Tahoma', 'Arial', 'Georgia', "'Times New Roman'", "'Courier New'"]
+const FONT_SIZES = [11,12,14,16,18,20,24,28,36]
 const TABS: { id:string; key:I18nKey }[] = [
   { id:'File', key:'tabFile' }, { id:'Home', key:'tabHome' }, { id:'Insert', key:'tabInsert' },
   { id:'Layout', key:'tabLayout' }, { id:'References', key:'tabReferences' }, { id:'Review', key:'tabReview' }, { id:'View', key:'tabView' },
@@ -82,6 +83,19 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
 
   useEffect(()=>{ if(editor){ editor.view.dom.setAttribute('spellcheck', String(spell)); editor.view.dom.setAttribute('dir', doc.dir) } },[spell, doc.dir, editor])
 
+  // Font read-back: the family/size selects must REFLECT the textStyle at the
+  // cursor, not just set it. getAttributes('textStyle') resolves the marks at
+  // the selection start (or stored marks at a collapsed cursor), which is the
+  // sensible value for mixed selections too.
+  const fontState = useEditorState({
+    editor,
+    selector: ({ editor: ed }) => {
+      if (!ed) return { family: '', size: '' }
+      const attrs = (ed.getAttributes('textStyle') || {}) as { fontFamily?: string; fontSize?: string }
+      return { family: attrs.fontFamily || '', size: attrs.fontSize || '' }
+    },
+  })
+
   // Page scaling: the sheet keeps its true A4 layout size; a wrapper with
   // compensated dimensions scales it (fit-to-width on narrow screens × user
   // zoom) so zooming never breaks the surrounding layout or scrolls the app.
@@ -118,6 +132,11 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const Btn=(p:{onClick:()=>void; active?:boolean; title?:string; children:any; disabled?:boolean})=>(<button type="button" className={`rbtn${p.active?' active':''}`} onClick={p.onClick} title={p.title||''} disabled={p.disabled}>{p.children}</button>)
   const Group=(p:{label:string; children:any})=>(<div className="rgroup"><div className="rgroup-items">{p.children}</div><div className="rgroup-label">{p.label}</div></div>)
 
+  // Controlled values for the font selects, derived from the read-back state.
+  const curFamily = fontState?.family || ''
+  const curSizeNum = fontState?.size ? parseInt(fontState.size, 10) : NaN
+  const sizeSelectValue = Number.isNaN(curSizeNum) ? '16' : FONT_SIZES.includes(curSizeNum) ? String(curSizeNum) : ''
+
   const pageW = doc.orientation==='landscape' ? '297mm':'210mm'
   const pageMinH = doc.orientation==='landscape' ? '210mm':'297mm'
   const saveText = saveState==='saving'? t('saving') : savedAt? `${t('saved')} ${savedAt}` : t('savedLocally')
@@ -144,8 +163,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       {tab==='Home' && <>
         <Group label={t('groupHistory')}><Btn onClick={()=>editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>{t('undo')}</Btn><Btn onClick={()=>editor.chain().focus().redo().run()} disabled={!editor.can().redo()}>{t('redo')}</Btn></Group>
         <Group label={t('groupStyle')}><select aria-label="Block style" value={editor.isActive('heading',{level:1})?'h1':editor.isActive('heading',{level:2})?'h2':editor.isActive('heading',{level:3})?'h3':'p'} onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(v==='p') c.setParagraph().run(); else c.toggleHeading({level:Number(v.slice(1)) as any}).run() }}><option value="p">{t('paragraph')}</option><option value="h1">{t('heading1')}</option><option value="h2">{t('heading2')}</option><option value="h3">{t('heading3')}</option></select>
-        <select aria-label={t('fontFamily')} defaultValue="" onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(!v) c.unsetFontFamily().run(); else c.setFontFamily(v).run() }}><option value="">{t('fontFamily')}</option>{FONT_FAMILIES.map(f=><option key={f} value={f}>{f.replace(/'/g,'')}</option>)}</select>
-        <select aria-label="Font size" defaultValue="16" onChange={e=>editor.chain().focus().setFontSize(e.target.value+'px').run()}>{[11,12,14,16,18,20,24,28,36].map(s=><option key={s} value={s}>{s}px</option>)}</select></Group>
+        <select aria-label={t('fontFamily')} value={curFamily} onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(!v) c.unsetFontFamily().run(); else c.setFontFamily(v).run() }}><option value="">{t('fontFamily')}</option>{curFamily && !FONT_FAMILIES.includes(curFamily) && <option value={curFamily}>{curFamily.replace(/'/g,'')}</option>}{FONT_FAMILIES.map(f=><option key={f} value={f}>{f.replace(/'/g,'')}</option>)}</select>
+        <select aria-label="Font size" value={sizeSelectValue} onChange={e=>{ if(e.target.value) editor.chain().focus().setFontSize(e.target.value+'px').run() }}>{sizeSelectValue==='' && <option value="">{curSizeNum}px</option>}{FONT_SIZES.map(s=><option key={s} value={s}>{s}px</option>)}</select></Group>
         <Group label={t('groupFont')}><Btn active={editor.isActive('bold')} onClick={()=>editor.chain().focus().toggleBold().run()}><b>B</b></Btn><Btn active={editor.isActive('italic')} onClick={()=>editor.chain().focus().toggleItalic().run()}><i>I</i></Btn><Btn active={editor.isActive('underline')} onClick={()=>editor.chain().focus().toggleUnderline().run()}><u>U</u></Btn><Btn active={editor.isActive('strike')} onClick={()=>editor.chain().focus().toggleStrike().run()}><s>S</s></Btn>
         <label className="color-wrap" title={t('textColour')}>A<input type="color" onChange={e=>editor.chain().focus().setColor(e.target.value).run()}/></label>
         <label className="color-wrap" title={t('highlight')}>H<input type="color" defaultValue="#ffff00" onChange={e=>editor.chain().focus().toggleHighlight({color:e.target.value}).run()}/></label>

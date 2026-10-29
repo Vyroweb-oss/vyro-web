@@ -2,12 +2,32 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Editor from './components/Editor'
 import type { VyroDoc } from './lib/types'
 import { loadDocs, saveDocs, createDoc, deleteDoc, duplicateDoc, renameDoc, toggleFavorite, updateDoc, filterDocs, listFolders } from './lib/store'
-import { TEMPLATES, getTemplate } from './lib/templates'
+import { TEMPLATES, getTemplate, templateName, templateDesc } from './lib/templates'
 import { supabase, isSupabaseConfigured } from './lib/supabase'
 import { computeEntitlement } from './lib/entitlement'
 import { loadUiLang, saveUiLang, tr, uiDir, type UiLang, type I18nKey } from './lib/i18n'
 
-type CardEdit = { id: string; kind: 'rename' | 'folder'; value: string }
+type CardEdit = { id: string; kind: 'rename' | 'folder' }
+
+// Inline rename/folder editor for a document card. Local state is initialised
+// ONCE per edit session (mount), so parent re-renders can't churn the input;
+// focus + select-all also happen once on mount. (The previous version kept the
+// value in App state and re-ran focus()+select() from a ref callback on every
+// render, so each keystroke replaced the whole selection — only the last
+// typed character survived.)
+function InlineEditForm({ label, initial, placeholder, saveLabel, cancelLabel, onCommit, onCancel }:{ label:string; initial:string; placeholder?:string; saveLabel:string; cancelLabel:string; onCommit:(value:string)=>void; onCancel:()=>void }){
+  const [value,setValue]=useState(initial)
+  const inputRef=useRef<HTMLInputElement>(null)
+  useEffect(()=>{ const el=inputRef.current; if(el){ el.focus(); el.select() } },[])
+  return <form className="inline-edit" onSubmit={e=>{ e.preventDefault(); onCommit(value) }}>
+    <label className="field">{label}
+      <input ref={inputRef} value={value} dir="auto" placeholder={placeholder}
+        onChange={e=>setValue(e.target.value)}
+        onKeyDown={e=>{ if(e.key==='Escape') onCancel() }}/>
+    </label>
+    <div className="row"><button type="submit" className="primary small">{saveLabel}</button><button type="button" className="rbtn" onClick={onCancel}>{cancelLabel}</button></div>
+  </form>
+}
 
 export default function App(){
   const [docs,setDocs]=useState<VyroDoc[]>(()=> typeof window!=='undefined'? loadDocs(localStorage):[])
@@ -38,8 +58,8 @@ export default function App(){
   const createCustomTemplate=()=>{ const name=tplName.trim(); if(!name) return; const {docs:nd,doc}=createDoc(docs,{title:name, content:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Custom template — edit and reuse.'}]}]}}); setDocs(nd); setTplModal(false); setOpenId(doc.id) }
   const patchDoc=(id:string, patch:Partial<VyroDoc>, content?:any)=>{ setDocs(prev=>prev.map(d=> d.id===id? {...d, ...patch, ...(content?{content}:{}), updatedAt:new Date().toISOString()}:d)) }
   const authAction=async(kind:'in'|'up'|'out')=>{ if(!supabase) return; setAuthMsg(''); try{ if(kind==='out'){ await supabase.auth.signOut(); setUser(null) } else if(kind==='in'){ const {error}=await supabase.auth.signInWithPassword({email,password}); if(error) throw error; const {data}=await supabase.auth.getUser(); setUser(data.user) } else { const {error}=await supabase.auth.signUp({email,password}); if(error) throw error; const {data}=await supabase.auth.getUser(); setUser(data.user); setAuthMsg(t('accountCreated')) } }catch(e:any){ setAuthMsg(e.message||t('authFailed')) } }
-  const startCardEdit=(d:VyroDoc, kind:'rename'|'folder')=>{ setMenuId(null); setDeleteId(null); setCardEdit({id:d.id, kind, value: kind==='rename'? d.title : d.folder}) }
-  const commitCardEdit=()=>{ if(!cardEdit) return; if(cardEdit.kind==='rename'){ if(cardEdit.value.trim()) setDocs(prev=>renameDoc(prev,cardEdit.id,cardEdit.value)) } else { setDocs(prev=>updateDoc(prev,cardEdit.id,{folder:cardEdit.value.trim()})) } setCardEdit(null) }
+  const startCardEdit=(d:VyroDoc, kind:'rename'|'folder')=>{ setMenuId(null); setDeleteId(null); setCardEdit({id:d.id, kind}) }
+  const commitCardEdit=(id:string, kind:'rename'|'folder', value:string)=>{ if(kind==='rename'){ if(value.trim()) setDocs(prev=>renameDoc(prev,id,value)) } else { setDocs(prev=>updateDoc(prev,id,{folder:value.trim()})) } setCardEdit(null) }
   const askDelete=(id:string)=>{ setMenuId(null); setCardEdit(null); setDeleteId(id) }
   const doDelete=(id:string)=>{ setDocs(prev=>deleteDoc(prev,id)); setDeleteId(null) }
   const dir=uiDir(lang)
@@ -85,7 +105,7 @@ export default function App(){
             </button>
             {TEMPLATES.filter(tpl=>tpl.id!=='blank').map(tpl=><button key={tpl.id} className="tpl-card" onClick={()=>createFromTemplate(tpl.id)}>
               <span className="tpl-thumb" aria-hidden="true"/>
-              <span className="tpl-name">{tpl.name}</span><span className="tpl-desc">{tpl.description}{tpl.dir==='rtl'?' · RTL':''}</span>
+              <span className="tpl-name">{templateName(tpl, lang)}</span><span className="tpl-desc">{templateDesc(tpl, lang)}{tpl.dir==='rtl'?' · RTL':''}</span>
             </button>)}
             <button className="tpl-card" onClick={openCustomTemplate}>
               <span className="tpl-thumb" aria-hidden="true"/>
@@ -122,15 +142,13 @@ export default function App(){
               <span className="bdg dir">{d.dir==='rtl' ? 'RTL · دری/فارسی' : 'LTR · English'}</span>
               {d.folder && <span className="bdg" dir="auto">{d.folder}</span>}
             </div>
-            {cardEdit && cardEdit.id===d.id && <form className="inline-edit" onSubmit={e=>{ e.preventDefault(); commitCardEdit() }}>
-              <label className="field">{cardEdit.kind==='rename'? t('rename') : t('folder')}
-                <input autoFocus value={cardEdit.value} dir="auto" placeholder={cardEdit.kind==='folder'? t('folderNamePlaceholder') : undefined}
-                  ref={el=>{ el?.focus(); el?.select() }}
-                  onChange={e=>setCardEdit({...cardEdit, value:e.target.value})}
-                  onKeyDown={e=>{ if(e.key==='Escape') setCardEdit(null) }}/>
-              </label>
-              <div className="row"><button type="submit" className="primary small">{t('save')}</button><button type="button" className="rbtn" onClick={()=>setCardEdit(null)}>{t('cancel')}</button></div>
-            </form>}
+            {cardEdit && cardEdit.id===d.id && <InlineEditForm key={cardEdit.kind}
+              label={cardEdit.kind==='rename'? t('rename') : t('folder')}
+              initial={cardEdit.kind==='rename'? d.title : d.folder}
+              placeholder={cardEdit.kind==='folder'? t('folderNamePlaceholder') : undefined}
+              saveLabel={t('save')} cancelLabel={t('cancel')}
+              onCommit={v=>commitCardEdit(d.id, cardEdit.kind, v)}
+              onCancel={()=>setCardEdit(null)}/>}
             {deleteId===d.id && <div className="inline-confirm" role="alertdialog" aria-label={t('delete')}>
               <p>{t('deleteConfirm')} <b dir="auto">“{d.title}”</b></p>
               <div className="row"><button className="danger-btn" onClick={()=>doDelete(d.id)}>{t('delete')}</button><button className="rbtn" onClick={()=>setDeleteId(null)}>{t('cancel')}</button></div>
