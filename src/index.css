@@ -380,6 +380,25 @@ input:focus,select:focus{border-color:var(--brand)}
 .recovery-compare,.recovery-excerpt{font-size:13.5px;display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere}
 @media print{ .versions-panel,.recovery-banner{display:none!important} }
 
+/* ---------- document compare (M2-09) ---------- */
+.compare-panel select{padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);min-height:38px}
+.compare-diff{display:flex;flex-direction:column;gap:6px;max-height:420px;overflow:auto}
+.diff-hunk{border:1px solid transparent;border-radius:var(--r-sm);padding:2px}
+.diff-hunk-active{border-color:var(--brand);background:var(--brand-soft)}
+.compare-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.compare-col{display:flex;flex-direction:column;gap:2px;min-width:0}
+.diff-line{font-size:13.5px;padding:4px 8px;border-radius:var(--r-sm);overflow-wrap:anywhere;white-space:pre-wrap}
+.diff-line.diff-added{background:#dcfce7;color:#14532d}
+.diff-line.diff-removed{background:#fee2e2;color:#7f1d1d}
+.diff-line.diff-changed{background:#fef3c7;color:#78350f}
+.diff-line.diff-empty{background:var(--surface-2)}
+[data-theme="dark"] .diff-line.diff-added{background:#14532d;color:#dcfce7}
+[data-theme="dark"] .diff-line.diff-removed{background:#7f1d1d;color:#fee2e2}
+[data-theme="dark"] .diff-line.diff-changed{background:#78350f;color:#fef3c7}
+.compare-report{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-size:13px;white-space:pre-wrap}
+@media (max-width:768px){ .compare-row{grid-template-columns:1fr} }
+@media print{ .compare-panel{display:none!important} }
+
 /* ---------- contextual menu + paste (M2-06) ---------- */
 .ctx-backdrop{position:fixed;inset:0;z-index:69;background:transparent}
 .ctx-menu{position:fixed;z-index:70;min-width:220px;max-width:min(300px,calc(100vw - 16px));background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);box-shadow:var(--shadow-lg);padding:6px;max-height:calc(100dvh - 16px);overflow:auto}
