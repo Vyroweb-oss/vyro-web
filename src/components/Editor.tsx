@@ -17,6 +17,8 @@ import { formatDocDate } from '../lib/date'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import NavigationPane from './NavigationPane'
 import StatsPanel from './StatsPanel'
+import SaveDiagnosticsPanel from './SaveDiagnosticsPanel'
+import { initialSaveDiag, recordAttempt, recordSuccess, recordFailure, withBackup, saveBackup, loadBackup, type SaveDiagnostics, type SaveBackup } from '../lib/saveDiagnostics'
 import LinkManagerPanel from './LinkManagerPanel'
 import ComparePanel from './ComparePanel'
 import IntelligencePanel from './IntelligencePanel'
@@ -69,7 +71,12 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [tab,setTab]=useState('Home')
   const [zoom,setZoom]=useState(100)
   const [savedAt,setSavedAt]=useState<string>('')
-  const [saveState,setSaveState]=useState<'saved'|'saving'>('saved')
+  const [saveState,setSaveState]=useState<'saved'|'saving'|'pending'|'failed'>('saved')
+  // M2-13 autosave diagnostics: the record only ever claims 'saved'
+  // after the confirmation effect below observes the parent's write.
+  const [diag,setDiag]=useState<SaveDiagnostics>(()=>initialSaveDiag())
+  const [backup,setBackup]=useState<SaveBackup|null>(()=> typeof window!=='undefined' ? loadBackup(localStorage) : null)
+  const [saveDiagOpen,setSaveDiagOpen]=useState(false)
   const [spell,setSpell]=useState(true)
   const [toast,setToast]=useState('')
   const [linkOpen,setLinkOpen]=useState(false)
@@ -112,6 +119,19 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const longPressMenuRef=useRef(0)
   const saveTimer=useRef<any>(null)
   const pendingJson=useRef<any>(null)
+  // M2-13 confirmation bookkeeping: awaitingRef is set when a flush
+  // hands JSON to onChange and cleared only by the confirmation effect
+  // (success or failure) — never by the flush itself. failureHandledFor
+  // keys the auto-backup + failure record to one write (one updatedAt),
+  // so a persisting saveFailed flag cannot record the same failure twice.
+  const awaitingRef=useRef(false)
+  const lastSeenUpdatedAtRef=useRef(doc.updatedAt)
+  const failureHandledForRef=useRef<string|null>(null)
+  // M2-13 flash guard: latest saveFailed value, read by the deferred
+  // confirmation timer (the prop captured in the effect may predate the
+  // parent's storage effect for this write).
+  const saveFailedRef=useRef(!!saveFailed); saveFailedRef.current=!!saveFailed
+  const confirmTimerRef=useRef<any>(null)
   const onChangeRef=useRef(onChange); onChangeRef.current=onChange
   const docRef=useRef(doc); docRef.current=doc
   // M2-04 version history + crash recovery (own storage keys; docs store untouched).
@@ -133,7 +153,15 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
 
   useEffect(()=>{ if(!toast) return; const id=setTimeout(()=>setToast(''),6000); return ()=>clearTimeout(id) },[toast])
 
-  const flushSave=()=>{ if(saveTimer.current){ clearTimeout(saveTimer.current); saveTimer.current=null } if(pendingJson.current){ const j=pendingJson.current; pendingJson.current=null; onChangeRef.current({}, j); setSavedAt(new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})); setSaveState('saved') } }
+  // M2-13: a flush HANDS OFF to the parent and marks the status
+  // 'saving' with an awaiting confirmation — it must NOT claim 'saved'
+  // or set savedAt here, because the parent has not written yet. The
+  // confirmation effect (below, after the editor exists) flips the
+  // status only once the document's updatedAt moved with no failure
+  // reported, or to 'failed' when the parent reports a failed write.
+  // pendingJson stays cleared on failure: the M2-04 draft already holds
+  // the unsaved JSON, so nothing is lost by not re-queueing it.
+  const flushSave=()=>{ if(saveTimer.current){ clearTimeout(saveTimer.current); saveTimer.current=null } if(pendingJson.current){ const j=pendingJson.current; pendingJson.current=null; onChangeRef.current({}, j); awaitingRef.current=true; setSaveState('saving'); setDiag(prev=>recordAttempt(prev, new Date().toISOString())) } }
   const flushRef=useRef(flushSave); flushRef.current=flushSave
   // Flush any debounced edit before the editor unmounts (doc switch / back) so the last keystrokes are never lost.
   useEffect(()=>()=>{ flushRef.current() },[])
@@ -142,7 +170,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // save is still pending ('saving' state / pending JSON), or the last write to
   // browser storage failed (saveFailed from the parent). Never warn when all saved.
   const unsavedRef=useRef(false)
-  unsavedRef.current = saveState==='saving' || pendingJson.current!=null || !!saveFailed
+  unsavedRef.current = saveState==='saving' || saveState==='pending' || saveState==='failed' || pendingJson.current!=null || !!saveFailed
   useEffect(()=>{
     const handler=(e:BeforeUnloadEvent)=>{ if(unsavedRef.current){ e.preventDefault(); e.returnValue=true } }
     window.addEventListener('beforeunload', handler)
@@ -177,7 +205,6 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     content: doc.content,
     editorProps:{ attributes:{ dir: doc.dir, spellcheck: String(spell) } as any },
     onUpdate({editor}){
-      setSaveState('saving')
       pendingJson.current=editor.getJSON()
       // M2-04: draft snapshot of the pending JSON (separate key, best-effort).
       // Cleared explicitly on accept/discard, and silently on reopen when it
@@ -187,7 +214,11 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       // M2-08: no timer when autosave is off — pending edits flush only on
       // Save now / leaving the document (see resolveAutosaveDelay).
       const delay = resolveAutosaveDelay(autosaveRef.current as VyroSettings)
-      if(delay!=null) saveTimer.current=setTimeout(()=>{ saveTimer.current=null; if(pendingJson.current){ const j=pendingJson.current; pendingJson.current=null; onChangeRef.current({}, j); setSavedAt(new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})); setSaveState('saved') } }, delay)
+      // M2-13: with autosave off there is no timer coming, so the status
+      // is 'pending' (unsaved changes) — never a 'saving' that never
+      // resolves, and never 'saved' before any write happens.
+      setSaveState(delay!=null ? 'saving' : 'pending')
+      if(delay!=null) saveTimer.current=setTimeout(()=>{ saveTimer.current=null; if(pendingJson.current){ const j=pendingJson.current; pendingJson.current=null; onChangeRef.current({}, j); awaitingRef.current=true; setSaveState('saving'); setDiag(prev=>recordAttempt(prev, new Date().toISOString())) } }, delay)
     },
   },[doc.id])
 
@@ -198,6 +229,73 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // the default font/size (template text already carries them via
   // applyNewDocDefaults). Stored marks change no document content.
   useEffect(()=>{ if(!editor || !freshDefaults) return; try{ editor.chain().focus().setFontFamily(freshDefaults.font).setFontSize(freshDefaults.size+'px').run() }catch{ /* defaults are best-effort */ } },[editor, freshDefaults])
+
+  // M2-13: fresh diagnostics per opened document. The failure guard is
+  // pre-seeded with this document's current updatedAt so a saveFailed
+  // flag left over from another document is not misattributed to this
+  // one; only writes observed while this document is open are recorded.
+  useEffect(()=>{
+    awaitingRef.current=false
+    failureHandledForRef.current=doc.updatedAt
+    lastSeenUpdatedAtRef.current=doc.updatedAt
+    let b: SaveBackup|null=null
+    try { b = typeof window!=='undefined' ? loadBackup(localStorage) : null } catch { b=null }
+    setBackup(b)
+    setDiag(withBackup(initialSaveDiag(), b && b.docId===doc.id ? b : null))
+    setSaveState('saved')
+    setSavedAt('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[doc.id])
+
+  // M2-13: the save-confirmation loop. 'Saved' is flipped on ONLY here,
+  // and only when an awaited hand-off is followed by a new updatedAt
+  // with no failure reported for it. Parent fix (flash guard): child
+  // effects run BEFORE the parent's storage effect in the same commit,
+  // so confirming synchronously would flash 'Saved' for one render on
+  // a failing write before the parent's saveFailed flag lands. The
+  // success confirmation is therefore deferred to a macrotask: the
+  // parent's effect + state update always run before the timer fires,
+  // so by confirmation time saveFailedRef reflects this write's real
+  // outcome; a failure cancels the pending confirmation via
+  // awaitingRef=false in the failure branch. The failure kind is
+  // 'unknown' here because the parent reports only a boolean — the
+  // lib's classifyError is ready for an error object if App ever passes
+  // one through, but that would require touching App.tsx.
+  useEffect(()=>{
+    if(saveFailed && failureHandledForRef.current!==doc.updatedAt){
+      failureHandledForRef.current=doc.updatedAt
+      lastSeenUpdatedAtRef.current=doc.updatedAt
+      awaitingRef.current=false
+      if(confirmTimerRef.current){ clearTimeout(confirmTimerRef.current); confirmTimerRef.current=null }
+      const now=new Date().toISOString()
+      let snap: SaveBackup|null=null
+      try {
+        const candidate={ docId: docRef.current.id, title: docRef.current.title, content: editor.getJSON(), savedAt: now }
+        if(saveBackup(localStorage, candidate)) snap=candidate
+      } catch { /* auto-backup is best-effort */ }
+      if(snap) setBackup(snap)
+      setDiag(prev=>{ const next=recordFailure(prev, 'unknown', now); return snap ? withBackup(next, snap) : next })
+      setSaveState('failed')
+      return
+    }
+    if(awaitingRef.current && doc.updatedAt!==lastSeenUpdatedAtRef.current){
+      // Deferred: only confirm once the parent's storage effect for this
+      // write has had a chance to report failure (see flash-guard note).
+      if(confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
+      const seenUpdatedAt=doc.updatedAt
+      confirmTimerRef.current=setTimeout(()=>{
+        confirmTimerRef.current=null
+        if(!awaitingRef.current || saveFailedRef.current) return
+        awaitingRef.current=false
+        lastSeenUpdatedAtRef.current=seenUpdatedAt
+        setSavedAt(new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))
+        setSaveState('saved')
+        setDiag(prev=>recordSuccess(prev, new Date().toISOString()))
+      }, 0)
+      return
+    }
+    lastSeenUpdatedAtRef.current=doc.updatedAt
+  },[doc.updatedAt, saveFailed])
 
   // M2-03: enter/exit for Focus + Reading modes. Entering Reading records
   // scroll + selection; exiting restores them. Focus keeps the editor
@@ -329,6 +427,12 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
 
   const gated=(fn:()=>void)=> isPremium? fn() : onRequirePremium()
   const download=(name:string, text:string, type:string)=>{ const b=new Blob([text],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000) }
+  // M2-13 diagnostics actions: retry re-flushes the editor's current
+  // JSON through the same confirmation loop; backup creation is local
+  // only; backup download is a local file download, never an upload.
+  const retrySave=()=>{ if(!editor) return; pendingJson.current=editor.getJSON(); flushSave() }
+  const createBackupNow=()=>{ if(!editor) return; const now=new Date().toISOString(); const snap={ docId: docRef.current.id, title: docRef.current.title, content: editor.getJSON(), savedAt: now }; if(saveBackup(localStorage, snap)){ setBackup(snap); setDiag(prev=>withBackup(prev, snap)); setToast(t('saveBackupSaved')) } else setToast(t('saveFailedStatus')) }
+  const downloadBackup=()=>{ if(!backup || backup.docId!==docRef.current.id) return; download(`${docRef.current.title}-backup.json`, JSON.stringify(backup, null, 2), 'application/json') }
   const exportTxt=()=> download(`${doc.title}.txt`, jsonToPlainText(editor.getJSON()), 'text/plain')
   const exportHtml=()=> download(`${doc.title}.html`, `<!doctype html><html dir="${doc.dir}"><head><meta charset="utf-8"><title>${escapeHtml(doc.title)}</title></head><body>${editor.getHTML()}</body></html>`, 'text/html')
   const insertDate=()=>{ editor.chain().focus().insertContent({ type:'text', text: formatDocDate(doc.dir) }).run() }
@@ -490,7 +594,13 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
 
   const pageW = doc.orientation==='landscape' ? '297mm':'210mm'
   const pageMinH = doc.orientation==='landscape' ? '210mm':'297mm'
-  const saveText = saveState==='saving'? t('saving') : savedAt? `${t('saved')} ${savedAt}` : t('savedLocally')
+  // M2-13: 'Saved HH:MM' appears only after the confirmation effect set
+  // savedAt; 'failed' and 'pending' (autosave off) have their own strings
+  // and are never folded into the saved label.
+  const saveText = saveState==='failed' ? t('saveFailedStatus')
+    : saveState==='saving' ? t('saving')
+    : saveState==='pending' ? t('saveUnsavedChanges')
+    : savedAt ? `${t('saved')} ${savedAt}` : t('savedLocally')
 
   return <div className={`editor-shell${viewMode!=='edit' ? ` ${viewModeClass(viewMode)}` : ''}`}>
     {viewMode!=='edit' && <div className="view-mode-bar" role="toolbar" aria-label={viewMode==='focus' ? t('focusMode') : t('readingMode')}>
@@ -502,7 +612,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <div className="top-start"><div className="logo"><span className="vmark">V</span> Vyro Web</div><div className="qat" role="group" aria-label={t('saveNow')}><button type="button" className="qat-btn" title={t('saveNow')} aria-label={t('saveNow')} onClick={()=>{ pendingJson.current=editor.getJSON(); flushSave() }}>💾</button><button type="button" className="qat-btn" title={t('undo')} aria-label={t('undo')} disabled={!editor.can().undo()} onClick={()=>editor.chain().focus().undo().run()}>↶</button><button type="button" className="qat-btn" title={t('redo')} aria-label={t('redo')} disabled={!editor.can().redo()} onClick={()=>editor.chain().focus().redo().run()}>↷</button></div><button className="back-btn" onClick={goBack}>← {t('dashboard')}</button></div>
       <input className="title-input" value={doc.title} dir="auto" onChange={e=>onChange({title:e.target.value})} aria-label={t('docTitleLabel')}/>
       <div className="top-end">
-        <span className="saved" role="status">{saveText}</span>
+        <span className={saveState==='failed' ? 'saved failed' : 'saved'} role="status">{saveText}</span>
         <span className="badge">{isPremium? t('premiumActive') : t('free')}</span>
         {onPaletteOpen && <button className="rbtn" onClick={onPaletteOpen} title="Ctrl+K" aria-label={t('commandPalette')}>⌘K</button>}
         {onLangChange && <div className="lang-toggle mini" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>onLangChange('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>onLangChange('fa')}>فا</button></div>}
@@ -551,6 +661,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       {tab==='View' && <>
         <Group label={t('groupViews')}><Btn onClick={enterFocus}>{t('focusMode')}</Btn><Btn onClick={enterReading}>{t('readingMode')}</Btn></Group>
         <Group label={t('groupShow')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn></Group>
+        <Group label={t('saveDiagnostics')}><Btn active={saveDiagOpen} onClick={()=>setSaveDiagOpen(o=>!o)}>{t('saveDiagnostics')}</Btn></Group>
         <Group label={t('groupZoom')}><Btn onClick={()=>setZoom(z=>zoomStep(z,-10))}>−</Btn><span className="static-stat">{zoom}%</span><Btn onClick={()=>setZoom(z=>zoomStep(z,10))}>+</Btn><Btn onClick={()=>setZoom(100)}>100%</Btn><Btn onClick={()=>setZoom(50)}>50%</Btn><Btn onClick={()=>setZoom(200)}>200%</Btn></Group>
       </>}
       </div>
@@ -568,6 +679,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <div className="row"><button type="button" className="primary small" onClick={acceptRecovery}>{t('recoveryAccept')}</button><button type="button" className="rbtn" onClick={discardRecovery}>{t('recoveryDiscard')}</button></div>
     </div>}
     {viewMode==='edit' && statsOpen && <StatsPanel editor={editor} lang={lang} onClose={()=>setStatsOpen(false)} />}
+    {viewMode==='edit' && saveDiagOpen && <SaveDiagnosticsPanel editor={editor} doc={doc} lang={lang} diag={diag} backup={backup} autosaveEnabled={autosaveEnabled ?? true} autosaveIntervalMs={autosaveIntervalMs ?? 500} hasPendingEdits={saveState==='pending' || saveState==='failed'} onRetry={retrySave} onCreateBackup={createBackupNow} onDownloadBackup={downloadBackup} onClose={()=>setSaveDiagOpen(false)} />}
     {viewMode==='edit' && compareOpen && <ComparePanel editor={editor} doc={doc} versions={versions} lang={lang} onClose={()=>setCompareOpen(false)} onVersionsSaved={(next)=>setVersions(next)} />}
     {viewMode==='edit' && intelligenceOpen && <IntelligencePanel editor={editor} lang={lang} onClose={()=>setIntelligenceOpen(false)} />}
     {viewMode==='edit' && linksOpen && <LinkManagerPanel editor={editor} lang={lang} onClose={()=>setLinksOpen(false)} onEditLink={openLinkAt} />}
@@ -610,7 +722,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     </div>
     </div>
     {viewMode==='edit' && <footer className="status-bar">
-      <span className="status-save">{saveText}</span>
+      <span className={saveState==='failed' ? 'status-save failed' : 'status-save'}>{saveText}</span>
       <span>{statusStats.words} {t('words')} · {statusStats.charsWithSpaces} {t('chars')} · {statusPages} {t('statsEstimatedPages')}</span>
       <span className="status-dir">{docLanguageLabel(doc.dir)}</span>
       <div className="status-views"><button type="button" className="status-view-btn" onClick={enterFocus}>{t('focusMode')}</button><button type="button" className="status-view-btn" onClick={enterReading}>{t('readingMode')}</button></div>
