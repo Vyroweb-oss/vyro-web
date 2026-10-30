@@ -39,6 +39,7 @@ export interface CommandActions {
   zoomIn?: () => void
   zoomOut?: () => void
   zoomReset?: () => void
+  pastePlainText?: () => void
 }
 
 const titleKey = (key: I18nKey): ((lang: UiLang) => string) => (lang) => tr(lang, key)
@@ -72,6 +73,7 @@ export function buildCommands(a: CommandActions): PaletteCommand[] {
   if (a.zoomIn) cmds.push({ id: 'zoom-in', title: titleKey('zoomIn'), run: a.zoomIn })
   if (a.zoomOut) cmds.push({ id: 'zoom-out', title: titleKey('zoomOut'), run: a.zoomOut })
   if (a.zoomReset) cmds.push({ id: 'zoom-reset', title: titleKey('zoomReset'), run: a.zoomReset })
+  if (a.pastePlainText) cmds.push({ id: 'paste-plain-text', title: titleKey('menuPastePlain'), run: a.pastePlainText })
   return cmds
 }
 

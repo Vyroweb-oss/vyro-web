@@ -371,6 +371,21 @@ input:focus,select:focus{border-color:var(--brand)}
 .recovery-compare,.recovery-excerpt{font-size:13.5px;display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere}
 @media print{ .versions-panel,.recovery-banner{display:none!important} }
 
+/* ---------- contextual menu + paste (M2-06) ---------- */
+.ctx-backdrop{position:fixed;inset:0;z-index:69;background:transparent}
+.ctx-menu{position:fixed;z-index:70;min-width:220px;max-width:min(300px,calc(100vw - 16px));background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);box-shadow:var(--shadow-lg);padding:6px;max-height:calc(100dvh - 16px);overflow:auto}
+.ctx-group-wrap{display:block}
+.ctx-menu button{display:flex;width:100%;padding:10px 12px;background:none;border:0;border-radius:var(--r-sm);color:var(--text);text-align:start;min-height:42px;font-size:14px}
+.ctx-menu button:hover,.ctx-menu button:focus-visible{background:var(--surface-2)}
+.ctx-menu button.danger{color:var(--danger)}
+.ctx-sep{display:block;height:1px;background:var(--border);margin:5px 6px}
+/* Image alignment: TextAlign renders text-align on the <img> itself, which
+   does not move a replaced element — block margins do. */
+.a4-page .tiptap img[style*="text-align: left"]{display:block;margin-inline-start:0;margin-inline-end:auto}
+.a4-page .tiptap img[style*="text-align: center"]{display:block;margin-inline:auto}
+.a4-page .tiptap img[style*="text-align: right"]{display:block;margin-inline-start:auto;margin-inline-end:0}
+@media print{ .ctx-backdrop,.ctx-menu{display:none!important} }
+
 /* ---------- document statistics (M2-05) ---------- */
 .stats-panel{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;flex-direction:column;gap:8px}
 .stats-grid{display:grid;grid-template-columns:1fr;gap:12px}

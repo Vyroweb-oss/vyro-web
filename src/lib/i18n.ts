@@ -242,6 +242,20 @@ const en = {
   statsReadingTimeEstimate: 'Reading time (estimate)',
   statsEstimatedPages: 'Estimated pages',
   statsLive: 'Updates live as you edit and select.',
+  menuCut: 'Cut',
+  menuCopy: 'Copy',
+  menuPastePlain: 'Paste as plain text',
+  menuBold: 'Bold',
+  menuItalic: 'Italic',
+  menuDeleteRow: 'Delete row',
+  menuDeleteColumn: 'Delete column',
+  menuImageAlt: 'Edit image description',
+  menuDeleteImage: 'Delete image',
+  menuEditLink: 'Edit link',
+  menuOpenLink: 'Open link',
+  menuContext: 'Context menu',
+  pastePlainUnavailable: 'Could not read the clipboard — your browser may block clipboard access. Try Ctrl+Shift+V to paste as plain text.',
+  imageAltPrompt: 'Image description (alt text)',
 } as const
 
 export type I18nKey = keyof typeof en
@@ -486,6 +500,20 @@ const fa: Record<I18nKey, string> = {
   statsReadingTimeEstimate: 'زمان خواندن (تخمینی)',
   statsEstimatedPages: 'صفحه‌های تخمینی',
   statsLive: 'با ویرایش و انتخاب شما زنده به‌روز می‌شود.',
+  menuCut: 'برش',
+  menuCopy: 'کپی',
+  menuPastePlain: 'چسباندن به‌صورت متن ساده',
+  menuBold: 'پررنگ',
+  menuItalic: 'کج',
+  menuDeleteRow: 'حذف ردیف',
+  menuDeleteColumn: 'حذف ستون',
+  menuImageAlt: 'ویرایش توضیح تصویر',
+  menuDeleteImage: 'حذف تصویر',
+  menuEditLink: 'ویرایش پیوند',
+  menuOpenLink: 'بازکردن پیوند',
+  menuContext: 'منوی زمینه',
+  pastePlainUnavailable: 'خواندن حافظهٔ موقت ممکن نشد — شاید مرورگرتان دسترسی به آن را مسدود کرده باشد. برای چسباندن متن ساده، Ctrl+Shift+V را امتحان کنید.',
+  imageAltPrompt: 'توضیح تصویر (متن جایگزین)',
 }
 
 export const STRINGS: Record<UiLang, Record<I18nKey, string>> = { en, fa }

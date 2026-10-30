@@ -18,6 +18,8 @@ import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import NavigationPane from './NavigationPane'
 import StatsPanel from './StatsPanel'
 import FindReplacePanel from './FindReplacePanel'
+import ContextMenu from './ContextMenu'
+import { sanitizePastedHtml, htmlToPlainText, getContextMenuItems, type MenuItemId } from '../lib/paste'
 import { createSnapshot, addVersion, loadVersions, saveVersions, restoreVersion, listVersions, type VersionSnapshot, type VersionTrigger } from '../lib/versions'
 import { saveDraft, loadDraft, clearDraft, detectRecovery, acceptDraft, type RecoveryInfo } from '../lib/recovery'
 import { FocusDim, createViewSnapshot, focusWidthClass, viewModeClass, type FocusWidth, type ViewMode, type ViewSnapshot } from '../lib/viewModes'
@@ -30,6 +32,7 @@ export interface EditorPaletteActions {
   zoomIn: () => void
   zoomOut: () => void
   zoomReset: () => void
+  pastePlainText: () => void
 }
 
 const PageBreak = Node.create({
@@ -72,6 +75,12 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const viewSnapshotRef=useRef<ViewSnapshot|null>(null)
   const restoreRef=useRef<ViewSnapshot|null>(null)
   const [toolsOpen,setToolsOpen]=useState(false)
+  // M2-06 contextual menu + image alt-text dialog (transient UI only).
+  const [ctxMenu,setCtxMenu]=useState<{ items:MenuItemId[]; x:number; y:number; linkHref:string|null }|null>(null)
+  const [altOpen,setAltOpen]=useState(false)
+  const [altText,setAltText]=useState('')
+  const longPressRef=useRef<{ timer:any; x:number; y:number; moved:boolean }|null>(null)
+  const longPressMenuRef=useRef(0)
   const saveTimer=useRef<any>(null)
   const pendingJson=useRef<any>(null)
   const onChangeRef=useRef(onChange); onChangeRef.current=onChange
@@ -122,7 +131,10 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     extensions:[
       StarterKit.configure({ link:false, underline:false } as any),
       Underline, Link.configure({ openOnClick:false }),
-      TextAlign.configure({ types:['heading','paragraph'] }),
+      // M2-06: 'image' added so the context menu can align a selected
+      // image (rendered as text-align style + CSS block margins below).
+      // Additive node attribute only; existing docs are unchanged.
+      TextAlign.configure({ types:['heading','paragraph','image'] }),
       TextStyleKit, Highlight.configure({multicolor:true}),
       TableKit.configure({ table:{ resizable:true } }),
       Image, Placeholder.configure({ placeholder: t('startTyping') }),
@@ -178,6 +190,17 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   useEffect(()=>{ const el=pageRef.current; if(!el) return; const upd=()=>setPagePxH(el.offsetHeight); upd(); const ro=new ResizeObserver(upd); ro.observe(el); return ()=>ro.disconnect() },[editor, doc.orientation, doc.margins])
   const effScale=Math.max(0.1, fitScale*(zoom/100))
 
+  // M2-06: the menu closes on scroll, on selection change, on Esc (the
+  // menu component handles Esc/backdrop), and on outside click (backdrop).
+  useEffect(()=>{
+    if(!ctxMenu || !editor) return
+    const close=()=>setCtxMenu(null)
+    const ws=workspaceRef.current
+    ws?.addEventListener('scroll', close, true)
+    editor.on('selectionUpdate', close)
+    return ()=>{ ws?.removeEventListener('scroll', close, true); editor.off('selectionUpdate', close) }
+  },[ctxMenu, editor])
+
   // Expose the editor's real actions to the app-level command palette while
   // this editor is mounted; cleared on unmount so the palette never offers
   // editor commands on the dashboard. (Hooks below this line are conditional
@@ -193,6 +216,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       zoomIn: ()=>setZoom(z=>Math.min(200,z+10)),
       zoomOut: ()=>setZoom(z=>Math.max(50,z-10)),
       zoomReset: ()=>setZoom(100),
+      pastePlainText: ()=>{ void pastePlainText() },
     })
     return ()=>onEditorActions(null)
     // doc.title/dir are deps on purpose: export filenames and the inserted
@@ -277,6 +301,112 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const applyLink=()=>{ const url=linkUrl.trim(); if(url===''){ editor.chain().focus().unsetLink().run(); setLinkOpen(false); return } if(!isSafeLinkUrl(url)){ setToast(t('linkInvalid')); return } editor.chain().focus().setLink({href:url}).run(); setLinkOpen(false) }
   const removeLink=()=>{ editor.chain().focus().unsetLink().run(); setLinkOpen(false) }
 
+  // ---- M2-06 clipboard + contextual menu ----
+  const pastePlainText=async()=>{
+    if(!editor) return
+    try {
+      const text = await navigator.clipboard?.readText()
+      if(text) editor.chain().focus().insertContent(text).run()
+    } catch { setToast(t('pastePlainUnavailable')) }
+    if(!navigator.clipboard?.readText) setToast(t('pastePlainUnavailable'))
+  }
+  const copySelection=async(cut:boolean)=>{
+    if(!editor) return
+    const sel=editor.state.selection
+    if(sel.from===sel.to) return
+    const text=editor.state.doc.textBetween(sel.from, sel.to, '\n')
+    try { await navigator.clipboard?.writeText(text) } catch { try { document.execCommand('copy') } catch { /* clipboard blocked */ } }
+    if(cut) editor.chain().focus().deleteSelection().run()
+  }
+  /** Paste interceptor: only steps in when sanitizing changed something
+   *  (danger stripped, wrappers/classes dropped). Untouched HTML and plain
+   *  text keep TipTap's native paste path, so normal pasting is identical. */
+  const handlePaste=(e:React.ClipboardEvent)=>{
+    if(!editor) return
+    const html=e.clipboardData?.getData('text/html')
+    if(!html) return
+    const clean=sanitizePastedHtml(html)
+    if(clean===html.trim()) return
+    e.preventDefault()
+    if(!clean) {
+      const plain=e.clipboardData.getData('text/plain') || htmlToPlainText(html)
+      if(plain) editor.chain().focus().insertContent(plain).run()
+      return
+    }
+    editor.chain().focus().insertContent(clean).run()
+  }
+  const openContextMenu=(clientX:number, clientY:number)=>{
+    if(!editor) return
+    try {
+      const view=editor.view
+      const hit=view.posAtCoords({ left: clientX, top: clientY })
+      let inTable=false, inImage=false
+      if(hit) {
+        const $pos=editor.state.doc.resolve(hit.pos)
+        for(let d=$pos.depth; d>=0; d--){ const n=$pos.node(d); if(n.type.name==='tableCell'||n.type.name==='tableHeader') inTable=true }
+        if(editor.state.doc.nodeAt(hit.pos)?.type.name==='image') inImage=true
+        const sel=editor.state.selection
+        if(hit.pos < sel.from || hit.pos > sel.to) {
+          if(inImage) editor.commands.setNodeSelection(hit.pos)
+          else editor.commands.setTextSelection(hit.pos)
+        }
+      }
+      if((editor.state.selection as any).node?.type.name==='image') inImage=true
+      if(editor.isActive('tableCell') || editor.isActive('tableHeader')) inTable=true
+      const sel=editor.state.selection
+      const hasSelection=sel.from!==sel.to && (sel as any).node==null
+      const inLink=editor.isActive('link')
+      const linkHref=inLink ? (editor.getAttributes('link').href as string|null) ?? null : null
+      const items=getContextMenuItems({ hasSelection, inTable, inImage, inLink, linkHref })
+      setCtxMenu({ items, x: clientX, y: clientY, linkHref })
+    } catch { /* menu is best-effort; a failed probe must never break editing */ }
+  }
+  const runMenuAction=(id:MenuItemId)=>{
+    if(!editor) return
+    const linkHref=ctxMenu?.linkHref ?? null
+    setCtxMenu(null)
+    const chain=()=>editor.chain().focus()
+    switch(id){
+      case 'cut': void copySelection(true); break
+      case 'copy': void copySelection(false); break
+      case 'pastePlain': void pastePlainText(); break
+      case 'clearFormatting': chain().unsetAllMarks().clearNodes().run(); break
+      case 'bold': chain().toggleBold().run(); break
+      case 'italic': chain().toggleItalic().run(); break
+      case 'link': openLink(); break
+      case 'addRow': chain().addRowAfter().run(); break
+      case 'addColumn': chain().addColumnAfter().run(); break
+      case 'deleteRow': chain().deleteRow().run(); break
+      case 'deleteColumn': chain().deleteColumn().run(); break
+      case 'imageAlt': setAltText((editor.getAttributes('image').alt as string)||''); setAltOpen(true); break
+      case 'alignLeft': chain().setTextAlign('left').run(); break
+      case 'alignCenter': chain().setTextAlign('center').run(); break
+      case 'alignRight': chain().setTextAlign('right').run(); break
+      case 'deleteImage': chain().deleteSelection().run(); break
+      case 'editLink': openLink(); break
+      case 'removeLink': chain().unsetLink().run(); break
+      case 'openLink': if(linkHref && isSafeLinkUrl(linkHref)) window.open(linkHref, '_blank', 'noopener'); break
+    }
+  }
+  const applyImageAlt=()=>{ if(!editor) return; editor.chain().focus().updateAttributes('image', { alt: altText.trim() || null }).run(); setAltOpen(false) }
+  /** Guarded long-press: timer cleared on any move/scroll/end, so normal
+   *  taps (caret placement) and scrolling never trigger the menu. If the
+   *  timer fires, the native long-press menu is suppressed by the
+   *  duplicate-contextmenu guard in onContextMenu. */
+  const clearLongPress=()=>{ if(longPressRef.current?.timer) clearTimeout(longPressRef.current.timer); longPressRef.current=null }
+  const onTouchStart=(e:React.TouchEvent)=>{
+    clearLongPress()
+    const touch=e.touches[0]; if(!touch) return
+    const x=touch.clientX, y=touch.clientY
+    const ref={ timer: setTimeout(()=>{ longPressMenuRef.current=Date.now(); openContextMenu(x, y) }, 550), x, y, moved:false }
+    longPressRef.current=ref
+  }
+  const onTouchMove=(e:React.TouchEvent)=>{
+    const ref=longPressRef.current; if(!ref) return
+    const touch=e.touches[0]; if(!touch) return
+    if(Math.abs(touch.clientX-ref.x) > 10 || Math.abs(touch.clientY-ref.y) > 10) clearLongPress()
+  }
+
   const Btn=(p:{onClick:()=>void; active?:boolean; title?:string; children:any; disabled?:boolean})=>(<button type="button" className={`rbtn${p.active?' active':''}`} onClick={p.onClick} title={p.title||''} disabled={p.disabled}>{p.children}</button>)
   const Group=(p:{label:string; children:any})=>(<div className="rgroup"><div className="rgroup-items">{p.children}</div><div className="rgroup-label">{p.label}</div></div>)
 
@@ -328,7 +458,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('groupFont')}><Btn active={editor.isActive('bold')} onClick={()=>editor.chain().focus().toggleBold().run()}><b>B</b></Btn><Btn active={editor.isActive('italic')} onClick={()=>editor.chain().focus().toggleItalic().run()}><i>I</i></Btn><Btn active={editor.isActive('underline')} onClick={()=>editor.chain().focus().toggleUnderline().run()}><u>U</u></Btn><Btn active={editor.isActive('strike')} onClick={()=>editor.chain().focus().toggleStrike().run()}><s>S</s></Btn>
         <label className="color-wrap" title={t('textColour')}>A<input type="color" onChange={e=>editor.chain().focus().setColor(e.target.value).run()}/></label>
         <label className="color-wrap" title={t('highlight')}>H<input type="color" defaultValue="#ffff00" onChange={e=>editor.chain().focus().toggleHighlight({color:e.target.value}).run()}/></label>
-        <Btn onClick={()=>editor.chain().focus().unsetAllMarks().clearNodes().run()}>{t('clearFormatting')}</Btn></Group>
+        <Btn onClick={()=>editor.chain().focus().unsetAllMarks().clearNodes().run()}>{t('clearFormatting')}</Btn><Btn onClick={()=>{ void pastePlainText() }}>{t('menuPastePlain')}</Btn></Group>
         <Group label={t('groupParagraph')}><Btn active={editor.isActive({textAlign:'left'})} onClick={()=>editor.chain().focus().setTextAlign('left').run()}>{t('alignLeft')}</Btn><Btn active={editor.isActive({textAlign:'center'})} onClick={()=>editor.chain().focus().setTextAlign('center').run()}>{t('alignCenter')}</Btn><Btn active={editor.isActive({textAlign:'right'})} onClick={()=>editor.chain().focus().setTextAlign('right').run()}>{t('alignRight')}</Btn><Btn active={editor.isActive({textAlign:'justify'})} onClick={()=>editor.chain().focus().setTextAlign('justify').run()}>{t('alignJustify')}</Btn></Group>
         <Group label={t('groupLists')}><Btn active={editor.isActive('bulletList')} onClick={()=>editor.chain().focus().toggleBulletList().run()}>{t('bulletList')}</Btn><Btn active={editor.isActive('orderedList')} onClick={()=>editor.chain().focus().toggleOrderedList().run()}>{t('orderedList')}</Btn><Btn active={editor.isActive('blockquote')} onClick={()=>editor.chain().focus().toggleBlockquote().run()}>{t('quote')}</Btn></Group>
       </>}
@@ -398,7 +528,11 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     <div className="workspace" ref={workspaceRef}>
       <div className="page-scaler" style={{ width:`${Math.round(pageMmW*MM_PX*effScale)}px`, height:`${Math.round(pagePxH*effScale)}px` }}>
         <div className="page-scale-inner" style={{ transform:`scale(${effScale})`, width:`${Math.round(pageMmW*MM_PX)}px` }}>
-          <div ref={pageRef} className={`a4-page ${doc.orientation==='landscape'?'landscape':'portrait'}${viewMode==='focus' ? ` ${focusWidthClass(focusWidth)}` : ''}`} style={{ width:pageW, minHeight:pageMinH, padding:MARGINS[doc.margins||'normal'] }}>
+          <div ref={pageRef} className={`a4-page ${doc.orientation==='landscape'?'landscape':'portrait'}${viewMode==='focus' ? ` ${focusWidthClass(focusWidth)}` : ''}`} style={{ width:pageW, minHeight:pageMinH, padding:MARGINS[doc.margins||'normal'] }}
+            onPaste={handlePaste}
+            onContextMenu={(e)=>{ if(Date.now()-longPressMenuRef.current < 1000 && ctxMenu){ e.preventDefault(); return } e.preventDefault(); openContextMenu(e.clientX, e.clientY) }}
+            onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={clearLongPress} onTouchCancel={clearLongPress}
+          >
             <EditorContent editor={editor}/>
           </div>
         </div>
@@ -411,6 +545,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <span className="status-dir">{doc.dir==='rtl' ? 'RTL · دری/فارسی' : 'LTR · English'}</span>
       <div className="status-zoom"><span>{t('zoom')}</span><button type="button" className="status-btn" aria-label="Zoom out" onClick={()=>setZoom(z=>Math.max(50,z-10))}>−</button><input type="range" min={50} max={200} step={5} value={zoom} onChange={e=>setZoom(Number(e.target.value))} aria-label={t('zoom')}/><span>{zoom}%</span><button type="button" className="status-btn" aria-label="Zoom in" onClick={()=>setZoom(z=>Math.min(200,z+10))}>+</button></div>
     </footer>}
+    {ctxMenu && <ContextMenu items={ctxMenu.items} x={ctxMenu.x} y={ctxMenu.y} lang={lang} onAction={runMenuAction} onClose={()=>setCtxMenu(null)} />}
+    {altOpen && <div className="modal-backdrop" onClick={()=>setAltOpen(false)}><form className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageAlt() }}><h2>{t('menuImageAlt')}</h2><label className="field">{t('imageAltPrompt')}<input autoFocus value={altText} dir="auto" onChange={e=>setAltText(e.target.value)} /></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setAltOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
     {toast && <div className="toast" role="alert">{toast}</div>}
     <input ref={fileImgRef} type="file" accept="image/*" hidden onChange={onImage}/>
     <input ref={importRef} type="file" accept=".txt,.docx" hidden onChange={onImport}/>
