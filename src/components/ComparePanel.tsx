@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import { compareDocs, renderComparisonReport, saveChosenSideAsVersion, type CompareLine, type DiffHunk } from '../lib/compare'
+import { usePanelFocusReturn } from './useDialogFocus'
 import { listVersions, loadVersions, saveVersions, type VersionSnapshot } from '../lib/versions'
 import type { VyroDoc } from '../lib/types'
 
@@ -14,6 +15,8 @@ export default function ComparePanel({ editor, doc, versions, lang, onClose, onV
   onClose: () => void; onVersionsSaved: (next: VersionSnapshot[]) => void
 }) {
   const t = (k: I18nKey) => tr(lang, k)
+  // M2-15: Esc closes (root handler below), focus returns to the opener.
+  usePanelFocusReturn()
   // Live current-document JSON: re-renders on every transaction, so
   // "Current document" always reflects the latest keystrokes.
   const live = useEditorState({
@@ -108,7 +111,8 @@ export default function ComparePanel({ editor, doc, versions, lang, onClose, onV
   // diffCounter walks in step with the rendered list.
   const renderedHunks = result.hunks.map((h) => ({ h, di: hunkDiffIndex(h) }))
 
-  return <div className="versions-panel compare-panel" role="region" aria-label={t('compare')}>
+  return <div className="versions-panel compare-panel" role="region" aria-label={t('compare')}
+    onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
     <div className="find-row">
       <span className="find-preview-label">{t('compare')}</span>
       <button type="button" className="rbtn" onClick={onClose} aria-label={t('close')}>×</button>

@@ -8,6 +8,7 @@ import {
   hasNonHeadingBody,
 } from '../lib/sections'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
+import { usePanelFocusReturn } from './useDialogFocus'
 
 // Navigation Pane (Mission 2, M2-02 = owner spec §3, extended by M2-11 =
 // owner spec §4 Document Outline & section management): a live heading
@@ -43,6 +44,9 @@ export default function NavigationPane({ editor, lang, onCollapse }: {
   onCollapse: () => void
 }) {
   const t = (k: I18nKey) => tr(lang, k)
+  // M2-15: Esc closes the pane (root handler below), focus returns to
+  // the opener on collapse.
+  usePanelFocusReturn()
   const [query, setQuery] = useState('')
   const [matchIdx, setMatchIdx] = useState(0)
   const [dragIdx, setDragIdx] = useState<number | null>(null)
@@ -95,7 +99,8 @@ export default function NavigationPane({ editor, lang, onCollapse }: {
   }
 
   return (
-    <aside className="nav-pane" aria-label={t('navigationPane')}>
+    <aside className="nav-pane" aria-label={t('navigationPane')}
+      onKeyDown={(e) => { if (e.key === 'Escape') onCollapse() }}>
       <div className="nav-pane-head">
         <span className="nav-pane-title">{t('navigationPane')}</span>
         <button type="button" className="rbtn nav-collapse" onClick={onCollapse}
@@ -179,7 +184,10 @@ export default function NavigationPane({ editor, lang, onCollapse }: {
                     <span className="nav-skip" role="img"
                       title={`${t('sectionSkipWarning')} (H${warn.prevLevel} → H${warn.level})`}>⚠</span>
                   )}
-                  <span className="nav-drag-handle" title={t('sectionDragHandle')} aria-label={t('sectionDragHandle')}>⋮⋮</span>
+                  {/* M2-15: drag-only affordance, not a control — the row
+                    itself is draggable and ↑/↓/↳ buttons already move it,
+                    so this grip is decorative and hidden from AT/focus. */}
+                  <span className="nav-drag-handle" title={t('sectionDragHandle')} aria-hidden="true">⋮⋮</span>
                 </div>
                 <div className="nav-row-controls">
                   <select

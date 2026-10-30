@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
+import { usePanelFocusReturn } from './useDialogFocus'
 import {
   INTELLIGENCE_GROUPS, actionsForGroup, actionNeedsSelection,
   disconnectedProvider, truncatePreview, type IntelligenceAction, type IntelligenceGroup,
@@ -28,6 +29,9 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
   onClose: () => void
 }) {
   const t = (k: I18nKey) => tr(lang, k)
+  // M2-15: focus returns to the opener on close (Esc already closed via
+  // the window listener below).
+  usePanelFocusReturn()
   const [notice, setNotice] = useState('')
   const [lastAction, setLastAction] = useState<IntelligenceAction | null>(null)
   const sel = useEditorState({

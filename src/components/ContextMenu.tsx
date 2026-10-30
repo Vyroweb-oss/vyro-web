@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import type { MenuItemId } from '../lib/paste'
 import { clampMenuPosition } from '../lib/paste'
+import { recordFocus, restoreFocus } from '../lib/keyboard'
 
 const LABEL: Record<MenuItemId, I18nKey> = {
   cut: 'menuCut', copy: 'menuCopy', pastePlain: 'menuPastePlain',
@@ -27,6 +28,16 @@ export default function ContextMenu({ items, x, y, lang, onAction, onClose }: {
   const ref = useRef<HTMLDivElement>(null)
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   const [pos, setPos] = useState({ x, y })
+  // M2-15: focus returns to the opener on close (Esc already closed it;
+  // arrows already moved within it). Recorded BEFORE the mount effect
+  // below focuses the first item, so the opener — not the menu item —
+  // is what comes back. A gone opener restores to nothing, safely.
+  const openerRef = useRef<Element | null>(null)
+  useEffect(() => {
+    openerRef.current = recordFocus()
+    return () => { restoreFocus(openerRef.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   // Measure once mounted and clamp against the real menu size, so the
   // menu is never off-screen even on narrow phones.
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { useEditorState, type Editor } from '@tiptap/react'
 import { isSafeLinkUrl } from '../lib/docx'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
+import { usePanelFocusReturn } from './useDialogFocus'
 
 // Link Manager panel (Mission 2, M2-07 = owner spec §14). Follows the
 // StatsPanel pattern: useEditorState re-renders on every transaction, so
@@ -14,6 +15,8 @@ export default function LinkManagerPanel({ editor, lang, onClose, onEditLink }: 
   onEditLink: (from: number, to: number) => void
 }) {
   const t = (k: I18nKey) => tr(lang, k)
+  // M2-15: Esc closes (root handler below), focus returns to the opener.
+  usePanelFocusReturn()
   const state = useEditorState({
     editor,
     selector: ({ editor: ed }) => {
@@ -35,7 +38,8 @@ export default function LinkManagerPanel({ editor, lang, onClose, onEditLink }: 
   const jump = (l: PanelLink) => { editor.chain().focus().setTextSelection({ from: l.from, to: l.to }).run() }
   const remove = (l: PanelLink) => { editor.chain().focus().setTextSelection({ from: l.from, to: l.to }).unsetLink().run() }
 
-  return <div className="stats-panel" role="region" aria-label={t('linkManager')}>
+  return <div className="stats-panel" role="region" aria-label={t('linkManager')}
+    onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
     <div className="find-row">
       <span className="find-preview-label">{t('linkManager')}</span>
       <button type="button" className="rbtn" onClick={onClose} aria-label={t('close')}>×</button>

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
+import { useDialogFocus } from './useDialogFocus'
 import {
   EDITOR_FONTS, EDITOR_FONT_SIZES, AUTOSAVE_INTERVALS,
   type VyroSettings,
@@ -20,6 +21,11 @@ export default function SettingsPanel({ settings, lang, onChange, onReset, onClo
 }) {
   const t = (k: I18nKey) => tr(lang, k)
   const [confirmReset, setConfirmReset] = useState(false)
+  // M2-15: focus first control on open, Tab trapped, Esc closes, focus
+  // returns to the ⚙ button on close. The panel only renders when open,
+  // so `true` here means "mounted = open".
+  const containerRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(true, { containerRef, onClose, autofocus: true, trap: true })
   const sel = (label: string, value: string | number, onChangeVal: (v: string) => void, options: { value: string | number; label: string }[]) => (
     <label className="field">{label}
       <select value={value} onChange={(e) => onChangeVal(e.target.value)}>
@@ -29,7 +35,7 @@ export default function SettingsPanel({ settings, lang, onChange, onReset, onClo
   )
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal settings-modal" role="dialog" aria-label={t('settings')} onClick={(e) => e.stopPropagation()}>
+      <div className="modal settings-modal" role="dialog" aria-label={t('settings')} ref={containerRef} onClick={(e) => e.stopPropagation()}>
         <h2>{t('settings')}</h2>
         {sel(t('language'), settings.uiLang, (v) => onChange({ uiLang: v as 'en' | 'fa' }), [
           { value: 'en', label: 'English' }, { value: 'fa', label: 'فارسی' },

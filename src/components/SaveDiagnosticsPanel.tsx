@@ -1,4 +1,5 @@
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
+import { usePanelFocusReturn } from './useDialogFocus'
 import { storageLocation, type SaveDiagnostics, type SaveBackup, type SaveErrorKind } from '../lib/saveDiagnostics'
 import type { VyroDoc } from '../lib/types'
 import type { Editor } from '@tiptap/react'
@@ -27,6 +28,8 @@ export default function SaveDiagnosticsPanel({ doc, lang, diag, backup, autosave
   onClose: () => void
 }) {
   const t = (k: I18nKey) => tr(lang, k)
+  // M2-15: Esc closes (root handler below), focus returns to the opener.
+  usePanelFocusReturn()
   // The backup is a single-document snapshot: it counts for this panel
   // only when it belongs to the open document.
   const backupHere = backup && backup.docId === doc.id ? backup : null
@@ -45,7 +48,8 @@ export default function SaveDiagnosticsPanel({ doc, lang, diag, backup, autosave
   const location = storageLocation(false)
 
   return (
-    <div className="save-diag-panel" role="region" aria-label={t('saveDiagnostics')}>
+    <div className="save-diag-panel" role="region" aria-label={t('saveDiagnostics')}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
       <div className="find-row">
         <span className="find-preview-label">{t('saveDiagnostics')}</span>
         <button type="button" className="rbtn" onClick={onClose} aria-label={t('close')}>×</button>

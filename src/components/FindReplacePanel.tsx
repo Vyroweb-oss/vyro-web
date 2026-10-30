@@ -5,6 +5,7 @@ import {
   selectMatch, replaceMatch, replaceAllMatches,
 } from '../lib/findReplace'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
+import { usePanelFocusReturn } from './useDialogFocus'
 
 // Advanced Find & Replace (Mission 2, M2-02 = owner spec §5). Opened from a
 // toolbar button only — Ctrl+F is deliberately NOT bound, so the browser's
@@ -16,14 +17,20 @@ import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 // count); navigation and Replace-one are unaffected. The user can clear the
 // scope to search the whole document. Navigation never silently changes the
 // scope, because navigating selects matches in the editor.
-export default function FindReplacePanel({ editor, lang, onClose, onBeforeReplaceAll }: {
+export default function FindReplacePanel({ editor, lang, onClose, onBeforeReplaceAll, opener }: {
   editor: Editor
   lang: UiLang
   onClose: () => void
   /** M2-04: called BEFORE the bulk replacement runs, so the caller can snapshot the pre-replace document. */
   onBeforeReplaceAll?: () => void
+  /** M2-15: the button that opened the panel, captured by the editor
+   *  before opening — the panel's own autoFocus input would otherwise be
+   *  recorded as its own opener and focus-return would go nowhere. */
+  opener?: Element | null
 }) {
   const t = (k: I18nKey) => tr(lang, k)
+  // Esc already closed via the root handler below; this adds focus return.
+  usePanelFocusReturn(opener)
   const [query, setQuery] = useState('')
   const [replacement, setReplacement] = useState('')
   const [caseSensitive, setCaseSensitive] = useState(false)

@@ -5,6 +5,7 @@ import {
   buildArchivePayload, type ExportPresetId, type ExportPreview,
 } from '../lib/exportPresets'
 import { jsonToPlainText } from '../lib/docx'
+import { usePanelFocusReturn } from './useDialogFocus'
 import type { VyroDoc } from '../lib/types'
 import type { Editor } from '@tiptap/react'
 
@@ -28,6 +29,8 @@ export default function ExportPresetsPanel({ editor, doc, lang, onExportText, on
   onClose: () => void
 }) {
   const t = (k: I18nKey) => tr(lang, k)
+  // M2-15: Esc closes (root handler below), focus returns to the opener.
+  usePanelFocusReturn()
   const [preset, setPreset] = useState<ExportPresetId>('print-ready')
   const [filenameBase, setFilenameBase] = useState(doc.title)
   const [dateSuffix, setDateSuffix] = useState(false)
@@ -65,7 +68,8 @@ export default function ExportPresetsPanel({ editor, doc, lang, onExportText, on
   }
 
   return (
-    <div className="export-presets-panel" role="region" aria-label={t('exportPresets')}>
+    <div className="export-presets-panel" role="region" aria-label={t('exportPresets')}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
       <div className="find-row">
         <span className="find-preview-label">{t('exportPresets')}</span>
         <button type="button" className="rbtn" onClick={onClose} aria-label={t('close')}>×</button>

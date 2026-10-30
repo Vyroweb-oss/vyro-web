@@ -327,6 +327,13 @@ input:focus,select:focus{border-color:var(--brand)}
 .cmd-empty{padding:18px 12px;color:var(--text-2);text-align:center}
 @media print{ .cmd-backdrop,.cmd-palette{display:none!important} }
 
+/* ---------- keyboard shortcuts help dialog (M2-15) ---------- */
+.shortcut-modal{max-width:480px;max-height:86vh;overflow:auto}
+.shortcut-group h3{margin:14px 0 6px;font-size:13px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.04em}
+.shortcut-row{display:flex;align-items:center;gap:14px;padding:7px 2px}
+.shortcut-row .cmd-shortcut{min-width:118px;text-align:center}
+.shortcut-row span{font-size:15px}
+
 /* ---------- navigation pane + find & replace (M2-02) ---------- */
 .editor-body{display:flex;flex:1;min-height:0}
 .nav-pane{width:280px;flex:0 0 280px;background:var(--surface);border-inline-end:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}

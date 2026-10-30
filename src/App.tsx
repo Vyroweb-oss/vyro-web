@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Editor, { type EditorPaletteActions } from './components/Editor'
 import CommandPalette from './components/CommandPalette'
 import { buildCommands, isPaletteShortcut } from './lib/commands'
+import { isPlainFieldTarget } from './lib/keyboard'
+import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog'
 import type { VyroDoc } from './lib/types'
 import { loadDocs, saveDocs, createDoc, duplicateDoc, renameDoc, toggleFavorite, updateDoc, filterDocs, listFolders, sortDocs, trashDoc, restoreDoc, purgeDoc, listTrashed, SORT_KEY, type SortMode } from './lib/store'
 import { TEMPLATES, getTemplate, templateName, templateDesc } from './lib/templates'
@@ -71,12 +73,24 @@ export default function App(){
   const createFromSmartForm=(values:Record<string,string>)=>{ const tpl=smartForm; if(!tpl) return; const res=createSmartDocument(tpl, values); if(!res.ok) return; const content=applyNewDocDefaults(JSON.parse(JSON.stringify(res.content)), settings); const {docs:nd, doc}=createDoc(docs,{title: res.title, content, dir: tpl.dir, templateId: tpl.baseTemplateId}); setDocs(nd); setSmartForm(null); setOpenId(doc.id); setFreshDefaults({id:doc.id, font:settings.defaultFont, size:settings.defaultFontSize}) }
   // Command palette (M2-1): app-level so it works on dashboard and in editor.
   const [paletteOpen,setPaletteOpen]=useState(false)
+  // M2-15: keyboard-shortcuts help, dashboard entry (the editor has its
+  // own View-tab entry rendering the same dialog).
+  const [shortcutsOpen,setShortcutsOpen]=useState(false)
   const [editorActions,setEditorActions]=useState<EditorPaletteActions|null>(null)
   const paletteReturnFocus=useRef<Element|null>(null)
   const openPalette=()=>{ paletteReturnFocus.current=document.activeElement; setPaletteOpen(true) }
   const closePalette=()=>{ setPaletteOpen(false); const el=paletteReturnFocus.current; if(el instanceof HTMLElement) el.focus() }
   useEffect(()=>{
-    const handler=(e:KeyboardEvent)=>{ if(isPaletteShortcut(e)){ e.preventDefault(); if(paletteOpen) closePalette(); else openPalette() } }
+    const handler=(e:KeyboardEvent)=>{
+      if(!isPaletteShortcut(e)) return
+      // M2-15 audit fix: the chord never fires while typing in a plain
+      // field (title input, search, form inputs) — it must not interrupt
+      // typing or steal a field's own Ctrl+K. Closing an already-open
+      // palette still works everywhere, and the contenteditable editor
+      // surface keeps the chord (that is where it is used most).
+      if(!paletteOpen && isPlainFieldTarget(e.target as { tagName?: string; isContentEditable?: boolean } | null)) return
+      e.preventDefault(); if(paletteOpen) closePalette(); else openPalette()
+    }
     window.addEventListener('keydown', handler)
     return ()=>window.removeEventListener('keydown', handler)
   },[paletteOpen])
@@ -137,6 +151,7 @@ export default function App(){
       <div className="appbar-actions">
         {!isSupabaseConfigured && <span className="local-chip">{t('localSaving')}</span>}
         <button className="rbtn" onClick={openPalette} title="Ctrl+K" aria-label={t('commandPalette')}>⌘K</button>
+        <button className="rbtn" onClick={()=>setShortcutsOpen(true)} aria-label={t('keyboardShortcuts')} title={t('keyboardShortcuts')}>⌨</button>
         <div className="lang-toggle" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>setLang('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>setLang('fa')}>فارسی</button></div>
         <button className="rbtn" onClick={()=>setSettingsOpen(true)} aria-label={t('settings')} title={t('settings')}>⚙</button>
         <button className="rbtn" onClick={toggleTheme} aria-label={theme==='dark'? t('lightUi'):t('darkUi')}>{theme==='dark'?'☀':'☾'}</button>
@@ -256,6 +271,7 @@ export default function App(){
       </main>
     </div>
     <CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>
+    {shortcutsOpen && <KeyboardShortcutsDialog open={shortcutsOpen} onClose={()=>setShortcutsOpen(false)} lang={lang}/>}
     {settingsOpen && <SettingsPanel settings={settings} lang={lang} onChange={(patch)=>setSettings(s=>({...s, ...patch}))} onReset={()=>setSettings(defaultSettings())} onClose={()=>setSettingsOpen(false)}/>}
     {tplModal && <div className="modal-backdrop" onClick={()=>setTplModal(false)}><form className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); createCustomTemplate() }}><h2>{t('customTemplate')}</h2><label className="field">{t('customTemplatePrompt')}<input autoFocus value={tplName} dir="auto" onChange={e=>setTplName(e.target.value)}/></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setTplModal(false)}>{t('cancel')}</button><button type="submit" className="primary small" disabled={!tplName.trim()}>{t('create')}</button></div></form></div>}
     {showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}

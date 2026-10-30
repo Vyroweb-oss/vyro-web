@@ -1,6 +1,7 @@
 import { useEditorState, type Editor } from '@tiptap/react'
 import { computeDocumentStats, computeSelectionStats } from '../lib/stats'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
+import { usePanelFocusReturn } from './useDialogFocus'
 
 // Document Statistics panel (Mission 2, M2-05 = owner spec §10). It follows
 // the NavigationPane pattern: useEditorState re-renders it on every editor
@@ -15,6 +16,8 @@ export default function StatsPanel({ editor, lang, onClose }: {
   onClose: () => void
 }) {
   const t = (k: I18nKey) => tr(lang, k)
+  // M2-15: Esc closes (root handler below), focus returns to the opener.
+  usePanelFocusReturn()
   const state = useEditorState({
     editor,
     selector: ({ editor: ed }) => {
@@ -73,7 +76,8 @@ export default function StatsPanel({ editor, lang, onClose }: {
   )
 
   return (
-    <div className="stats-panel" role="region" aria-label={t('documentStatistics')}>
+    <div className="stats-panel" role="region" aria-label={t('documentStatistics')}
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
       <div className="find-row">
         <span className="find-preview-label">{t('documentStatistics')}</span>
         <button type="button" className="rbtn" onClick={onClose} aria-label={t('close')}>×</button>

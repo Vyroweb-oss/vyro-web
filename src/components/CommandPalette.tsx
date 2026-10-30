@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { filterCommands, loadRecentCommands, recordRecentCommand, type PaletteCommand } from '../lib/commands'
 import { tr, type UiLang } from '../lib/i18n'
+import { useDialogFocus } from './useDialogFocus'
 
 export default function CommandPalette({ open, onClose, commands, lang }: {
   open: boolean
@@ -16,6 +17,11 @@ export default function CommandPalette({ open, onClose, commands, lang }: {
   const [recent, setRecent] = useState<string[]>(() => loadRecentCommands(localStorage))
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
+  // M2-15: Tab trapped inside the palette; Esc + focus return ride along
+  // (App's closePalette also restores — same opener, idempotent). Input
+  // autofocus stays with the existing rAF effect below.
+  const containerRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(open, { containerRef, onClose, autofocus: false, trap: true })
 
   const recentCmds = useMemo(
     () => recent.map((id) => commands.find((c) => c.id === id)).filter((c): c is PaletteCommand => !!c),
@@ -73,7 +79,7 @@ export default function CommandPalette({ open, onClose, commands, lang }: {
 
   return (
     <div className="modal-backdrop cmd-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="cmd-palette" role="dialog" aria-label={tr(lang, 'commandPalette')} onMouseDown={(e) => e.stopPropagation()}>
+      <div className="cmd-palette" role="dialog" aria-label={tr(lang, 'commandPalette')} ref={containerRef} onMouseDown={(e) => e.stopPropagation()}>
         <div className="cmd-search-row">
           <span aria-hidden="true">⌘</span>
           <input ref={inputRef} value={query} dir="auto" placeholder={tr(lang, 'commandPalettePlaceholder')}

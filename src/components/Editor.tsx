@@ -16,6 +16,9 @@ import { exportDocx, jsonToPlainText, escapeHtml, isSafeLinkUrl } from '../lib/d
 import { formatDocDate } from '../lib/date'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import NavigationPane from './NavigationPane'
+import KeyboardShortcutsDialog from './KeyboardShortcutsDialog'
+import { useDialogFocus } from './useDialogFocus'
+import { restoreFocus } from '../lib/keyboard'
 import StatsPanel from './StatsPanel'
 import SaveDiagnosticsPanel from './SaveDiagnosticsPanel'
 import ExportPresetsPanel from './ExportPresetsPanel'
@@ -119,6 +122,19 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [ctxMenu,setCtxMenu]=useState<{ items:MenuItemId[]; x:number; y:number; linkHref:string|null }|null>(null)
   const [altOpen,setAltOpen]=useState(false)
   const [altText,setAltText]=useState('')
+  const [shortcutsOpen,setShortcutsOpen]=useState(false)
+  // M2-15 dialog focus: the opener is captured synchronously in the open
+  // handler (before any autoFocus input can steal it); the dialog refs
+  // anchor the Tab trap. Find & Replace gets its own opener ref because
+  // it is a panel, not a dialog (see FindReplacePanel's `opener` prop).
+  const dialogOpenerRef=useRef<Element|null>(null)
+  const findOpenerRef=useRef<Element|null>(null)
+  const versionsOpenerRef=useRef<Element|null>(null)
+  const versionsWasOpenRef=useRef(false)
+  const linkDialogRef=useRef<HTMLDivElement>(null)
+  const altDialogRef=useRef<HTMLFormElement>(null)
+  const imgPreviewDialogRef=useRef<HTMLDivElement>(null)
+  const imgEditDialogRef=useRef<HTMLFormElement>(null)
   const longPressRef=useRef<{ timer:any; x:number; y:number; moved:boolean }|null>(null)
   const longPressMenuRef=useRef(0)
   const saveTimer=useRef<any>(null)
@@ -156,6 +172,20 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const pageRef=useRef<HTMLDivElement>(null)
 
   useEffect(()=>{ if(!toast) return; const id=setTimeout(()=>setToast(''),6000); return ()=>clearTimeout(id) },[toast])
+
+  // M2-15: editor dialogs — Tab trapped inside, Esc closes (inputs with
+  // their own Esc handlers close idempotently), focus returns to the
+  // opener captured in the open handlers. Link/alt keep their autoFocus
+  // inputs, so autofocus stays off there; image-preview focuses Insert
+  // (the last button) so Enter confirms instead of cancelling.
+  useDialogFocus(linkOpen, { containerRef: linkDialogRef, onClose: ()=>setLinkOpen(false), autofocus: false, trap: true, opener: dialogOpenerRef.current })
+  useDialogFocus(altOpen, { containerRef: altDialogRef, onClose: ()=>setAltOpen(false), autofocus: false, trap: true, opener: dialogOpenerRef.current })
+  useDialogFocus(imgPreview!==null, { containerRef: imgPreviewDialogRef, onClose: ()=>setImgPreview(null), autofocusLast: true, trap: true, opener: dialogOpenerRef.current })
+  useDialogFocus(imgEditOpen, { containerRef: imgEditDialogRef, onClose: ()=>setImgEditOpen(false), autofocus: true, trap: true, opener: dialogOpenerRef.current })
+  // M2-15: versions region panel — no autoFocus inside, so the opener is
+  // simply the focused toggle button at open time; Esc is on the panel
+  // root below, focus return here.
+  useEffect(()=>{ if(versionsOpen && !versionsWasOpenRef.current) versionsOpenerRef.current=document.activeElement; if(!versionsOpen && versionsWasOpenRef.current) restoreFocus(versionsOpenerRef.current); versionsWasOpenRef.current=versionsOpen },[versionsOpen])
 
   // M2-13: a flush HANDS OFF to the parent and marks the status
   // 'saving' with an awaiting confirmation — it must NOT claim 'saved'
@@ -451,14 +481,14 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
 
   // M2-07: picking a file now only OPENS a preview — insertion happens
   // on the preview dialog's Insert button, never on file-pick directly.
-  const onImage=(e:React.ChangeEvent<HTMLInputElement>)=>{ const f=e.target.files?.[0]; e.target.value=''; if(!f) return; const err=validateImageFile(f); if(err){ setToast(t(err)); return } const r=new FileReader(); r.onerror=()=>setToast(t('importFailed')); r.onload=()=> setImgPreview({ src:String(r.result), size:f.size }); r.readAsDataURL(f) }
+  const onImage=(e:React.ChangeEvent<HTMLInputElement>)=>{ const f=e.target.files?.[0]; e.target.value=''; if(!f) return; const err=validateImageFile(f); if(err){ setToast(t(err)); return } const r=new FileReader(); r.onerror=()=>setToast(t('importFailed')); r.onload=()=>{ dialogOpenerRef.current=document.activeElement; setImgPreview({ src:String(r.result), size:f.size }) }; r.readAsDataURL(f) }
   const insertPreviewImage=()=>{ if(!imgPreview) return; editor.chain().focus().setImage({src:imgPreview.src} as any).run(); setImgPreview(null) }
-  const openImageEdit=()=>{ const a=editor.getAttributes('image'); setImgSrc(a.src||''); setImgAlt(a.alt||''); setImgCaption(a.title||''); setImgWidth(typeof a.width==='string'? a.width : ''); setImgEditOpen(true) }
+  const openImageEdit=()=>{ dialogOpenerRef.current=document.activeElement; const a=editor.getAttributes('image'); setImgSrc(a.src||''); setImgAlt(a.alt||''); setImgCaption(a.title||''); setImgWidth(typeof a.width==='string'? a.width : ''); setImgEditOpen(true) }
   const applyImageEdit=()=>{ editor.chain().focus().updateAttributes('image', { src: imgSrc, alt: imgAlt.trim()||null, title: imgCaption.trim()||null, width: imgWidth||null } as any).run(); setImgEditOpen(false) }
   const deleteImageEdit=()=>{ editor.chain().focus().deleteSelection().run(); setImgEditOpen(false) }
   const onReplaceImage=(e:React.ChangeEvent<HTMLInputElement>)=>{ const f=e.target.files?.[0]; e.target.value=''; if(!f) return; const err=validateImageFile(f); if(err){ setToast(t(err)); return } const r=new FileReader(); r.onerror=()=>setToast(t('importFailed')); r.onload=()=> setImgSrc(String(r.result)); r.readAsDataURL(f) }
-  const openLink=()=>{ const sel=editor.state.selection; setLinkUrl(editor.getAttributes('link').href||''); setLinkText(sel.from===sel.to ? '' : editor.state.doc.textBetween(sel.from, sel.to, '\n')); setLinkTextShown(sel.from!==sel.to); setLinkOpen(true) }
-  const openLinkAt=(from:number, to:number)=>{ editor.chain().focus().setTextSelection({from, to}).run(); const sel=editor.state.selection; setLinkUrl(editor.getAttributes('link').href||''); setLinkText(editor.state.doc.textBetween(sel.from, sel.to, '\n')); setLinkTextShown(true); setLinkOpen(true) }
+  const openLink=()=>{ dialogOpenerRef.current=document.activeElement; const sel=editor.state.selection; setLinkUrl(editor.getAttributes('link').href||''); setLinkText(sel.from===sel.to ? '' : editor.state.doc.textBetween(sel.from, sel.to, '\n')); setLinkTextShown(sel.from!==sel.to); setLinkOpen(true) }
+  const openLinkAt=(from:number, to:number)=>{ dialogOpenerRef.current=document.activeElement; editor.chain().focus().setTextSelection({from, to}).run(); const sel=editor.state.selection; setLinkUrl(editor.getAttributes('link').href||''); setLinkText(editor.state.doc.textBetween(sel.from, sel.to, '\n')); setLinkTextShown(true); setLinkOpen(true) }
   const applyLink=()=>{
     const url=linkUrl.trim()
     const sel=editor.state.selection; const curText=sel.from===sel.to ? '' : editor.state.doc.textBetween(sel.from, sel.to, '\n')
@@ -537,6 +567,9 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   }
   const runMenuAction=(id:MenuItemId)=>{
     if(!editor) return
+    // M2-15: menu actions that open a dialog (link, image alt) return
+    // focus here on close; openLink re-records the same element.
+    dialogOpenerRef.current=document.activeElement
     const linkHref=ctxMenu?.linkHref ?? null
     setCtxMenu(null)
     const chain=()=>editor.chain().focus()
@@ -640,7 +673,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Btn onClick={()=>editor.chain().focus().unsetAllMarks().clearNodes().run()}>{t('clearFormatting')}</Btn></Group>
         <Group label={t('groupParagraph')}><Btn active={editor.isActive({textAlign:'left'})} onClick={()=>editor.chain().focus().setTextAlign('left').run()}>{t('alignLeft')}</Btn><Btn active={editor.isActive({textAlign:'center'})} onClick={()=>editor.chain().focus().setTextAlign('center').run()}>{t('alignCenter')}</Btn><Btn active={editor.isActive({textAlign:'right'})} onClick={()=>editor.chain().focus().setTextAlign('right').run()}>{t('alignRight')}</Btn><Btn active={editor.isActive({textAlign:'justify'})} onClick={()=>editor.chain().focus().setTextAlign('justify').run()}>{t('alignJustify')}</Btn><select aria-label={t('lineSpacing')} value={curLineHeight} onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(!v) c.unsetLineHeight().run(); else c.setLineHeight(v).run() }}><option value="">{t('lineSpacing')}</option>{curLineHeight && !LINE_HEIGHTS.includes(curLineHeight) && <option value={curLineHeight}>{curLineHeight}</option>}{LINE_HEIGHTS.map(v=><option key={v} value={v}>{v}</option>)}</select>{!compactToolbar && <><Btn active={editor.isActive('bulletList')} onClick={()=>editor.chain().focus().toggleBulletList().run()}>{t('bulletList')}</Btn><Btn active={editor.isActive('orderedList')} onClick={()=>editor.chain().focus().toggleOrderedList().run()}>{t('orderedList')}</Btn><Btn active={editor.isActive('blockquote')} onClick={()=>editor.chain().focus().toggleBlockquote().run()}>{t('quote')}</Btn></>}</Group>
         <Group label={t('groupStyles')}><div className="styles-gallery" role="group" aria-label={t('groupStyles')}><button type="button" className={`style-gal${styleId==='normal'?' active':''}`} onClick={()=>editor.chain().focus().setParagraph().run()}>{t('paragraph')}</button><button type="button" className={`style-gal style-h1${styleId==='heading1'?' active':''}`} onClick={()=>editor.chain().focus().toggleHeading({level:1}).run()}>{t('heading1')}</button><button type="button" className={`style-gal style-h2${styleId==='heading2'?' active':''}`} onClick={()=>editor.chain().focus().toggleHeading({level:2}).run()}>{t('heading2')}</button><button type="button" className={`style-gal style-h3${styleId==='heading3'?' active':''}`} onClick={()=>editor.chain().focus().toggleHeading({level:3}).run()}>{t('heading3')}</button><button type="button" className={`style-gal style-title${styleId==='title'?' active':''}`} onClick={applyTitleStyle}>{t('styleTitle')}</button></div></Group>
-        <Group label={t('groupEditing')}><Btn onClick={()=>setFindOpen(true)}>{t('findReplace')}</Btn></Group>
+        <Group label={t('groupEditing')}><Btn onClick={()=>{ findOpenerRef.current=document.activeElement; setFindOpen(true) }}>{t('findReplace')}</Btn></Group>
       </>}
       {tab==='Insert' && <>
         <Group label={t('groupTable')}><Btn onClick={()=>editor.chain().focus().insertTable({rows:3,cols:3,withHeaderRow:true}).run()}>{t('insertTable')}</Btn><Btn onClick={()=>editor.chain().focus().addRowBefore().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('addRowBefore')}</Btn><Btn onClick={()=>editor.chain().focus().addRowAfter().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('addRow')}</Btn><Btn onClick={()=>editor.chain().focus().addColumnBefore().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('addColumnBefore')}</Btn><Btn onClick={()=>editor.chain().focus().addColumnAfter().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('addColumn')}</Btn><Btn onClick={()=>editor.chain().focus().deleteRow().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('deleteRow')}</Btn><Btn onClick={()=>editor.chain().focus().deleteColumn().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('deleteColumn')}</Btn><Btn active={editor.isActive('tableHeader')} onClick={()=>editor.chain().focus().toggleHeaderRow().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('toggleHeaderRow')}</Btn><Btn onClick={()=>editor.chain().focus().deleteTable().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('deleteTable')}</Btn></Group>
@@ -666,16 +699,17 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('groupViews')}><Btn onClick={enterFocus}>{t('focusMode')}</Btn><Btn onClick={enterReading}>{t('readingMode')}</Btn></Group>
         <Group label={t('groupShow')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn></Group>
         <Group label={t('saveDiagnostics')}><Btn active={saveDiagOpen} onClick={()=>setSaveDiagOpen(o=>!o)}>{t('saveDiagnostics')}</Btn></Group>
+        <Group label={t('keyboardShortcuts')}><Btn active={shortcutsOpen} onClick={()=>setShortcutsOpen(o=>!o)}>{t('keyboardShortcuts')}</Btn></Group>
         <Group label={t('groupZoom')}><Btn onClick={()=>setZoom(z=>zoomStep(z,-10))}>−</Btn><span className="static-stat">{zoom}%</span><Btn onClick={()=>setZoom(z=>zoomStep(z,10))}>+</Btn><Btn onClick={()=>setZoom(100)}>100%</Btn><Btn onClick={()=>setZoom(50)}>50%</Btn><Btn onClick={()=>setZoom(200)}>200%</Btn></Group>
       </>}
       </div>
-      {linkOpen && <div className="link-pop" role="dialog" aria-label={t('link')}>
+      {linkOpen && <div className="link-pop" role="dialog" aria-label={t('link')} ref={linkDialogRef}>
         <label>{t('linkPrompt')}<input autoFocus value={linkUrl} dir="ltr" placeholder="https://…" onChange={e=>setLinkUrl(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); applyLink() } if(e.key==='Escape') setLinkOpen(false) }}/></label>
         {linkTextShown && <label>{t('linkTextLabel')}<input value={linkText} dir="auto" onChange={e=>setLinkText(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); applyLink() } if(e.key==='Escape') setLinkOpen(false) }}/></label>}
         <div className="row"><button className="primary small" onClick={applyLink}>{t('save')}</button>{editor.isActive('link') && <button className="rbtn" onClick={removeLink}>{t('removeLink')}</button>}<button className="rbtn" onClick={()=>setLinkOpen(false)}>{t('cancel')}</button></div>
       </div>}
     </div>}
-    {viewMode==='edit' && findOpen && <FindReplacePanel editor={editor} lang={lang} onClose={()=>setFindOpen(false)} onBeforeReplaceAll={beforeReplaceAll} />}
+    {viewMode==='edit' && findOpen && <FindReplacePanel editor={editor} lang={lang} onClose={()=>setFindOpen(false)} onBeforeReplaceAll={beforeReplaceAll} opener={findOpenerRef.current} />}
     {viewMode==='edit' && recovery && <div className="recovery-banner" role="alert">
       <div><b>{t('recoveryNotice')}</b> — {t('recoveryDiff')}</div>
       <div className="recovery-compare" dir="auto">{t('saved')}: {recovery.savedLength} {t('chars')} · {t('versionTriggerRecovery')}: {recovery.draftLength} {t('chars')}</div>
@@ -688,7 +722,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     {viewMode==='edit' && compareOpen && <ComparePanel editor={editor} doc={doc} versions={versions} lang={lang} onClose={()=>setCompareOpen(false)} onVersionsSaved={(next)=>setVersions(next)} />}
     {viewMode==='edit' && intelligenceOpen && <IntelligencePanel editor={editor} lang={lang} onClose={()=>setIntelligenceOpen(false)} />}
     {viewMode==='edit' && linksOpen && <LinkManagerPanel editor={editor} lang={lang} onClose={()=>setLinksOpen(false)} onEditLink={openLinkAt} />}
-    {viewMode==='edit' && versionsOpen && <div className="versions-panel" role="region" aria-label={t('versions')}>
+    {viewMode==='edit' && versionsOpen && <div className="versions-panel" role="region" aria-label={t('versions')}
+      onKeyDown={(e) => { if (e.key === 'Escape') setVersionsOpen(false) }}>
       <div className="find-row">
         <input value={versionLabel} dir="auto" onChange={e=>setVersionLabel(e.target.value)} placeholder={t('versionNamePlaceholder')} aria-label={t('versionNamePlaceholder')}/>
         <button type="button" className="primary small" onClick={saveVersionManual}>{t('versionSave')}</button>
@@ -734,9 +769,10 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <div className="status-zoom"><span>{t('zoom')}</span><button type="button" className="status-btn" aria-label={t('zoomOut')} onClick={()=>setZoom(z=>zoomStep(z,-10))}>−</button><input type="range" min={50} max={200} step={5} value={zoom} onChange={e=>setZoom(clampZoom(Number(e.target.value)))} aria-label={t('zoom')}/><span>{zoom}%</span><button type="button" className="status-btn" aria-label={t('zoomIn')} onClick={()=>setZoom(z=>zoomStep(z,10))}>+</button></div>
     </footer>}
     {ctxMenu && <ContextMenu items={ctxMenu.items} x={ctxMenu.x} y={ctxMenu.y} lang={lang} onAction={runMenuAction} onClose={()=>setCtxMenu(null)} />}
-    {altOpen && <div className="modal-backdrop" onClick={()=>setAltOpen(false)}><form className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageAlt() }}><h2>{t('menuImageAlt')}</h2><label className="field">{t('imageAltPrompt')}<input autoFocus value={altText} dir="auto" onChange={e=>setAltText(e.target.value)} /></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setAltOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
-    {imgPreview && <div className="modal-backdrop" onClick={()=>setImgPreview(null)}><div className="modal" onClick={e=>e.stopPropagation()}><h2>{t('imagePreview')}</h2><img src={imgPreview.src} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><p className="muted">{t('imageSizeKb')}: {imageSizeKb(imgPreview.size)}</p><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgPreview(null)}>{t('cancel')}</button><button type="button" className="primary small" onClick={insertPreviewImage}>{t('imageInsert')}</button></div></div></div>}
-    {imgEditOpen && <div className="modal-backdrop" onClick={()=>setImgEditOpen(false)}><form className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageEdit() }}><h2>{t('imageEdit')}</h2><img src={imgSrc} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><label className="field">{t('imageWidth')}<select value={imgWidth} onChange={e=>setImgWidth(e.target.value)}>{IMAGE_WIDTH_PRESETS.map(p=><option key={p.value} value={p.value}>{p.value==='' ? t('imageWidthOriginal') : p.label}</option>)}</select></label><label className="field">{t('imageCaption')}<input value={imgCaption} dir="auto" onChange={e=>setImgCaption(e.target.value)} /></label><label className="field">{t('imageAltPrompt')}<input value={imgAlt} dir="auto" onChange={e=>setImgAlt(e.target.value)} /></label><div className="row wrap"><button type="button" className="rbtn" onClick={()=>replaceImgRef.current?.click()}>{t('imageReplace')}</button><button type="button" className="danger-btn" onClick={deleteImageEdit}>{t('delete')}</button></div><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgEditOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
+    {altOpen && <div className="modal-backdrop" onClick={()=>setAltOpen(false)}><form className="modal" ref={altDialogRef} onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageAlt() }}><h2>{t('menuImageAlt')}</h2><label className="field">{t('imageAltPrompt')}<input autoFocus value={altText} dir="auto" onChange={e=>setAltText(e.target.value)} /></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setAltOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
+    {imgPreview && <div className="modal-backdrop" onClick={()=>setImgPreview(null)}><div className="modal" ref={imgPreviewDialogRef} onClick={e=>e.stopPropagation()}><h2>{t('imagePreview')}</h2><img src={imgPreview.src} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><p className="muted">{t('imageSizeKb')}: {imageSizeKb(imgPreview.size)}</p><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgPreview(null)}>{t('cancel')}</button><button type="button" className="primary small" onClick={insertPreviewImage}>{t('imageInsert')}</button></div></div></div>}
+    {imgEditOpen && <div className="modal-backdrop" onClick={()=>setImgEditOpen(false)}><form className="modal" ref={imgEditDialogRef} onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageEdit() }}><h2>{t('imageEdit')}</h2><img src={imgSrc} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><label className="field">{t('imageWidth')}<select value={imgWidth} onChange={e=>setImgWidth(e.target.value)}>{IMAGE_WIDTH_PRESETS.map(p=><option key={p.value} value={p.value}>{p.value==='' ? t('imageWidthOriginal') : p.label}</option>)}</select></label><label className="field">{t('imageCaption')}<input value={imgCaption} dir="auto" onChange={e=>setImgCaption(e.target.value)} /></label><label className="field">{t('imageAltPrompt')}<input value={imgAlt} dir="auto" onChange={e=>setImgAlt(e.target.value)} /></label><div className="row wrap"><button type="button" className="rbtn" onClick={()=>replaceImgRef.current?.click()}>{t('imageReplace')}</button><button type="button" className="danger-btn" onClick={deleteImageEdit}>{t('delete')}</button></div><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgEditOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
+    {shortcutsOpen && <KeyboardShortcutsDialog open={shortcutsOpen} onClose={()=>setShortcutsOpen(false)} lang={lang} />}
     {toast && <div className="toast" role="alert">{toast}</div>}
     <input ref={fileImgRef} type="file" accept="image/*" hidden onChange={onImage}/>
     <input ref={replaceImgRef} type="file" accept="image/*" hidden onChange={onReplaceImage}/>
