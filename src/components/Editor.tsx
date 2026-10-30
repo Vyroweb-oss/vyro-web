@@ -17,6 +17,7 @@ import { formatDocDate } from '../lib/date'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import NavigationPane from './NavigationPane'
 import FindReplacePanel from './FindReplacePanel'
+import { FocusDim, createViewSnapshot, focusWidthClass, viewModeClass, type FocusWidth, type ViewMode, type ViewSnapshot } from '../lib/viewModes'
 
 export interface EditorPaletteActions {
   insertTable: () => void
@@ -60,6 +61,11 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [linkUrl,setLinkUrl]=useState('')
   const [navOpen,setNavOpen]=useState(false)
   const [findOpen,setFindOpen]=useState(false)
+  // M2-03 view modes: session-only editor state, never persisted to the doc.
+  const [viewMode,setViewMode]=useState<ViewMode>('edit')
+  const [focusWidth,setFocusWidth]=useState<FocusWidth>('normal')
+  const viewSnapshotRef=useRef<ViewSnapshot|null>(null)
+  const restoreRef=useRef<ViewSnapshot|null>(null)
   const [toolsOpen,setToolsOpen]=useState(false)
   const saveTimer=useRef<any>(null)
   const pendingJson=useRef<any>(null)
@@ -95,7 +101,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       TextStyleKit, Highlight.configure({multicolor:true}),
       TableKit.configure({ table:{ resizable:true } }),
       Image, Placeholder.configure({ placeholder: t('startTyping') }),
-      CharacterCount, PageBreak,
+      CharacterCount, PageBreak, FocusDim,
     ],
     content: doc.content,
     editorProps:{ attributes:{ dir: doc.dir, spellcheck: String(spell) } as any },
@@ -108,6 +114,16 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   },[doc.id])
 
   useEffect(()=>{ if(editor){ editor.view.dom.setAttribute('spellcheck', String(spell)); editor.view.dom.setAttribute('dir', doc.dir) } },[spell, doc.dir, editor])
+
+  // M2-03: enter/exit for Focus + Reading modes. Entering Reading records
+  // scroll + selection; exiting restores them. Focus keeps the editor
+  // editable and preserves the live cursor on exit (re-focused). Neither
+  // mode touches document content — only chrome, editable state and CSS.
+  const enterFocus=()=>{ if(viewMode==='reading') restoreRef.current=viewSnapshotRef.current; viewSnapshotRef.current=null; setNavOpen(false); setFindOpen(false); setViewMode('focus') }
+  const enterReading=()=>{ if(!editor) return; viewSnapshotRef.current=createViewSnapshot(workspaceRef.current?.scrollTop??0, editor.state.selection.from, editor.state.selection.to); setNavOpen(false); setFindOpen(false); setViewMode('reading') }
+  const exitMode=()=>{ if(viewMode==='reading') restoreRef.current=viewSnapshotRef.current; viewSnapshotRef.current=null; setViewMode('edit'); if(viewMode==='focus' && editor) editor.commands.focus() }
+  useEffect(()=>{ if(!editor) return; editor.setEditable(viewMode!=='reading'); if(viewMode==='reading') return; const snap=restoreRef.current; if(!snap) return; restoreRef.current=null; const ws=workspaceRef.current; if(ws) ws.scrollTop=snap.scrollTop; try{ editor.commands.setTextSelection({from:snap.from, to:snap.to}); editor.commands.focus() }catch{ /* selection restore is best-effort */ } },[editor, viewMode])
+  useEffect(()=>{ if(viewMode==='edit') return; const h=(e:KeyboardEvent)=>{ if(e.key==='Escape'){ e.preventDefault(); exitMode() } }; window.addEventListener('keydown', h); return ()=>window.removeEventListener('keydown', h) },[viewMode])
 
   // Font read-back: the family/size selects must REFLECT the textStyle at the
   // cursor, not just set it. getAttributes('textStyle') resolves the marks at
@@ -195,8 +211,13 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const pageMinH = doc.orientation==='landscape' ? '210mm':'297mm'
   const saveText = saveState==='saving'? t('saving') : savedAt? `${t('saved')} ${savedAt}` : t('savedLocally')
 
-  return <div className="editor-shell">
-    <header className="editor-top">
+  return <div className={`editor-shell${viewMode!=='edit' ? ` ${viewModeClass(viewMode)}` : ''}`}>
+    {viewMode!=='edit' && <div className="view-mode-bar" role="toolbar" aria-label={viewMode==='focus' ? t('focusMode') : t('readingMode')}>
+      <span className="view-mode-label">{viewMode==='focus' ? t('focusMode') : t('readingMode')}</span>
+      {viewMode==='focus' && <label className="view-mode-width">{t('textWidth')}<select aria-label={t('textWidth')} value={focusWidth} onChange={e=>setFocusWidth(e.target.value as FocusWidth)}><option value="narrow">{t('narrow')}</option><option value="normal">{t('normal')}</option><option value="wide">{t('wide')}</option></select></label>}
+      <button type="button" className="rbtn view-mode-exit" onClick={exitMode}>{viewMode==='focus' ? t('exitFocusMode') : t('exitReadingMode')}</button>
+    </div>}
+    {viewMode==='edit' && <header className="editor-top">
       <div className="top-start"><button className="back-btn" onClick={goBack}>← {t('dashboard')}</button><div className="logo"><span className="vmark">V</span> Vyro Web</div></div>
       <input className="title-input" value={doc.title} dir="auto" onChange={e=>onChange({title:e.target.value})} aria-label={t('docTitleLabel')}/>
       <div className="top-end">
@@ -206,8 +227,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         {onLangChange && <div className="lang-toggle mini" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>onLangChange('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>onLangChange('fa')}>فا</button></div>}
         <button className="rbtn" onClick={onToggleTheme} title={theme==='dark'? t('lightUi'):t('darkUi')} aria-label={theme==='dark'? t('lightUi'):t('darkUi')}>{theme==='dark'?'☀':'☾'}</button>
       </div>
-    </header>
-    <div className={`ribbon-wrap${toolsOpen?' expanded':''}`}>
+    </header>}
+    {viewMode==='edit' && <div className={`ribbon-wrap${toolsOpen?' expanded':''}`}>
       <nav className="ribbon-tabs">{TABS.map(tb=><button key={tb.id} className={tab===tb.id?'tab active':'tab'} onClick={()=>setTab(tb.id)}>{t(tb.key)}</button>)}<button className="tools-toggle" aria-expanded={toolsOpen} onClick={()=>setToolsOpen(o=>!o)}>{t('moreTools')} {toolsOpen?'▴':'▾'}</button></nav>
       <div className="ribbon">
       {tab==='File' && <>
@@ -246,6 +267,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       </>}
       {tab==='View' && <>
         <Group label={t('navigationPane')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn><Btn active={findOpen} onClick={()=>setFindOpen(o=>!o)}>{t('findReplace')}</Btn></Group>
+        <Group label={t('groupViewModes')}><Btn onClick={enterFocus}>{t('focusMode')}</Btn><Btn onClick={enterReading}>{t('readingMode')}</Btn></Group>
         <Group label={t('groupZoom')}><Btn onClick={()=>setZoom(z=>Math.max(50,z-10))}>−</Btn><span className="static-stat">{zoom}%</span><Btn onClick={()=>setZoom(z=>Math.min(200,z+10))}>+</Btn><Btn onClick={()=>setZoom(100)}>100%</Btn><Btn onClick={()=>setZoom(50)}>50%</Btn><Btn onClick={()=>setZoom(200)}>200%</Btn></Group>
         <Group label={t('groupTheme')}><Btn onClick={onToggleTheme}>{theme==='dark'? t('lightUi'):t('darkUi')}</Btn></Group>
         <Group label={t('groupDirection')}><span className="static-stat">{t('documentLabel')}: {doc.dir.toUpperCase()}</span></Group>
@@ -255,26 +277,26 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <label>{t('linkPrompt')}<input autoFocus value={linkUrl} dir="ltr" placeholder="https://…" onChange={e=>setLinkUrl(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); applyLink() } if(e.key==='Escape') setLinkOpen(false) }}/></label>
         <div className="row"><button className="primary small" onClick={applyLink}>{t('save')}</button>{editor.isActive('link') && <button className="rbtn" onClick={removeLink}>{t('removeLink')}</button>}<button className="rbtn" onClick={()=>setLinkOpen(false)}>{t('cancel')}</button></div>
       </div>}
-    </div>
-    {findOpen && <FindReplacePanel editor={editor} lang={lang} onClose={()=>setFindOpen(false)} />}
+    </div>}
+    {viewMode==='edit' && findOpen && <FindReplacePanel editor={editor} lang={lang} onClose={()=>setFindOpen(false)} />}
     <div className="editor-body">
-    {navOpen && <NavigationPane editor={editor} lang={lang} onCollapse={()=>setNavOpen(false)} />}
+    {viewMode==='edit' && navOpen && <NavigationPane editor={editor} lang={lang} onCollapse={()=>setNavOpen(false)} />}
     <div className="workspace" ref={workspaceRef}>
       <div className="page-scaler" style={{ width:`${Math.round(pageMmW*MM_PX*effScale)}px`, height:`${Math.round(pagePxH*effScale)}px` }}>
         <div className="page-scale-inner" style={{ transform:`scale(${effScale})`, width:`${Math.round(pageMmW*MM_PX)}px` }}>
-          <div ref={pageRef} className={`a4-page ${doc.orientation==='landscape'?'landscape':'portrait'}`} style={{ width:pageW, minHeight:pageMinH, padding:MARGINS[doc.margins||'normal'] }}>
+          <div ref={pageRef} className={`a4-page ${doc.orientation==='landscape'?'landscape':'portrait'}${viewMode==='focus' ? ` ${focusWidthClass(focusWidth)}` : ''}`} style={{ width:pageW, minHeight:pageMinH, padding:MARGINS[doc.margins||'normal'] }}>
             <EditorContent editor={editor}/>
           </div>
         </div>
       </div>
     </div>
     </div>
-    <footer className="status-bar">
+    {viewMode==='edit' && <footer className="status-bar">
       <span className="status-save">{saveText}</span>
       <span>{words} {t('words')} · {chars} {t('chars')}</span>
       <span className="status-dir">{doc.dir==='rtl' ? 'RTL · دری/فارسی' : 'LTR · English'}</span>
       <div className="status-zoom"><span>{t('zoom')}</span><button type="button" className="status-btn" aria-label="Zoom out" onClick={()=>setZoom(z=>Math.max(50,z-10))}>−</button><input type="range" min={50} max={200} step={5} value={zoom} onChange={e=>setZoom(Number(e.target.value))} aria-label={t('zoom')}/><span>{zoom}%</span><button type="button" className="status-btn" aria-label="Zoom in" onClick={()=>setZoom(z=>Math.min(200,z+10))}>+</button></div>
-    </footer>
+    </footer>}
     {toast && <div className="toast" role="alert">{toast}</div>}
     <input ref={fileImgRef} type="file" accept="image/*" hidden onChange={onImage}/>
     <input ref={importRef} type="file" accept=".txt,.docx" hidden onChange={onImport}/>

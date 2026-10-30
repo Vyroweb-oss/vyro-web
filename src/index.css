@@ -329,3 +329,27 @@ input:focus,select:focus{border-color:var(--brand)}
   .nav-pane{width:auto;flex:0 0 auto;max-height:42vh;border-inline-end:0;border-bottom:1px solid var(--border)}
 }
 @media print{ .nav-pane,.find-panel{display:none!important} }
+
+/* ---------- focus + reading modes (M2-03) ---------- */
+/* Slim floating exit bar: the only chrome in focus/reading modes. */
+.view-mode-bar{display:flex;align-items:center;gap:12px;padding:8px 14px;background:var(--surface);border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm);position:sticky;top:0;z-index:55}
+.view-mode-label{font-weight:800;font-size:14px;white-space:nowrap}
+.view-mode-width{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-inline-start:auto}
+.view-mode-width select{min-height:38px;padding:6px 9px}
+.view-mode-bar .view-mode-exit{margin-inline-start:auto;font-weight:700}
+.view-mode-width + .view-mode-exit{margin-inline-start:0}
+/* Current-paragraph focus: the ProseMirror plugin marks every non-active
+   top-level block `focus-dimmed`; dimming applies ONLY in focus mode. */
+.mode-focus .focus-dimmed{opacity:.32;transition:opacity .18s ease}
+.mode-focus .focus-dimmed img{opacity:.6}
+/* Adjustable text width in focus mode (max-width caps the A4 page; the
+   page stays centred inside its scaler). No direction properties here. */
+.mode-focus .a4-page.focus-width-narrow{max-width:560px;margin-inline:auto}
+.mode-focus .a4-page.focus-width-normal{max-width:700px;margin-inline:auto}
+.mode-focus .a4-page.focus-width-wide{max-width:900px;margin-inline:auto}
+/* Reading typography: larger, comfortable, generous spacing. No direction
+   or text-align rules, so RTL docs keep their own dir alignment. */
+.mode-reading .a4-page .tiptap{font-size:19px;line-height:1.9}
+.mode-reading .a4-page .tiptap p{margin:0 0 1em}
+.mode-reading .a4-page .tiptap h1,.mode-reading .a4-page .tiptap h2,.mode-reading .a4-page .tiptap h3{line-height:1.5}
+@media print{ .view-mode-bar{display:none!important} }

@@ -202,6 +202,12 @@ const en = {
   replaceScopeSelection: 'Replace all applies only to the selected text.',
   replaceScopeWhole: 'Whole document',
   noMatchesFound: 'No matches',
+  focusMode: 'Focus mode',
+  readingMode: 'Reading mode',
+  exitFocusMode: 'Exit focus mode',
+  exitReadingMode: 'Exit reading mode',
+  textWidth: 'Text width',
+  groupViewModes: 'View modes',
 } as const
 
 export type I18nKey = keyof typeof en
@@ -406,6 +412,12 @@ const fa: Record<I18nKey, string> = {
   replaceScopeSelection: 'جایگزینی همه فقط در متن انتخاب‌شده انجام می‌شود.',
   replaceScopeWhole: 'کل سند',
   noMatchesFound: 'موردی یافت نشد',
+  focusMode: 'حالت تمرکز',
+  readingMode: 'حالت مطالعه',
+  exitFocusMode: 'خروج از حالت تمرکز',
+  exitReadingMode: 'خروج از حالت مطالعه',
+  textWidth: 'پهنای متن',
+  groupViewModes: 'حالت‌های نمایش',
 }
 
 export const STRINGS: Record<UiLang, Record<I18nKey, string>> = { en, fa }
