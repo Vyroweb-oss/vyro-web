@@ -16,6 +16,7 @@ import { exportDocx, jsonToPlainText, escapeHtml, isSafeLinkUrl } from '../lib/d
 import { formatDocDate } from '../lib/date'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import NavigationPane from './NavigationPane'
+import StatsPanel from './StatsPanel'
 import FindReplacePanel from './FindReplacePanel'
 import { createSnapshot, addVersion, loadVersions, saveVersions, restoreVersion, listVersions, type VersionSnapshot, type VersionTrigger } from '../lib/versions'
 import { saveDraft, loadDraft, clearDraft, detectRecovery, acceptDraft, type RecoveryInfo } from '../lib/recovery'
@@ -62,6 +63,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [linkOpen,setLinkOpen]=useState(false)
   const [linkUrl,setLinkUrl]=useState('')
   const [navOpen,setNavOpen]=useState(false)
+  // M2-05 document statistics panel (derived live, no stored state).
+  const [statsOpen,setStatsOpen]=useState(false)
   const [findOpen,setFindOpen]=useState(false)
   // M2-03 view modes: session-only editor state, never persisted to the doc.
   const [viewMode,setViewMode]=useState<ViewMode>('edit')
@@ -347,6 +350,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       </>}
       {tab==='View' && <>
         <Group label={t('navigationPane')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn><Btn active={findOpen} onClick={()=>setFindOpen(o=>!o)}>{t('findReplace')}</Btn></Group>
+        <Group label={t('documentStatistics')}><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
         <Group label={t('groupViewModes')}><Btn onClick={enterFocus}>{t('focusMode')}</Btn><Btn onClick={enterReading}>{t('readingMode')}</Btn></Group>
         <Group label={t('versions')}><Btn active={versionsOpen} onClick={()=>setVersionsOpen(o=>!o)}>{t('versions')}</Btn></Group>
         <Group label={t('groupZoom')}><Btn onClick={()=>setZoom(z=>Math.max(50,z-10))}>−</Btn><span className="static-stat">{zoom}%</span><Btn onClick={()=>setZoom(z=>Math.min(200,z+10))}>+</Btn><Btn onClick={()=>setZoom(100)}>100%</Btn><Btn onClick={()=>setZoom(50)}>50%</Btn><Btn onClick={()=>setZoom(200)}>200%</Btn></Group>
@@ -366,6 +370,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <div className="recovery-excerpt" dir="auto"><span>{t('saved')}: “{recovery.savedExcerpt}”</span><span>{t('versionTriggerRecovery')}: “{recovery.draftExcerpt}”</span></div>
       <div className="row"><button type="button" className="primary small" onClick={acceptRecovery}>{t('recoveryAccept')}</button><button type="button" className="rbtn" onClick={discardRecovery}>{t('recoveryDiscard')}</button></div>
     </div>}
+    {viewMode==='edit' && statsOpen && <StatsPanel editor={editor} lang={lang} onClose={()=>setStatsOpen(false)} />}
     {viewMode==='edit' && versionsOpen && <div className="versions-panel" role="region" aria-label={t('versions')}>
       <div className="find-row">
         <input value={versionLabel} dir="auto" onChange={e=>setVersionLabel(e.target.value)} placeholder={t('versionNamePlaceholder')} aria-label={t('versionNamePlaceholder')}/>

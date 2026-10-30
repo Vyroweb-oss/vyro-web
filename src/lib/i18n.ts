@@ -227,6 +227,21 @@ const en = {
   recoveryAccept: 'Use recovered draft',
   recoveryDiscard: 'Discard draft',
   recoveryAccepted: 'Recovered draft applied — the saved version was kept as a backup.',
+  documentStatistics: 'Document statistics',
+  statsDocument: 'Document',
+  statsSelection: 'Selection',
+  statsWords: 'Words',
+  statsCharsWithSpaces: 'Characters (with spaces)',
+  statsCharsWithoutSpaces: 'Characters (without spaces)',
+  statsParagraphs: 'Paragraphs',
+  statsHeadings: 'Headings',
+  statsTables: 'Tables',
+  statsImages: 'Images',
+  statsSentences: 'Sentences',
+  statsAvgSentenceLength: 'Average sentence length (words)',
+  statsReadingTimeEstimate: 'Reading time (estimate)',
+  statsEstimatedPages: 'Estimated pages',
+  statsLive: 'Updates live as you edit and select.',
 } as const
 
 export type I18nKey = keyof typeof en
@@ -456,6 +471,21 @@ const fa: Record<I18nKey, string> = {
   recoveryAccept: 'استفاده از پیش‌نویس بازیابی‌شده',
   recoveryDiscard: 'نادیده‌گرفتن پیش‌نویس',
   recoveryAccepted: 'پیش‌نویس بازیابی‌شده اعمال شد — نسخهٔ ذخیره‌شده به‌عنوان پشتیبان نگه داشته شد.',
+  documentStatistics: 'آمار سند',
+  statsDocument: 'سند',
+  statsSelection: 'انتخاب‌شده',
+  statsWords: 'واژه‌ها',
+  statsCharsWithSpaces: 'نویسه‌ها (با فاصله)',
+  statsCharsWithoutSpaces: 'نویسه‌ها (بدون فاصله)',
+  statsParagraphs: 'پاراگراف‌ها',
+  statsHeadings: 'تیترها',
+  statsTables: 'جدول‌ها',
+  statsImages: 'تصویرها',
+  statsSentences: 'جمله‌ها',
+  statsAvgSentenceLength: 'میانگین طول جمله (واژه)',
+  statsReadingTimeEstimate: 'زمان خواندن (تخمینی)',
+  statsEstimatedPages: 'صفحه‌های تخمینی',
+  statsLive: 'با ویرایش و انتخاب شما زنده به‌روز می‌شود.',
 }
 
 export const STRINGS: Record<UiLang, Record<I18nKey, string>> = { en, fa }

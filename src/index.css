@@ -370,3 +370,14 @@ input:focus,select:focus{border-color:var(--brand)}
 [data-theme="dark"] .recovery-banner{background:#451a03;color:#fde68a;border-color:#92400e}
 .recovery-compare,.recovery-excerpt{font-size:13.5px;display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere}
 @media print{ .versions-panel,.recovery-banner{display:none!important} }
+
+/* ---------- document statistics (M2-05) ---------- */
+.stats-panel{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;flex-direction:column;gap:8px}
+.stats-grid{display:grid;grid-template-columns:1fr;gap:12px}
+.stats-grid.has-selection{grid-template-columns:1fr 1fr}
+.stats-column-title{font-weight:700;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.stats-rows{margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
+.stats-row{display:flex;justify-content:space-between;gap:12px;font-size:13.5px}
+.stats-row dt{color:var(--text-2)}
+.stats-row dd{margin:0;font-weight:700;overflow-wrap:anywhere;text-align:end}
+@media print{ .stats-panel{display:none!important} }
