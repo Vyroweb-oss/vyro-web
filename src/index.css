@@ -201,6 +201,15 @@ input:focus,select:focus{border-color:var(--brand)}
 .a4-page .tiptap td,.a4-page .tiptap th{border:1px solid #9aa7b8;padding:6px;vertical-align:top}
 .a4-page .tiptap th{background:#eef2f9;font-weight:700}
 .a4-page .tiptap img{max-width:100%;height:auto}
+/* M2-07 image width presets: the Image node's native width attr (a % string)
+   maps to a real width; height:auto above preserves the aspect ratio. */
+.a4-page .tiptap img[width="25%"]{width:25%}
+.a4-page .tiptap img[width="50%"]{width:50%}
+.a4-page .tiptap img[width="75%"]{width:75%}
+.a4-page .tiptap img[width="100%"]{width:100%}
+/* M2-07 table style choice: the header-row toggle only. No striped theme:
+   a class-based style would need a table-level attr and would not survive
+   the JSON round-trip as cleanly, so it is deliberately not added. */
 .a4-page .tiptap ::selection{background:#bcd2ff}
 .a4-page .tiptap p.is-editor-empty:first-child::before{content:attr(data-placeholder);float:inline-start;color:#9aa7b8;pointer-events:none;height:0}
 .a4-page hr.page-break{border:0;border-top:3px dashed var(--brand);margin:24px 0;position:relative}

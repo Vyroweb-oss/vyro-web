@@ -17,6 +17,8 @@ import { formatDocDate } from '../lib/date'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import NavigationPane from './NavigationPane'
 import StatsPanel from './StatsPanel'
+import LinkManagerPanel from './LinkManagerPanel'
+import { validateImageFile, imageSizeKb, IMAGE_WIDTH_PRESETS } from '../lib/images'
 import FindReplacePanel from './FindReplacePanel'
 import ContextMenu from './ContextMenu'
 import { sanitizePastedHtml, htmlToPlainText, getContextMenuItems, type MenuItemId } from '../lib/paste'
@@ -45,7 +47,6 @@ const PageBreak = Node.create({
 declare module '@tiptap/core' { interface Commands<ReturnType> { pageBreak: { insertPageBreak: () => ReturnType } } }
 
 const MARGINS = { narrow:'12.7mm', normal:'25.4mm', wide:'38.1mm' } as const
-const MAX_IMAGE_BYTES = 2 * 1024 * 1024
 const MM_PX = 96 / 25.4
 const FONT_FAMILIES = ['Vazirmatn', 'Tahoma', 'Arial', 'Georgia', "'Times New Roman'", "'Courier New'"]
 const FONT_SIZES = [11,12,14,16,18,20,24,28,36]
@@ -65,6 +66,17 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [toast,setToast]=useState('')
   const [linkOpen,setLinkOpen]=useState(false)
   const [linkUrl,setLinkUrl]=useState('')
+  const [linkText,setLinkText]=useState('')
+  const [linkTextShown,setLinkTextShown]=useState(false)
+  const [linksOpen,setLinksOpen]=useState(false)
+  // M2-07 image dialog (width presets + caption via native attrs) and
+  // insert-preview (file is only inserted after the user confirms).
+  const [imgEditOpen,setImgEditOpen]=useState(false)
+  const [imgSrc,setImgSrc]=useState('')
+  const [imgAlt,setImgAlt]=useState('')
+  const [imgCaption,setImgCaption]=useState('')
+  const [imgWidth,setImgWidth]=useState('')
+  const [imgPreview,setImgPreview]=useState<{ src:string; size:number }|null>(null)
   const [navOpen,setNavOpen]=useState(false)
   // M2-05 document statistics panel (derived live, no stored state).
   const [statsOpen,setStatsOpen]=useState(false)
@@ -93,6 +105,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [versionError,setVersionError]=useState('')
   const [recovery,setRecovery]=useState<RecoveryInfo|null>(null)
   const fileImgRef=useRef<HTMLInputElement>(null)
+  const replaceImgRef=useRef<HTMLInputElement>(null)
   const importRef=useRef<HTMLInputElement>(null)
   const workspaceRef=useRef<HTMLDivElement>(null)
   const pageRef=useRef<HTMLDivElement>(null)
@@ -296,9 +309,30 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     else { const txt=await f.text(); editor.commands.setContent(txt.split(/\n{2,}/).map((para:string)=>`<p>${escapeHtml(para).replace(/\n/g,'<br>')}</p>`).join('')); onChange({title:f.name.replace(/\.txt$/i,'')}, editor.getJSON()) }
   }catch(err:any){ setToast(`${t('importFailed')}: ${err?.message||err}`) } finally{ e.target.value='' } }
 
-  const onImage=(e:React.ChangeEvent<HTMLInputElement>)=>{ const f=e.target.files?.[0]; e.target.value=''; if(!f) return; if(!f.type.startsWith('image/')){ setToast(t('imageInvalid')); return } if(f.size>MAX_IMAGE_BYTES){ setToast(t('imageTooLarge')); return } const r=new FileReader(); r.onerror=()=>setToast(t('importFailed')); r.onload=()=> editor.chain().focus().setImage({src:String(r.result)}).run(); r.readAsDataURL(f) }
-  const openLink=()=>{ setLinkUrl(editor.getAttributes('link').href||''); setLinkOpen(true) }
-  const applyLink=()=>{ const url=linkUrl.trim(); if(url===''){ editor.chain().focus().unsetLink().run(); setLinkOpen(false); return } if(!isSafeLinkUrl(url)){ setToast(t('linkInvalid')); return } editor.chain().focus().setLink({href:url}).run(); setLinkOpen(false) }
+  // M2-07: picking a file now only OPENS a preview — insertion happens
+  // on the preview dialog's Insert button, never on file-pick directly.
+  const onImage=(e:React.ChangeEvent<HTMLInputElement>)=>{ const f=e.target.files?.[0]; e.target.value=''; if(!f) return; const err=validateImageFile(f); if(err){ setToast(t(err)); return } const r=new FileReader(); r.onerror=()=>setToast(t('importFailed')); r.onload=()=> setImgPreview({ src:String(r.result), size:f.size }); r.readAsDataURL(f) }
+  const insertPreviewImage=()=>{ if(!imgPreview) return; editor.chain().focus().setImage({src:imgPreview.src} as any).run(); setImgPreview(null) }
+  const openImageEdit=()=>{ const a=editor.getAttributes('image'); setImgSrc(a.src||''); setImgAlt(a.alt||''); setImgCaption(a.title||''); setImgWidth(typeof a.width==='string'? a.width : ''); setImgEditOpen(true) }
+  const applyImageEdit=()=>{ editor.chain().focus().updateAttributes('image', { src: imgSrc, alt: imgAlt.trim()||null, title: imgCaption.trim()||null, width: imgWidth||null } as any).run(); setImgEditOpen(false) }
+  const deleteImageEdit=()=>{ editor.chain().focus().deleteSelection().run(); setImgEditOpen(false) }
+  const onReplaceImage=(e:React.ChangeEvent<HTMLInputElement>)=>{ const f=e.target.files?.[0]; e.target.value=''; if(!f) return; const err=validateImageFile(f); if(err){ setToast(t(err)); return } const r=new FileReader(); r.onerror=()=>setToast(t('importFailed')); r.onload=()=> setImgSrc(String(r.result)); r.readAsDataURL(f) }
+  const openLink=()=>{ const sel=editor.state.selection; setLinkUrl(editor.getAttributes('link').href||''); setLinkText(sel.from===sel.to ? '' : editor.state.doc.textBetween(sel.from, sel.to, '\n')); setLinkTextShown(sel.from!==sel.to); setLinkOpen(true) }
+  const openLinkAt=(from:number, to:number)=>{ editor.chain().focus().setTextSelection({from, to}).run(); const sel=editor.state.selection; setLinkUrl(editor.getAttributes('link').href||''); setLinkText(editor.state.doc.textBetween(sel.from, sel.to, '\n')); setLinkTextShown(true); setLinkOpen(true) }
+  const applyLink=()=>{
+    const url=linkUrl.trim()
+    const sel=editor.state.selection; const curText=sel.from===sel.to ? '' : editor.state.doc.textBetween(sel.from, sel.to, '\n')
+    if(url===''){ editor.chain().focus().unsetLink().run(); setLinkOpen(false); return }
+    if(!isSafeLinkUrl(url)){ setToast(t('linkInvalid')); return }
+    // Manager edit with changed text: replace the range with the new text
+    // carrying the link mark, keeping the text (never dropping it).
+    if(linkText!=='' && linkText!==curText && sel.from!==sel.to){
+      editor.chain().focus().deleteSelection().insertContent({ type:'text', text:linkText, marks:[{ type:'link', attrs:{ href:url } }] }).run()
+    } else {
+      editor.chain().focus().setLink({href:url}).run()
+    }
+    setLinkOpen(false)
+  }
   const removeLink=()=>{ editor.chain().focus().unsetLink().run(); setLinkOpen(false) }
 
   // ---- M2-06 clipboard + contextual menu ----
@@ -463,8 +497,9 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('groupLists')}><Btn active={editor.isActive('bulletList')} onClick={()=>editor.chain().focus().toggleBulletList().run()}>{t('bulletList')}</Btn><Btn active={editor.isActive('orderedList')} onClick={()=>editor.chain().focus().toggleOrderedList().run()}>{t('orderedList')}</Btn><Btn active={editor.isActive('blockquote')} onClick={()=>editor.chain().focus().toggleBlockquote().run()}>{t('quote')}</Btn></Group>
       </>}
       {tab==='Insert' && <>
-        <Group label={t('groupTable')}><Btn onClick={()=>editor.chain().focus().insertTable({rows:3,cols:3,withHeaderRow:true}).run()}>{t('insertTable')}</Btn><Btn onClick={()=>editor.chain().focus().addRowAfter().run()}>{t('addRow')}</Btn><Btn onClick={()=>editor.chain().focus().addColumnAfter().run()}>{t('addColumn')}</Btn><Btn onClick={()=>editor.chain().focus().deleteTable().run()}>{t('deleteTable')}</Btn></Group>
-        <Group label={t('groupMedia')}><Btn onClick={()=>fileImgRef.current?.click()}>{t('imageLocal')}</Btn></Group>
+        <Group label={t('groupTable')}><Btn onClick={()=>editor.chain().focus().insertTable({rows:3,cols:3,withHeaderRow:true}).run()}>{t('insertTable')}</Btn><Btn onClick={()=>editor.chain().focus().addRowBefore().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('addRowBefore')}</Btn><Btn onClick={()=>editor.chain().focus().addRowAfter().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('addRow')}</Btn><Btn onClick={()=>editor.chain().focus().addColumnBefore().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('addColumnBefore')}</Btn><Btn onClick={()=>editor.chain().focus().addColumnAfter().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('addColumn')}</Btn><Btn onClick={()=>editor.chain().focus().deleteRow().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('deleteRow')}</Btn><Btn onClick={()=>editor.chain().focus().deleteColumn().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('deleteColumn')}</Btn><Btn active={editor.isActive('tableHeader')} onClick={()=>editor.chain().focus().toggleHeaderRow().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('toggleHeaderRow')}</Btn><Btn onClick={()=>editor.chain().focus().deleteTable().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('deleteTable')}</Btn></Group>
+        <Group label={t('cellAlign')}><Btn onClick={()=>editor.chain().focus().setTextAlign('left').run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('alignLeft')}</Btn><Btn onClick={()=>editor.chain().focus().setTextAlign('center').run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('alignCenter')}</Btn><Btn onClick={()=>editor.chain().focus().setTextAlign('right').run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('alignRight')}</Btn></Group>
+        <Group label={t('groupMedia')}><Btn onClick={()=>fileImgRef.current?.click()}>{t('imageLocal')}</Btn><Btn onClick={openImageEdit} disabled={!editor.isActive('image')}>{t('imageEdit')}</Btn></Group>
         <Group label={t('groupLinksBreaks')}><Btn active={editor.isActive('link')} onClick={openLink}>{t('link')}</Btn><Btn onClick={()=>editor.chain().focus().setHorizontalRule().run()}>{t('horizontalLine')}</Btn><Btn onClick={()=>editor.chain().focus().insertPageBreak().run()}>{t('pageBreak')}</Btn></Group>
         <Group label={t('groupText')}><Btn onClick={insertDate}>{t('insertDate')}</Btn></Group>
       </>}
@@ -481,6 +516,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       {tab==='View' && <>
         <Group label={t('navigationPane')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn><Btn active={findOpen} onClick={()=>setFindOpen(o=>!o)}>{t('findReplace')}</Btn></Group>
         <Group label={t('documentStatistics')}><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
+        <Group label={t('linkManager')}><Btn active={linksOpen} onClick={()=>setLinksOpen(o=>!o)}>{t('linkManager')}</Btn></Group>
         <Group label={t('groupViewModes')}><Btn onClick={enterFocus}>{t('focusMode')}</Btn><Btn onClick={enterReading}>{t('readingMode')}</Btn></Group>
         <Group label={t('versions')}><Btn active={versionsOpen} onClick={()=>setVersionsOpen(o=>!o)}>{t('versions')}</Btn></Group>
         <Group label={t('groupZoom')}><Btn onClick={()=>setZoom(z=>Math.max(50,z-10))}>−</Btn><span className="static-stat">{zoom}%</span><Btn onClick={()=>setZoom(z=>Math.min(200,z+10))}>+</Btn><Btn onClick={()=>setZoom(100)}>100%</Btn><Btn onClick={()=>setZoom(50)}>50%</Btn><Btn onClick={()=>setZoom(200)}>200%</Btn></Group>
@@ -490,6 +526,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       </div>
       {linkOpen && <div className="link-pop" role="dialog" aria-label={t('link')}>
         <label>{t('linkPrompt')}<input autoFocus value={linkUrl} dir="ltr" placeholder="https://…" onChange={e=>setLinkUrl(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); applyLink() } if(e.key==='Escape') setLinkOpen(false) }}/></label>
+        {linkTextShown && <label>{t('linkTextLabel')}<input value={linkText} dir="auto" onChange={e=>setLinkText(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); applyLink() } if(e.key==='Escape') setLinkOpen(false) }}/></label>}
         <div className="row"><button className="primary small" onClick={applyLink}>{t('save')}</button>{editor.isActive('link') && <button className="rbtn" onClick={removeLink}>{t('removeLink')}</button>}<button className="rbtn" onClick={()=>setLinkOpen(false)}>{t('cancel')}</button></div>
       </div>}
     </div>}
@@ -501,6 +538,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <div className="row"><button type="button" className="primary small" onClick={acceptRecovery}>{t('recoveryAccept')}</button><button type="button" className="rbtn" onClick={discardRecovery}>{t('recoveryDiscard')}</button></div>
     </div>}
     {viewMode==='edit' && statsOpen && <StatsPanel editor={editor} lang={lang} onClose={()=>setStatsOpen(false)} />}
+    {viewMode==='edit' && linksOpen && <LinkManagerPanel editor={editor} lang={lang} onClose={()=>setLinksOpen(false)} onEditLink={openLinkAt} />}
     {viewMode==='edit' && versionsOpen && <div className="versions-panel" role="region" aria-label={t('versions')}>
       <div className="find-row">
         <input value={versionLabel} dir="auto" onChange={e=>setVersionLabel(e.target.value)} placeholder={t('versionNamePlaceholder')} aria-label={t('versionNamePlaceholder')}/>
@@ -547,8 +585,11 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     </footer>}
     {ctxMenu && <ContextMenu items={ctxMenu.items} x={ctxMenu.x} y={ctxMenu.y} lang={lang} onAction={runMenuAction} onClose={()=>setCtxMenu(null)} />}
     {altOpen && <div className="modal-backdrop" onClick={()=>setAltOpen(false)}><form className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageAlt() }}><h2>{t('menuImageAlt')}</h2><label className="field">{t('imageAltPrompt')}<input autoFocus value={altText} dir="auto" onChange={e=>setAltText(e.target.value)} /></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setAltOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
+    {imgPreview && <div className="modal-backdrop" onClick={()=>setImgPreview(null)}><div className="modal" onClick={e=>e.stopPropagation()}><h2>{t('imagePreview')}</h2><img src={imgPreview.src} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><p className="muted">{t('imageSizeKb')}: {imageSizeKb(imgPreview.size)}</p><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgPreview(null)}>{t('cancel')}</button><button type="button" className="primary small" onClick={insertPreviewImage}>{t('imageInsert')}</button></div></div></div>}
+    {imgEditOpen && <div className="modal-backdrop" onClick={()=>setImgEditOpen(false)}><form className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageEdit() }}><h2>{t('imageEdit')}</h2><img src={imgSrc} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><label className="field">{t('imageWidth')}<select value={imgWidth} onChange={e=>setImgWidth(e.target.value)}>{IMAGE_WIDTH_PRESETS.map(p=><option key={p.value} value={p.value}>{p.value==='' ? t('imageWidthOriginal') : p.label}</option>)}</select></label><label className="field">{t('imageCaption')}<input value={imgCaption} dir="auto" onChange={e=>setImgCaption(e.target.value)} /></label><label className="field">{t('imageAltPrompt')}<input value={imgAlt} dir="auto" onChange={e=>setImgAlt(e.target.value)} /></label><div className="row wrap"><button type="button" className="rbtn" onClick={()=>replaceImgRef.current?.click()}>{t('imageReplace')}</button><button type="button" className="danger-btn" onClick={deleteImageEdit}>{t('delete')}</button></div><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgEditOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
     {toast && <div className="toast" role="alert">{toast}</div>}
     <input ref={fileImgRef} type="file" accept="image/*" hidden onChange={onImage}/>
+    <input ref={replaceImgRef} type="file" accept="image/*" hidden onChange={onReplaceImage}/>
     <input ref={importRef} type="file" accept=".txt,.docx" hidden onChange={onImport}/>
   </div>
 }
