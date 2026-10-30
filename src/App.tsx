@@ -4,6 +4,8 @@ import CommandPalette from './components/CommandPalette'
 import { buildCommands, isPaletteShortcut } from './lib/commands'
 import { isPlainFieldTarget } from './lib/keyboard'
 import KeyboardShortcutsDialog from './components/KeyboardShortcutsDialog'
+import OnboardingGuide from './components/OnboardingGuide'
+import { isOnboardingDismissed, dismissOnboarding, restoreOnboarding, classifyDashboardEmptyState } from './lib/onboarding'
 import type { VyroDoc } from './lib/types'
 import { loadDocs, saveDocs, createDoc, duplicateDoc, renameDoc, toggleFavorite, updateDoc, filterDocs, listFolders, sortDocs, trashDoc, restoreDoc, purgeDoc, listTrashed, SORT_KEY, type SortMode } from './lib/store'
 import { TEMPLATES, getTemplate, templateName, templateDesc } from './lib/templates'
@@ -76,6 +78,12 @@ export default function App(){
   // M2-15: keyboard-shortcuts help, dashboard entry (the editor has its
   // own View-tab entry rendering the same dialog).
   const [shortcutsOpen,setShortcutsOpen]=useState(false)
+  // M2-16: first-use guide — shown until dismissed (persisted per browser);
+  // the re-show button below clears the stored dismissal, so a re-shown
+  // guide stays until dismissed again. Dashboard only, never the editor.
+  const [guideVisible,setGuideVisible]=useState(()=> typeof window!=='undefined'? !isOnboardingDismissed(localStorage) : true)
+  const dismissGuide=()=>{ dismissOnboarding(localStorage); setGuideVisible(false) }
+  const reshowGuide=()=>{ restoreOnboarding(localStorage); setGuideVisible(true) }
   const [editorActions,setEditorActions]=useState<EditorPaletteActions|null>(null)
   const paletteReturnFocus=useRef<Element|null>(null)
   const openPalette=()=>{ paletteReturnFocus.current=document.activeElement; setPaletteOpen(true) }
@@ -108,6 +116,8 @@ export default function App(){
   useEffect(()=>{ if(!supabase) return; (async()=>{ const {data}=await supabase.auth.getUser(); setUser(data.user??null) })(); const {data:sub}=supabase.auth.onAuthStateChange(async()=>{ if(!supabase) return; const {data}=await supabase.auth.getUser(); setUser(data.user??null) }); return ()=>sub.subscription.unsubscribe() },[])
   const liveDocs=useMemo(()=>docs.filter(d=>!d.deletedAt),[docs])
   const filtered=useMemo(()=>sortDocs(filterDocs(docs,{query,folder: folder||undefined, favoritesOnly:favOnly}), sort),[docs,query,folder,favOnly,sort])
+  // M2-16: which empty message the Recent list needs (trash has its own).
+  const dashboardEmpty=classifyDashboardEmptyState({liveCount: liveDocs.length, filteredCount: filtered.length, folder, query})
   const trashed=useMemo(()=>listTrashed(docs),[docs])
   const folders=listFolders(docs)
   const openDoc=docs.find(d=>d.id===openId && !d.deletedAt)
@@ -224,11 +234,14 @@ export default function App(){
             </article>)}
           </div>
         </section>
+        {view==='docs' && guideVisible && <OnboardingGuide lang={lang} onCreateFirst={()=>createFromTemplate('blank')} onOpenShortcuts={()=>setShortcutsOpen(true)} onDismiss={dismissGuide}/>}
         <section aria-label={t('recentDocuments')}>
-          <div className="list-toolbar"><h2 className="section-title">{t('recentDocuments')}</h2><label className="sort-select">{t('sortBy')}<select value={sort} onChange={e=>setSort(e.target.value as SortMode)} aria-label={t('sortBy')}><option value="updated">{t('sortUpdated')}</option><option value="name">{t('sortName')}</option><option value="created">{t('sortCreated')}</option></select></label></div>
-          {filtered.length===0 && (liveDocs.length===0
-            ? <div className="empty"><p><b>{t('noDocuments')}</b></p><p className="muted">{t('noDocumentsText')}</p><button className="primary" onClick={()=>createFromTemplate('blank')}>{t('createFirst')}</button></div>
-            : <div className="empty"><p><b>{t('noMatches')}</b></p><button className="primary" onClick={()=>{ setQuery(''); setFolder(''); setFavOnly(false) }}>{t('clearFilters')}</button></div>)}
+          <div className="list-toolbar"><h2 className="section-title">{t('recentDocuments')}</h2>{!guideVisible && <button className="rbtn" onClick={reshowGuide}>{t('onboardingShowAgain')}</button>}<label className="sort-select">{t('sortBy')}<select value={sort} onChange={e=>setSort(e.target.value as SortMode)} aria-label={t('sortBy')}><option value="updated">{t('sortUpdated')}</option><option value="name">{t('sortName')}</option><option value="created">{t('sortCreated')}</option></select></label></div>
+          {filtered.length===0 && (dashboardEmpty==='no-documents'
+            ? <div className="empty"><p><b>{t('noDocuments')}</b></p><p className="muted">{t('noDocumentsText')}</p><button className="primary" onClick={()=>createFromTemplate('blank')}>{t('createFirst')}</button><p className="muted">{t('onboardingNoDocumentsHint')}</p></div>
+            : dashboardEmpty==='folder-empty'
+            ? <div className="empty"><p><b>{t('onboardingFolderEmpty')}</b></p><p className="muted" dir="auto">{folder}</p><button className="primary" onClick={()=>setFolder('')}>{t('onboardingClearFolder')}</button></div>
+            : <div className="empty"><p><b>{t('noMatches')}</b></p><p className="muted">{t('onboardingNoMatchesHint')}</p><button className="primary" onClick={()=>{ setQuery(''); setFolder(''); setFavOnly(false) }}>{t('clearFilters')}</button></div>)}
           <div className="doc-grid">{filtered.map(d=><article key={d.id} className="doc-card">
             <div className="doc-head">
               <button className="doc-open" onClick={()=>setOpenId(d.id)}>
