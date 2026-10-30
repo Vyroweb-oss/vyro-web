@@ -1,0 +1,64 @@
+import { describe, it, expect } from 'vitest'
+import { clampZoom, zoomStep, docLanguageLabel, estimatedPagesFromWords, activeParagraphStyle, type ParagraphStyleState } from './wordChrome'
+
+describe('clampZoom', () => {
+  it('keeps in-range values and clamps both ends', () => {
+    expect(clampZoom(100)).toBe(100)
+    expect(clampZoom(50)).toBe(50)
+    expect(clampZoom(200)).toBe(200)
+    expect(clampZoom(49)).toBe(50)
+    expect(clampZoom(201)).toBe(200)
+    expect(clampZoom(-10)).toBe(50)
+  })
+  it('resets non-finite input to 100', () => {
+    expect(clampZoom(NaN)).toBe(100)
+    expect(clampZoom(Infinity)).toBe(100)
+  })
+})
+
+describe('zoomStep', () => {
+  it('steps and clamps at the ends', () => {
+    expect(zoomStep(100, 10)).toBe(110)
+    expect(zoomStep(100, -10)).toBe(90)
+    expect(zoomStep(195, 10)).toBe(200)
+    expect(zoomStep(55, -10)).toBe(50)
+  })
+})
+
+describe('docLanguageLabel', () => {
+  it('labels rtl as Dari/Persian and anything else as English', () => {
+    expect(docLanguageLabel('rtl')).toBe('RTL · دری/فارسی')
+    expect(docLanguageLabel('ltr')).toBe('LTR · English')
+    expect(docLanguageLabel('')).toBe('LTR · English')
+  })
+})
+
+describe('estimatedPagesFromWords', () => {
+  it('mirrors the stats.ts estimate: 0 pages when empty, 1 page minimum, 250 words/page', () => {
+    expect(estimatedPagesFromWords(0)).toBe(0)
+    expect(estimatedPagesFromWords(-5)).toBe(0)
+    expect(estimatedPagesFromWords(1)).toBe(1)
+    expect(estimatedPagesFromWords(250)).toBe(1)
+    expect(estimatedPagesFromWords(251)).toBe(2)
+    expect(estimatedPagesFromWords(500)).toBe(2)
+  })
+})
+
+const base: ParagraphStyleState = { isHeading1: false, isHeading2: false, isHeading3: false, isParagraph: true, isBold: false, fontSizePx: null }
+
+describe('activeParagraphStyle', () => {
+  it('headings win over paragraph formatting', () => {
+    expect(activeParagraphStyle({ ...base, isHeading1: true })).toBe('heading1')
+    expect(activeParagraphStyle({ ...base, isHeading2: true })).toBe('heading2')
+    expect(activeParagraphStyle({ ...base, isHeading3: true })).toBe('heading3')
+  })
+  it('title is exactly a bold 28px paragraph — bold alone or 28px alone is Normal', () => {
+    expect(activeParagraphStyle({ ...base, isBold: true, fontSizePx: 28 })).toBe('title')
+    expect(activeParagraphStyle({ ...base, isBold: true, fontSizePx: 16 })).toBe('normal')
+    expect(activeParagraphStyle({ ...base, isBold: false, fontSizePx: 28 })).toBe('normal')
+    expect(activeParagraphStyle(base)).toBe('normal')
+  })
+  it('returns null when neither a heading nor a paragraph is active', () => {
+    expect(activeParagraphStyle({ ...base, isParagraph: false })).toBeNull()
+  })
+})

@@ -124,6 +124,7 @@ export default function App(){
         {query && <button className="search-clear" onClick={()=>setQuery('')} aria-label={t('cancel')}>×</button>}
       </div>
       <div className="appbar-actions">
+        {!isSupabaseConfigured && <span className="local-chip">{t('localSaving')}</span>}
         <button className="rbtn" onClick={openPalette} title="Ctrl+K" aria-label={t('commandPalette')}>⌘K</button>
         <div className="lang-toggle" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>setLang('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>setLang('fa')}>فارسی</button></div>
         <button className="rbtn" onClick={()=>setSettingsOpen(true)} aria-label={t('settings')} title={t('settings')}>⚙</button>
@@ -131,7 +132,6 @@ export default function App(){
         <button className="chip-btn" onClick={()=>setShowPremium(true)}>{isPremium? `★ ${t('premiumActive')}` : user? t('free') : t('localFree')}</button>
       </div>
     </div></header>
-    {!isSupabaseConfigured && <div className="banner" role="status">{t('localBanner')}</div>}
     {saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}
     <div className="dash-layout">
       <aside className="sidebar">

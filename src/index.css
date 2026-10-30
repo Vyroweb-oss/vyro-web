@@ -11,7 +11,7 @@
   --brand:#2563eb; --brand-strong:#1d4ed8; --brand-deep:#17409c; --brand-soft:#e4edfe; --brand-ink:#1b41a0;
   --bg:#eceff4; --surface:#ffffff; --surface-2:#f4f6fa; --surface-3:#e8edf4;
   --text:#182230; --text-2:#5a6a80; --border:#d5dce6; --border-strong:#b9c4d4;
-  --canvas:#dbe1eb; --danger:#cf222e; --danger-soft:#fdeceb;
+  --canvas:#e6e6e6; --danger:#cf222e; --danger-soft:#fdeceb;
   --warn-bg:#fdf3d7; --warn-text:#7a5410; --warn-border:#e5c15c;
   --star:#e8a100;
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:24px; --sp-6:32px;
@@ -163,12 +163,12 @@ input:focus,select:focus{border-color:var(--brand)}
 
 /* ribbon */
 .ribbon-wrap{position:relative}
-.ribbon-tabs{display:flex;gap:2px;background:linear-gradient(90deg,var(--brand-deep),var(--brand));padding:7px 12px 0;align-items:flex-end;overflow-x:auto;scrollbar-width:none}
+.ribbon-tabs{display:flex;gap:2px;background:var(--surface);border-bottom:1px solid var(--border);padding:6px 12px 0;align-items:flex-end;overflow-x:auto;scrollbar-width:none}
 .ribbon-tabs::-webkit-scrollbar{display:none}
-.tab{background:transparent;border:0;color:#d7e5ff;padding:9px 16px;border-radius:10px 10px 0 0;white-space:nowrap;min-height:40px;font-size:14px}
-.tab:hover{background:rgba(255,255,255,.15);color:#fff}
-.tab.active{background:var(--surface);color:var(--text);font-weight:700}
-.tools-toggle{display:none;margin-inline-start:auto;background:rgba(255,255,255,.14);color:#fff;border:0;border-radius:8px 8px 0 0;padding:9px 13px;min-height:40px;white-space:nowrap;font-size:13.5px}
+.tab{background:transparent;border:0;color:var(--text-2);padding:9px 16px;border-radius:8px 8px 0 0;white-space:nowrap;min-height:40px;font-size:14px;border-bottom:2px solid transparent}
+.tab:hover{background:var(--surface-2);color:var(--text)}
+.tab.active{background:var(--surface);color:var(--brand-ink);font-weight:700;border-bottom-color:var(--brand)}
+.tools-toggle{display:none;margin-inline-start:auto;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-bottom:0;border-radius:8px 8px 0 0;padding:9px 13px;min-height:40px;white-space:nowrap;font-size:13.5px}
 .ribbon{display:flex;flex-wrap:wrap;background:var(--surface);border-bottom:1px solid var(--border);padding:8px 10px 6px;row-gap:2px}
 .rgroup{display:flex;flex-direction:column;justify-content:space-between;padding:2px 11px;border-inline-end:1px solid var(--border)}
 .rgroup:last-child{border-inline-end:0}
@@ -223,6 +223,25 @@ input:focus,select:focus{border-color:var(--brand)}
 .status-zoom input[type=range]{width:132px;padding:0;accent-color:#fff;background:transparent;border:0}
 .status-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:26px;background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:6px;font-size:15px;line-height:1}
 .status-btn:hover{background:rgba(255,255,255,.28)}
+
+
+/* ---------- SPRINT-WORD: title bar QAT, styles gallery, status views, local chip ---------- */
+.qat{display:flex;gap:2px;align-items:center}
+.qat-btn{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;background:transparent;border:1px solid transparent;border-radius:var(--r-sm);color:var(--text);font-size:16px}
+.qat-btn:hover{background:var(--surface-2);border-color:var(--border)}
+.qat-btn:disabled{opacity:.45;cursor:default}
+.local-chip{display:inline-flex;align-items:center;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);border-radius:var(--r-pill);padding:5px 11px;font-size:12px;font-weight:600;white-space:nowrap}
+.styles-gallery{display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap}
+.style-gal{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 12px;color:var(--text);line-height:1.2;white-space:nowrap}
+.style-gal:hover{border-color:var(--brand)}
+.style-gal.active{background:var(--brand-soft);border-color:var(--brand);color:var(--brand-ink);font-weight:700}
+.style-gal.style-h1{font-size:17px;font-weight:800}
+.style-gal.style-h2{font-size:15px;font-weight:700}
+.style-gal.style-h3{font-size:14px;font-weight:700}
+.style-gal.style-title{font-size:19px;font-weight:800}
+.status-views{display:flex;gap:4px;align-items:center}
+.status-view-btn{background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:6px;padding:4px 10px;font-size:12.5px;min-height:26px}
+.status-view-btn:hover{background:rgba(255,255,255,.28)}
 
 /* ---------- responsive: tablets & phones ---------- */
 @media (max-width:900px){

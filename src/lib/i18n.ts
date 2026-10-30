@@ -4,7 +4,6 @@ export const UI_LANG_KEY = 'vyro-web-ui-lang'
 
 const en = {
   appTagline: 'Desktop word processor — local-first, no silent uploads',
-  localBanner: 'Local mode — account not connected. Documents are stored only in this browser. Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to enable sign-in (see .env.example).',
   newDocument: '+ New document',
   templates: 'Templates',
   customTemplate: 'Custom template',
@@ -92,10 +91,8 @@ const en = {
   groupImport: 'Import',
   groupExport: 'Export',
   groupHistory: 'History',
-  groupStyle: 'Style',
   groupFont: 'Font',
   groupParagraph: 'Paragraph',
-  groupLists: 'Lists',
   groupTable: 'Table',
   groupMedia: 'Media',
   groupLinksBreaks: 'Links & breaks',
@@ -207,7 +204,6 @@ const en = {
   exitFocusMode: 'Exit focus mode',
   exitReadingMode: 'Exit reading mode',
   textWidth: 'Text width',
-  groupViewModes: 'View modes',
   versions: 'Versions',
   versionSave: 'Save version',
   versionNamePlaceholder: 'Version name (optional)',
@@ -365,13 +361,21 @@ const en = {
   sectionDragHandle: 'Drag to move section',
   sectionSkipWarning: 'Level skips a level',
   sectionSkipCount: 'level-skip warnings',
+  localSaving: 'Local saving',
+  tabDesign: 'Design',
+  groupClipboard: 'Clipboard',
+  groupEditing: 'Editing',
+  groupStyles: 'Styles',
+  groupThemes: 'Themes',
+  groupViews: 'Views',
+  groupShow: 'Show',
+  styleTitle: 'Title',
 } as const
 
 export type I18nKey = keyof typeof en
 
 const fa: Record<I18nKey, string> = {
   appTagline: 'واژه‌پرداز دسکتاپ — محلی‌محور، بدون آپلود پنهانی',
-  localBanner: 'حالت محلی — حساب متصل نیست. اسناد فقط در همین مرورگر ذخیره می‌شوند. برای فعال‌سازی ورود، VITE_SUPABASE_URL و VITE_SUPABASE_PUBLISHABLE_KEY را تنظیم کنید (نگاه کنید به .env.example).',
   newDocument: '+ سند جدید',
   templates: 'الگوها',
   customTemplate: 'الگوی سفارشی',
@@ -459,10 +463,8 @@ const fa: Record<I18nKey, string> = {
   groupImport: 'واردکردن',
   groupExport: 'خروجی',
   groupHistory: 'پیشینه',
-  groupStyle: 'سبک',
   groupFont: 'قلم',
   groupParagraph: 'پاراگراف',
-  groupLists: 'فهرست‌ها',
   groupTable: 'جدول',
   groupMedia: 'رسانه',
   groupLinksBreaks: 'پیوندها و شکست‌ها',
@@ -574,7 +576,6 @@ const fa: Record<I18nKey, string> = {
   exitFocusMode: 'خروج از حالت تمرکز',
   exitReadingMode: 'خروج از حالت مطالعه',
   textWidth: 'پهنای متن',
-  groupViewModes: 'حالت‌های نمایش',
   versions: 'نسخه‌ها',
   versionSave: 'ذخیرهٔ نسخه',
   versionNamePlaceholder: 'نام نسخه (اختیاری)',
@@ -732,6 +733,15 @@ const fa: Record<I18nKey, string> = {
   sectionDragHandle: 'بکشید تا بخش جابه‌جا شود',
   sectionSkipWarning: 'پرش سطح تیتر',
   sectionSkipCount: 'هشدار پرش سطح',
+  localSaving: 'ذخیرهٔ محلی',
+  tabDesign: 'طراحی',
+  groupClipboard: 'حافظهٔ موقت',
+  groupEditing: 'ویرایش',
+  groupStyles: 'سبک‌ها',
+  groupThemes: 'پوسته‌ها',
+  groupViews: 'نماها',
+  groupShow: 'نمایش',
+  styleTitle: 'عنوان',
 }
 
 export const STRINGS: Record<UiLang, Record<I18nKey, string>> = { en, fa }

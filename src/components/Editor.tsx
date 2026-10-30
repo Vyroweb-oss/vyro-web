@@ -28,6 +28,8 @@ import { createSnapshot, addVersion, loadVersions, saveVersions, restoreVersion,
 import { saveDraft, loadDraft, clearDraft, detectRecovery, acceptDraft, type RecoveryInfo } from '../lib/recovery'
 import { FocusDim, createViewSnapshot, focusWidthClass, viewModeClass, type FocusWidth, type ViewMode, type ViewSnapshot } from '../lib/viewModes'
 import { SectionCollapse } from '../lib/sections'
+import { clampZoom, zoomStep, docLanguageLabel, estimatedPagesFromWords, activeParagraphStyle } from '../lib/wordChrome'
+import { computeDocumentStats } from '../lib/stats'
 import { EDITOR_FONTS, EDITOR_FONT_SIZES, resolveAutosaveDelay, type VyroSettings } from '../lib/settings'
 
 export interface EditorPaletteActions {
@@ -59,7 +61,7 @@ const FONT_SIZES = EDITOR_FONT_SIZES
 const LINE_HEIGHTS = ['1','1.15','1.5','2']
 const TABS: { id:string; key:I18nKey }[] = [
   { id:'File', key:'tabFile' }, { id:'Home', key:'tabHome' }, { id:'Insert', key:'tabInsert' },
-  { id:'Layout', key:'tabLayout' }, { id:'References', key:'tabReferences' }, { id:'Review', key:'tabReview' }, { id:'View', key:'tabView' },
+  { id:'Design', key:'tabDesign' }, { id:'Layout', key:'tabLayout' }, { id:'References', key:'tabReferences' }, { id:'Review', key:'tabReview' }, { id:'View', key:'tabView' },
 ]
 
 export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number } }){
@@ -254,8 +256,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       insertDate: ()=>editor.chain().focus().insertContent({ type:'text', text: formatDocDate(doc.dir) }).run(),
       exportTxt: ()=>download(`${doc.title}.txt`, jsonToPlainText(editor.getJSON()), 'text/plain'),
       exportHtml: ()=>download(`${doc.title}.html`, `<!doctype html><html dir="${doc.dir}"><head><meta charset="utf-8"><title>${escapeHtml(doc.title)}</title></head><body>${editor.getHTML()}</body></html>`, 'text/html'),
-      zoomIn: ()=>setZoom(z=>Math.min(200,z+10)),
-      zoomOut: ()=>setZoom(z=>Math.max(50,z-10)),
+      zoomIn: ()=>setZoom(z=>zoomStep(z,10)),
+      zoomOut: ()=>setZoom(z=>zoomStep(z,-10)),
       zoomReset: ()=>setZoom(100),
       pastePlainText: ()=>{ void pastePlainText() },
     })
@@ -321,6 +323,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
 
   if(!editor) return <div className="loading">{t('loadingEditor')}</div>
   const words = editor.getText().trim()? editor.getText().trim().split(/\s+/).length:0
+  const statusStats = computeDocumentStats(editor.getJSON())
+  const statusPages = estimatedPagesFromWords(statusStats.words)
   const chars = (editor.storage as any).characterCount?.characters?.() ?? editor.getText().length
 
   const gated=(fn:()=>void)=> isPremium? fn() : onRequirePremium()
@@ -481,6 +485,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // so setLineHeight/unsetLineHeight are plain mark writes — no custom
   // extension, and stored docs only gain an additive textStyle attr.
   const curLineHeight = fontState?.lineHeight || ''
+  const styleId = activeParagraphStyle({ isHeading1: editor.isActive('heading',{level:1}), isHeading2: editor.isActive('heading',{level:2}), isHeading3: editor.isActive('heading',{level:3}), isParagraph: editor.isActive('paragraph'), isBold: editor.isActive('bold'), fontSizePx: Number.isNaN(curSizeNum) ? null : curSizeNum })
+  const applyTitleStyle = () => { editor.chain().focus().setParagraph().setFontSize('28px').run(); if(!editor.isActive('bold')) editor.chain().focus().toggleBold().run() }
 
   const pageW = doc.orientation==='landscape' ? '297mm':'210mm'
   const pageMinH = doc.orientation==='landscape' ? '210mm':'297mm'
@@ -493,7 +499,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <button type="button" className="rbtn view-mode-exit" onClick={exitMode}>{viewMode==='focus' ? t('exitFocusMode') : t('exitReadingMode')}</button>
     </div>}
     {viewMode==='edit' && <header className="editor-top">
-      <div className="top-start"><button className="back-btn" onClick={goBack}>← {t('dashboard')}</button><div className="logo"><span className="vmark">V</span> Vyro Web</div></div>
+      <div className="top-start"><div className="logo"><span className="vmark">V</span> Vyro Web</div><div className="qat" role="group" aria-label={t('saveNow')}><button type="button" className="qat-btn" title={t('saveNow')} aria-label={t('saveNow')} onClick={()=>{ pendingJson.current=editor.getJSON(); flushSave() }}>💾</button><button type="button" className="qat-btn" title={t('undo')} aria-label={t('undo')} disabled={!editor.can().undo()} onClick={()=>editor.chain().focus().undo().run()}>↶</button><button type="button" className="qat-btn" title={t('redo')} aria-label={t('redo')} disabled={!editor.can().redo()} onClick={()=>editor.chain().focus().redo().run()}>↷</button></div><button className="back-btn" onClick={goBack}>← {t('dashboard')}</button></div>
       <input className="title-input" value={doc.title} dir="auto" onChange={e=>onChange({title:e.target.value})} aria-label={t('docTitleLabel')}/>
       <div className="top-end">
         <span className="saved" role="status">{saveText}</span>
@@ -508,29 +514,28 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <div className="ribbon">
       {tab==='File' && <>
         <Group label={t('groupDocument')}><Btn onClick={goBack}>{t('dashboard')}</Btn><Btn onClick={()=>{ pendingJson.current=editor.getJSON(); flushSave() }}>{t('saveNow')}</Btn></Group>
+        <Group label={t('versions')}><Btn active={versionsOpen} onClick={()=>setVersionsOpen(o=>!o)}>{t('versions')}</Btn></Group>
         <Group label={t('groupImport')}><Btn onClick={()=>importRef.current?.click()}>{t('importBtn')}</Btn></Group>
         <Group label={t('groupExport')}><Btn onClick={exportTxt}>{t('exportTxt')}</Btn><Btn onClick={exportHtml}>{t('exportHtml')}</Btn><Btn onClick={()=>gated(()=>exportDocx(editor.getJSON(), doc.title))}>{t('exportDocx')} {!isPremium&&'🔒'}</Btn><Btn onClick={()=>gated(()=>window.print())}>{t('printPdf')} {!isPremium&&'🔒'}</Btn></Group>
       </>}
       {tab==='Home' && <>
-        <Group label={t('groupHistory')}><Btn onClick={()=>editor.chain().focus().undo().run()} disabled={!editor.can().undo()}>{t('undo')}</Btn><Btn onClick={()=>editor.chain().focus().redo().run()} disabled={!editor.can().redo()}>{t('redo')}</Btn></Group>
-        <Group label={t('groupStyle')}><select aria-label="Block style" value={editor.isActive('heading',{level:1})?'h1':editor.isActive('heading',{level:2})?'h2':editor.isActive('heading',{level:3})?'h3':'p'} onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(v==='p') c.setParagraph().run(); else c.toggleHeading({level:Number(v.slice(1)) as any}).run() }}><option value="p">{t('paragraph')}</option><option value="h1">{t('heading1')}</option><option value="h2">{t('heading2')}</option><option value="h3">{t('heading3')}</option></select>
-        <select aria-label={t('fontFamily')} value={curFamily} onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(!v) c.unsetFontFamily().run(); else c.setFontFamily(v).run() }}><option value="">{t('fontFamily')}</option>{curFamily && !FONT_FAMILIES.includes(curFamily) && <option value={curFamily}>{curFamily.replace(/'/g,'')}</option>}{FONT_FAMILIES.map(f=><option key={f} value={f}>{f.replace(/'/g,'')}</option>)}</select>
-        <select aria-label="Font size" value={sizeSelectValue} onChange={e=>{ if(e.target.value) editor.chain().focus().setFontSize(e.target.value+'px').run() }}>{sizeSelectValue==='' && <option value="">{curSizeNum}px</option>}{FONT_SIZES.map(s=><option key={s} value={s}>{s}px</option>)}</select>
-        <select aria-label={t('lineSpacing')} value={curLineHeight} onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(!v) c.unsetLineHeight().run(); else c.setLineHeight(v).run() }}><option value="">{t('lineSpacing')}</option>{curLineHeight && !LINE_HEIGHTS.includes(curLineHeight) && <option value={curLineHeight}>{curLineHeight}</option>}{LINE_HEIGHTS.map(v=><option key={v} value={v}>{v}</option>)}</select></Group>
-        <Group label={t('groupFont')}><Btn active={editor.isActive('bold')} onClick={()=>editor.chain().focus().toggleBold().run()}><b>B</b></Btn><Btn active={editor.isActive('italic')} onClick={()=>editor.chain().focus().toggleItalic().run()}><i>I</i></Btn><Btn active={editor.isActive('underline')} onClick={()=>editor.chain().focus().toggleUnderline().run()}><u>U</u></Btn><Btn active={editor.isActive('strike')} onClick={()=>editor.chain().focus().toggleStrike().run()}><s>S</s></Btn>
+        <Group label={t('groupClipboard')}><Btn onClick={()=>copySelection(true)}>{t('menuCut')}</Btn><Btn onClick={()=>copySelection(false)}>{t('menuCopy')}</Btn><Btn onClick={()=>{ void pastePlainText() }}>{t('menuPastePlain')}</Btn></Group>
+        <Group label={t('groupFont')}><select aria-label={t('fontFamily')} value={curFamily} onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(!v) c.unsetFontFamily().run(); else c.setFontFamily(v).run() }}><option value="">{t('fontFamily')}</option>{curFamily && !FONT_FAMILIES.includes(curFamily) && <option value={curFamily}>{curFamily.replace(/'/g,'')}</option>}{FONT_FAMILIES.map(f=><option key={f} value={f}>{f.replace(/'/g,'')}</option>)}</select><select aria-label="Font size" value={sizeSelectValue} onChange={e=>{ if(e.target.value) editor.chain().focus().setFontSize(e.target.value+'px').run() }}>{sizeSelectValue==='' && <option value="">{curSizeNum}px</option>}{FONT_SIZES.map(s=><option key={s} value={s}>{s}px</option>)}</select><Btn active={editor.isActive('bold')} onClick={()=>editor.chain().focus().toggleBold().run()}><b>B</b></Btn><Btn active={editor.isActive('italic')} onClick={()=>editor.chain().focus().toggleItalic().run()}><i>I</i></Btn><Btn active={editor.isActive('underline')} onClick={()=>editor.chain().focus().toggleUnderline().run()}><u>U</u></Btn><Btn active={editor.isActive('strike')} onClick={()=>editor.chain().focus().toggleStrike().run()}><s>S</s></Btn>
         <label className="color-wrap" title={t('textColour')}>A<input type="color" onChange={e=>editor.chain().focus().setColor(e.target.value).run()}/></label>
         <label className="color-wrap" title={t('highlight')}>H<input type="color" defaultValue="#ffff00" onChange={e=>editor.chain().focus().toggleHighlight({color:e.target.value}).run()}/></label>
-        <Btn onClick={()=>editor.chain().focus().unsetAllMarks().clearNodes().run()}>{t('clearFormatting')}</Btn><Btn onClick={()=>{ void pastePlainText() }}>{t('menuPastePlain')}</Btn></Group>
-        <Group label={t('groupParagraph')}><Btn active={editor.isActive({textAlign:'left'})} onClick={()=>editor.chain().focus().setTextAlign('left').run()}>{t('alignLeft')}</Btn><Btn active={editor.isActive({textAlign:'center'})} onClick={()=>editor.chain().focus().setTextAlign('center').run()}>{t('alignCenter')}</Btn><Btn active={editor.isActive({textAlign:'right'})} onClick={()=>editor.chain().focus().setTextAlign('right').run()}>{t('alignRight')}</Btn><Btn active={editor.isActive({textAlign:'justify'})} onClick={()=>editor.chain().focus().setTextAlign('justify').run()}>{t('alignJustify')}</Btn></Group>
-        {!compactToolbar && <Group label={t('groupLists')}><Btn active={editor.isActive('bulletList')} onClick={()=>editor.chain().focus().toggleBulletList().run()}>{t('bulletList')}</Btn><Btn active={editor.isActive('orderedList')} onClick={()=>editor.chain().focus().toggleOrderedList().run()}>{t('orderedList')}</Btn><Btn active={editor.isActive('blockquote')} onClick={()=>editor.chain().focus().toggleBlockquote().run()}>{t('quote')}</Btn></Group>}
+        <Btn onClick={()=>editor.chain().focus().unsetAllMarks().clearNodes().run()}>{t('clearFormatting')}</Btn></Group>
+        <Group label={t('groupParagraph')}><Btn active={editor.isActive({textAlign:'left'})} onClick={()=>editor.chain().focus().setTextAlign('left').run()}>{t('alignLeft')}</Btn><Btn active={editor.isActive({textAlign:'center'})} onClick={()=>editor.chain().focus().setTextAlign('center').run()}>{t('alignCenter')}</Btn><Btn active={editor.isActive({textAlign:'right'})} onClick={()=>editor.chain().focus().setTextAlign('right').run()}>{t('alignRight')}</Btn><Btn active={editor.isActive({textAlign:'justify'})} onClick={()=>editor.chain().focus().setTextAlign('justify').run()}>{t('alignJustify')}</Btn><select aria-label={t('lineSpacing')} value={curLineHeight} onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(!v) c.unsetLineHeight().run(); else c.setLineHeight(v).run() }}><option value="">{t('lineSpacing')}</option>{curLineHeight && !LINE_HEIGHTS.includes(curLineHeight) && <option value={curLineHeight}>{curLineHeight}</option>}{LINE_HEIGHTS.map(v=><option key={v} value={v}>{v}</option>)}</select>{!compactToolbar && <><Btn active={editor.isActive('bulletList')} onClick={()=>editor.chain().focus().toggleBulletList().run()}>{t('bulletList')}</Btn><Btn active={editor.isActive('orderedList')} onClick={()=>editor.chain().focus().toggleOrderedList().run()}>{t('orderedList')}</Btn><Btn active={editor.isActive('blockquote')} onClick={()=>editor.chain().focus().toggleBlockquote().run()}>{t('quote')}</Btn></>}</Group>
+        <Group label={t('groupStyles')}><div className="styles-gallery" role="group" aria-label={t('groupStyles')}><button type="button" className={`style-gal${styleId==='normal'?' active':''}`} onClick={()=>editor.chain().focus().setParagraph().run()}>{t('paragraph')}</button><button type="button" className={`style-gal style-h1${styleId==='heading1'?' active':''}`} onClick={()=>editor.chain().focus().toggleHeading({level:1}).run()}>{t('heading1')}</button><button type="button" className={`style-gal style-h2${styleId==='heading2'?' active':''}`} onClick={()=>editor.chain().focus().toggleHeading({level:2}).run()}>{t('heading2')}</button><button type="button" className={`style-gal style-h3${styleId==='heading3'?' active':''}`} onClick={()=>editor.chain().focus().toggleHeading({level:3}).run()}>{t('heading3')}</button><button type="button" className={`style-gal style-title${styleId==='title'?' active':''}`} onClick={applyTitleStyle}>{t('styleTitle')}</button></div></Group>
+        <Group label={t('groupEditing')}><Btn onClick={()=>setFindOpen(true)}>{t('findReplace')}</Btn></Group>
       </>}
       {tab==='Insert' && <>
         <Group label={t('groupTable')}><Btn onClick={()=>editor.chain().focus().insertTable({rows:3,cols:3,withHeaderRow:true}).run()}>{t('insertTable')}</Btn><Btn onClick={()=>editor.chain().focus().addRowBefore().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('addRowBefore')}</Btn><Btn onClick={()=>editor.chain().focus().addRowAfter().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('addRow')}</Btn><Btn onClick={()=>editor.chain().focus().addColumnBefore().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('addColumnBefore')}</Btn><Btn onClick={()=>editor.chain().focus().addColumnAfter().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('addColumn')}</Btn><Btn onClick={()=>editor.chain().focus().deleteRow().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('deleteRow')}</Btn><Btn onClick={()=>editor.chain().focus().deleteColumn().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('deleteColumn')}</Btn><Btn active={editor.isActive('tableHeader')} onClick={()=>editor.chain().focus().toggleHeaderRow().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('toggleHeaderRow')}</Btn><Btn onClick={()=>editor.chain().focus().deleteTable().run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('deleteTable')}</Btn></Group>
         <Group label={t('cellAlign')}><Btn onClick={()=>editor.chain().focus().setTextAlign('left').run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('alignLeft')}</Btn><Btn onClick={()=>editor.chain().focus().setTextAlign('center').run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('alignCenter')}</Btn><Btn onClick={()=>editor.chain().focus().setTextAlign('right').run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('alignRight')}</Btn></Group>
         <Group label={t('groupMedia')}><Btn onClick={()=>fileImgRef.current?.click()}>{t('imageLocal')}</Btn><Btn onClick={openImageEdit} disabled={!editor.isActive('image')}>{t('imageEdit')}</Btn></Group>
-        {!compactToolbar && <Group label={t('groupLinksBreaks')}><Btn active={editor.isActive('link')} onClick={openLink}>{t('link')}</Btn><Btn onClick={()=>editor.chain().focus().setHorizontalRule().run()}>{t('horizontalLine')}</Btn><Btn onClick={()=>editor.chain().focus().insertPageBreak().run()}>{t('pageBreak')}</Btn></Group>}
+        {!compactToolbar && <Group label={t('groupLinksBreaks')}><Btn active={editor.isActive('link')} onClick={openLink}>{t('link')}</Btn><Btn active={linksOpen} onClick={()=>setLinksOpen(o=>!o)}>{t('linkManager')}</Btn><Btn onClick={()=>editor.chain().focus().setHorizontalRule().run()}>{t('horizontalLine')}</Btn><Btn onClick={()=>editor.chain().focus().insertPageBreak().run()}>{t('pageBreak')}</Btn></Group>}
         <Group label={t('groupText')}><Btn onClick={insertDate}>{t('insertDate')}</Btn></Group>
       </>}
+      {tab==='Design' && <><Group label={t('groupThemes')}><Btn onClick={onToggleTheme}>{theme==='dark'? t('lightUi'):t('darkUi')}</Btn></Group></>}
       {tab==='Layout' && <>
         <Group label={t('groupMargins')}><Btn active={(doc.margins||'normal')==='narrow'} onClick={()=>onChange({margins:'narrow'})}>{t('narrow')}</Btn><Btn active={(doc.margins||'normal')==='normal'} onClick={()=>onChange({margins:'normal'})}>{t('normal')}</Btn><Btn active={(doc.margins||'normal')==='wide'} onClick={()=>onChange({margins:'wide'})}>{t('wide')}</Btn></Group>
         <Group label={t('groupOrientation')}><Btn active={(doc.orientation||'portrait')==='portrait'} onClick={()=>onChange({orientation:'portrait'})}>{t('portrait')}</Btn><Btn active={doc.orientation==='landscape'} onClick={()=>onChange({orientation:'landscape'})}>{t('landscape')}</Btn></Group>
@@ -539,18 +544,14 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       {tab==='References' && <Group label={t('groupContents')}><Btn onClick={insertToc}>{t('insertToc')}</Btn></Group>}
       {tab==='Review' && <>
         <Group label={t('groupProofing')}><Btn active={spell} onClick={()=>setSpell(s=>!s)}>{t('spellcheck')} {spell? t('on'):t('off')}</Btn></Group>
-        <Group label={t('groupCount')}><span className="static-stat">{words} {t('words')} · {chars} {t('characters')} · {editor.getText().split(/\n/).filter(Boolean).length} {t('paragraphsApprox')}</span></Group>
+        <Group label={t('groupCount')}><span className="static-stat">{words} {t('words')} · {chars} {t('characters')} · {editor.getText().split(/\n/).filter(Boolean).length} {t('paragraphsApprox')}</span><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
+        <Group label={t('compare')}><Btn active={compareOpen} onClick={()=>setCompareOpen(o=>!o)}>{t('compare')}</Btn></Group>
+        <Group label={t('intelligence')}><Btn active={intelligenceOpen} onClick={()=>setIntelligenceOpen(o=>!o)}>{t('intelligence')}</Btn></Group>
       </>}
       {tab==='View' && <>
-        <Group label={t('navigationPane')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn><Btn active={findOpen} onClick={()=>setFindOpen(o=>!o)}>{t('findReplace')}</Btn></Group>
-        <Group label={t('documentStatistics')}><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
-        <Group label={t('linkManager')}><Btn active={linksOpen} onClick={()=>setLinksOpen(o=>!o)}>{t('linkManager')}</Btn></Group>
-        <Group label={t('groupViewModes')}><Btn onClick={enterFocus}>{t('focusMode')}</Btn><Btn onClick={enterReading}>{t('readingMode')}</Btn></Group>
-        <Group label={t('versions')}><Btn active={versionsOpen} onClick={()=>setVersionsOpen(o=>!o)}>{t('versions')}</Btn><Btn active={compareOpen} onClick={()=>setCompareOpen(o=>!o)}>{t('compare')}</Btn></Group>
-        <Group label={t('intelligence')}><Btn active={intelligenceOpen} onClick={()=>setIntelligenceOpen(o=>!o)}>{t('intelligence')}</Btn></Group>
-        <Group label={t('groupZoom')}><Btn onClick={()=>setZoom(z=>Math.max(50,z-10))}>−</Btn><span className="static-stat">{zoom}%</span><Btn onClick={()=>setZoom(z=>Math.min(200,z+10))}>+</Btn><Btn onClick={()=>setZoom(100)}>100%</Btn><Btn onClick={()=>setZoom(50)}>50%</Btn><Btn onClick={()=>setZoom(200)}>200%</Btn></Group>
-        {!compactToolbar && <Group label={t('groupTheme')}><Btn onClick={onToggleTheme}>{theme==='dark'? t('lightUi'):t('darkUi')}</Btn></Group>}
-        {!compactToolbar && <Group label={t('groupDirection')}><span className="static-stat">{t('documentLabel')}: {doc.dir.toUpperCase()}</span></Group>}
+        <Group label={t('groupViews')}><Btn onClick={enterFocus}>{t('focusMode')}</Btn><Btn onClick={enterReading}>{t('readingMode')}</Btn></Group>
+        <Group label={t('groupShow')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn></Group>
+        <Group label={t('groupZoom')}><Btn onClick={()=>setZoom(z=>zoomStep(z,-10))}>−</Btn><span className="static-stat">{zoom}%</span><Btn onClick={()=>setZoom(z=>zoomStep(z,10))}>+</Btn><Btn onClick={()=>setZoom(100)}>100%</Btn><Btn onClick={()=>setZoom(50)}>50%</Btn><Btn onClick={()=>setZoom(200)}>200%</Btn></Group>
       </>}
       </div>
       {linkOpen && <div className="link-pop" role="dialog" aria-label={t('link')}>
@@ -610,9 +611,10 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     </div>
     {viewMode==='edit' && <footer className="status-bar">
       <span className="status-save">{saveText}</span>
-      <span>{words} {t('words')} · {chars} {t('chars')}</span>
-      <span className="status-dir">{doc.dir==='rtl' ? 'RTL · دری/فارسی' : 'LTR · English'}</span>
-      <div className="status-zoom"><span>{t('zoom')}</span><button type="button" className="status-btn" aria-label="Zoom out" onClick={()=>setZoom(z=>Math.max(50,z-10))}>−</button><input type="range" min={50} max={200} step={5} value={zoom} onChange={e=>setZoom(Number(e.target.value))} aria-label={t('zoom')}/><span>{zoom}%</span><button type="button" className="status-btn" aria-label="Zoom in" onClick={()=>setZoom(z=>Math.min(200,z+10))}>+</button></div>
+      <span>{statusStats.words} {t('words')} · {statusStats.charsWithSpaces} {t('chars')} · {statusPages} {t('statsEstimatedPages')}</span>
+      <span className="status-dir">{docLanguageLabel(doc.dir)}</span>
+      <div className="status-views"><button type="button" className="status-view-btn" onClick={enterFocus}>{t('focusMode')}</button><button type="button" className="status-view-btn" onClick={enterReading}>{t('readingMode')}</button></div>
+      <div className="status-zoom"><span>{t('zoom')}</span><button type="button" className="status-btn" aria-label={t('zoomOut')} onClick={()=>setZoom(z=>zoomStep(z,-10))}>−</button><input type="range" min={50} max={200} step={5} value={zoom} onChange={e=>setZoom(clampZoom(Number(e.target.value)))} aria-label={t('zoom')}/><span>{zoom}%</span><button type="button" className="status-btn" aria-label={t('zoomIn')} onClick={()=>setZoom(z=>zoomStep(z,10))}>+</button></div>
     </footer>}
     {ctxMenu && <ContextMenu items={ctxMenu.items} x={ctxMenu.x} y={ctxMenu.y} lang={lang} onAction={runMenuAction} onClose={()=>setCtxMenu(null)} />}
     {altOpen && <div className="modal-backdrop" onClick={()=>setAltOpen(false)}><form className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageAlt() }}><h2>{t('menuImageAlt')}</h2><label className="field">{t('imageAltPrompt')}<input autoFocus value={altText} dir="auto" onChange={e=>setAltText(e.target.value)} /></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setAltOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
