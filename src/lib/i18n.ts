@@ -370,6 +370,22 @@ const en = {
   groupViews: 'Views',
   groupShow: 'Show',
   styleTitle: 'Title',
+  // M2-12 Smart Templates & document forms
+  smartTemplates: 'Smart templates & forms',
+  smartTemplatesDesc: 'Fill a form and create a real editable document.',
+  smartFillForm: 'Fill form',
+  smartSaveCopy: 'Save copy',
+  smartMyCopy: 'My copy',
+  smartDeleteCopy: 'Delete copy',
+  smartDeleteCopyConfirm: 'Delete this personal template copy?',
+  smartFieldRequired: 'This field is required.',
+  smartFieldInvalidNumber: 'Enter a number.',
+  smartIncompleteSections: 'Incomplete required sections:',
+  smartCompleteInEditor: 'Complete in the editor',
+  smartSectionRequired: 'Required',
+  smartSectionChecklist: 'Section checklist',
+  smartReset: 'Reset form',
+  smartCreateDocument: 'Create document',
 } as const
 
 export type I18nKey = keyof typeof en
@@ -742,6 +758,22 @@ const fa: Record<I18nKey, string> = {
   groupViews: 'نماها',
   groupShow: 'نمایش',
   styleTitle: 'عنوان',
+  // M2-12 Smart Templates & document forms
+  smartTemplates: 'الگوهای هوشمند و فرم‌ها',
+  smartTemplatesDesc: 'فرم را پر کنید و یک سند واقعی و قابل‌ویرایش بسازید.',
+  smartFillForm: 'پرکردن فرم',
+  smartSaveCopy: 'ذخیرهٔ کپی',
+  smartMyCopy: 'کپی من',
+  smartDeleteCopy: 'حذف کپی',
+  smartDeleteCopyConfirm: 'این کپی شخصی الگو حذف شود؟',
+  smartFieldRequired: 'این فیلد الزامی است.',
+  smartFieldInvalidNumber: 'یک عدد وارد کنید.',
+  smartIncompleteSections: 'بخش‌های الزامی ناتمام:',
+  smartCompleteInEditor: 'در ویرایشگر تکمیل کنید',
+  smartSectionRequired: 'الزامی',
+  smartSectionChecklist: 'فهرست بررسی بخش‌ها',
+  smartReset: 'بازنشانی فرم',
+  smartCreateDocument: 'ایجاد سند',
 }
 
 export const STRINGS: Record<UiLang, Record<I18nKey, string>> = { en, fa }

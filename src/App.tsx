@@ -5,6 +5,9 @@ import { buildCommands, isPaletteShortcut } from './lib/commands'
 import type { VyroDoc } from './lib/types'
 import { loadDocs, saveDocs, createDoc, duplicateDoc, renameDoc, toggleFavorite, updateDoc, filterDocs, listFolders, sortDocs, trashDoc, restoreDoc, purgeDoc, listTrashed, SORT_KEY, type SortMode } from './lib/store'
 import { TEMPLATES, getTemplate, templateName, templateDesc } from './lib/templates'
+import { SMART_TEMPLATES, smartName, smartDesc, createSmartDocument, duplicateSmartTemplate, loadSmartCopies, saveSmartCopies, type SmartTemplate } from './lib/smartTemplates'
+import SmartTemplateForm from './components/SmartTemplateForm'
+import { uid } from './lib/types'
 import { supabase, isSupabaseConfigured } from './lib/supabase'
 import { computeEntitlement } from './lib/entitlement'
 import { saveUiLang, tr, uiDir, type UiLang, type I18nKey } from './lib/i18n'
@@ -58,6 +61,14 @@ export default function App(){
   const [view,setView]=useState<'docs'|'trash'>('docs')
   const [sort,setSort]=useState<SortMode>(()=>{ try{ const s=localStorage.getItem(SORT_KEY); return s==='name'||s==='created'||s==='updated'? s : 'updated' }catch{ return 'updated' } })
   const [tplModal,setTplModal]=useState(false); const [tplName,setTplName]=useState('')
+  // M2-12: smart templates — built-ins plus the user's personal copies (localStorage only).
+  const [smartForm,setSmartForm]=useState<SmartTemplate|null>(null)
+  const [smartCopies,setSmartCopies]=useState<SmartTemplate[]>(()=> typeof window!=='undefined'? loadSmartCopies(localStorage):[])
+  const [deleteCopyId,setDeleteCopyId]=useState<string|null>(null)
+  const allSmartTemplates=[...SMART_TEMPLATES, ...smartCopies]
+  const saveSmartCopy=(tpl:SmartTemplate)=>{ const next=[...smartCopies, duplicateSmartTemplate(tpl, uid())]; setSmartCopies(next); saveSmartCopies(localStorage, next) }
+  const doDeleteCopy=(id:string)=>{ const next=smartCopies.filter(c=>c.id!==id); setSmartCopies(next); saveSmartCopies(localStorage, next); setDeleteCopyId(null) }
+  const createFromSmartForm=(values:Record<string,string>)=>{ const tpl=smartForm; if(!tpl) return; const res=createSmartDocument(tpl, values); if(!res.ok) return; const content=applyNewDocDefaults(JSON.parse(JSON.stringify(res.content)), settings); const {docs:nd, doc}=createDoc(docs,{title: res.title, content, dir: tpl.dir, templateId: tpl.baseTemplateId}); setDocs(nd); setSmartForm(null); setOpenId(doc.id); setFreshDefaults({id:doc.id, font:settings.defaultFont, size:settings.defaultFontSize}) }
   // Command palette (M2-1): app-level so it works on dashboard and in editor.
   const [paletteOpen,setPaletteOpen]=useState(false)
   const [editorActions,setEditorActions]=useState<EditorPaletteActions|null>(null)
@@ -180,6 +191,24 @@ export default function App(){
             </button>
           </div>
         </section>
+        <section aria-label={t('smartTemplates')}>
+          <h2 className="section-title">{t('smartTemplates')}</h2>
+          <p className="muted">{t('smartTemplatesDesc')}</p>
+          <div className="create-row">
+            {allSmartTemplates.map(tpl=><article key={tpl.id} className="tpl-card">
+              <span className="tpl-thumb" aria-hidden="true"/>
+              <span className="tpl-name">{smartName(tpl, lang)}{tpl.personal && ` · ${t('smartMyCopy')}`}</span>
+              <span className="tpl-desc">{smartDesc(tpl, lang)}{tpl.dir==='rtl'?' · RTL':''}</span>
+              <div className="row wrap">
+                <button className="primary small" onClick={()=>setSmartForm(tpl)}>{t('smartFillForm')}</button>
+                <button className="rbtn" onClick={()=>saveSmartCopy(tpl)}>{t('smartSaveCopy')}</button>
+                {tpl.personal && (deleteCopyId===tpl.id
+                  ? <><span className="muted">{t('smartDeleteCopyConfirm')}</span><button className="danger-btn" onClick={()=>doDeleteCopy(tpl.id)}>{t('smartDeleteCopy')}</button><button className="rbtn" onClick={()=>setDeleteCopyId(null)}>{t('cancel')}</button></>
+                  : <button className="rbtn" onClick={()=>setDeleteCopyId(tpl.id)}>{t('smartDeleteCopy')}</button>)}
+              </div>
+            </article>)}
+          </div>
+        </section>
         <section aria-label={t('recentDocuments')}>
           <div className="list-toolbar"><h2 className="section-title">{t('recentDocuments')}</h2><label className="sort-select">{t('sortBy')}<select value={sort} onChange={e=>setSort(e.target.value as SortMode)} aria-label={t('sortBy')}><option value="updated">{t('sortUpdated')}</option><option value="name">{t('sortName')}</option><option value="created">{t('sortCreated')}</option></select></label></div>
           {filtered.length===0 && (liveDocs.length===0
@@ -230,6 +259,7 @@ export default function App(){
     {settingsOpen && <SettingsPanel settings={settings} lang={lang} onChange={(patch)=>setSettings(s=>({...s, ...patch}))} onReset={()=>setSettings(defaultSettings())} onClose={()=>setSettingsOpen(false)}/>}
     {tplModal && <div className="modal-backdrop" onClick={()=>setTplModal(false)}><form className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); createCustomTemplate() }}><h2>{t('customTemplate')}</h2><label className="field">{t('customTemplatePrompt')}<input autoFocus value={tplName} dir="auto" onChange={e=>setTplName(e.target.value)}/></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setTplModal(false)}>{t('cancel')}</button><button type="submit" className="primary small" disabled={!tplName.trim()}>{t('create')}</button></div></form></div>}
     {showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}
+    {smartForm && <SmartTemplateForm tpl={smartForm} lang={lang} onClose={()=>setSmartForm(null)} onCreate={createFromSmartForm}/>}
   </div>
 }
 function PremiumModal({onClose,isPremium,lang}:{onClose:()=>void;isPremium:boolean;lang:UiLang}){ const t=(k:I18nKey)=>tr(lang,k); return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}><h2>{t('premiumTitle')}</h2>{isPremium?<p>{t('premiumThanks')}</p>:<><p>{t('premiumDesc')}</p><ul><li>{t('planMonthly')}</li><li>{t('planQuarterly')}</li></ul><ol><li>{t('payStep1')} <b>+93 779 528 228</b></li><li>{t('payStep2')}</li><li>{t('payStep3')}</li></ol></>}<button className="primary" onClick={onClose}>{t('close')}</button></div></div> }

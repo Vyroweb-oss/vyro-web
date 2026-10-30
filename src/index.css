@@ -481,3 +481,16 @@ input:focus,select:focus{border-color:var(--brand)}
 .intelligence-actions{display:flex;gap:6px;flex-wrap:wrap}
 .intelligence-compare{display:flex;flex-direction:column;gap:6px}
 @media print{ .intelligence-panel{display:none!important} }
+
+/* ---------- M2-12 smart template forms ---------- */
+.smart-modal{max-height:90vh;overflow:auto}
+.smart-checklist{display:flex;flex-direction:column;gap:5px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px}
+.smart-checklist-title{font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--text-2)}
+.smart-check{display:flex;gap:8px;align-items:center;font-size:13px}
+.smart-check.complete{color:var(--text)}
+.smart-check.incomplete{color:var(--danger,#b91c1c);font-weight:600}
+.smart-check.editor{color:var(--text-2)}
+.smart-req{font-size:11px;font-weight:700;background:var(--brand-soft);color:var(--brand-ink);border-radius:var(--r-pill);padding:1px 8px}
+.smart-errors{background:var(--warn-bg,#fef2f2);color:var(--warn-text,#991b1b);border:1px solid var(--warn-border,#fecaca);border-radius:var(--r-md);padding:10px 12px;font-size:13px}
+.smart-errors ul{margin:6px 0 0;padding-inline-start:20px}
+.field-error{color:var(--danger,#b91c1c);font-size:12px;font-weight:600}
