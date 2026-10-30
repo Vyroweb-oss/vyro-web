@@ -15,6 +15,8 @@ import type { VyroDoc } from '../lib/types'
 import { exportDocx, jsonToPlainText, escapeHtml, isSafeLinkUrl } from '../lib/docx'
 import { formatDocDate } from '../lib/date'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
+import NavigationPane from './NavigationPane'
+import FindReplacePanel from './FindReplacePanel'
 
 export interface EditorPaletteActions {
   insertTable: () => void
@@ -56,6 +58,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [toast,setToast]=useState('')
   const [linkOpen,setLinkOpen]=useState(false)
   const [linkUrl,setLinkUrl]=useState('')
+  const [navOpen,setNavOpen]=useState(false)
+  const [findOpen,setFindOpen]=useState(false)
   const [toolsOpen,setToolsOpen]=useState(false)
   const saveTimer=useRef<any>(null)
   const pendingJson=useRef<any>(null)
@@ -241,6 +245,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('groupCount')}><span className="static-stat">{words} {t('words')} · {chars} {t('characters')} · {editor.getText().split(/\n/).filter(Boolean).length} {t('paragraphsApprox')}</span></Group>
       </>}
       {tab==='View' && <>
+        <Group label={t('navigationPane')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn><Btn active={findOpen} onClick={()=>setFindOpen(o=>!o)}>{t('findReplace')}</Btn></Group>
         <Group label={t('groupZoom')}><Btn onClick={()=>setZoom(z=>Math.max(50,z-10))}>−</Btn><span className="static-stat">{zoom}%</span><Btn onClick={()=>setZoom(z=>Math.min(200,z+10))}>+</Btn><Btn onClick={()=>setZoom(100)}>100%</Btn><Btn onClick={()=>setZoom(50)}>50%</Btn><Btn onClick={()=>setZoom(200)}>200%</Btn></Group>
         <Group label={t('groupTheme')}><Btn onClick={onToggleTheme}>{theme==='dark'? t('lightUi'):t('darkUi')}</Btn></Group>
         <Group label={t('groupDirection')}><span className="static-stat">{t('documentLabel')}: {doc.dir.toUpperCase()}</span></Group>
@@ -251,6 +256,9 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <div className="row"><button className="primary small" onClick={applyLink}>{t('save')}</button>{editor.isActive('link') && <button className="rbtn" onClick={removeLink}>{t('removeLink')}</button>}<button className="rbtn" onClick={()=>setLinkOpen(false)}>{t('cancel')}</button></div>
       </div>}
     </div>
+    {findOpen && <FindReplacePanel editor={editor} lang={lang} onClose={()=>setFindOpen(false)} />}
+    <div className="editor-body">
+    {navOpen && <NavigationPane editor={editor} lang={lang} onCollapse={()=>setNavOpen(false)} />}
     <div className="workspace" ref={workspaceRef}>
       <div className="page-scaler" style={{ width:`${Math.round(pageMmW*MM_PX*effScale)}px`, height:`${Math.round(pagePxH*effScale)}px` }}>
         <div className="page-scale-inner" style={{ transform:`scale(${effScale})`, width:`${Math.round(pageMmW*MM_PX)}px` }}>
@@ -259,6 +267,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
           </div>
         </div>
       </div>
+    </div>
     </div>
     <footer className="status-bar">
       <span className="status-save">{saveText}</span>
