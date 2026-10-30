@@ -439,3 +439,11 @@ input:focus,select:focus{border-color:var(--brand)}
 .mode-reading .a4-page.focus-width-wide{max-width:900px;margin-inline:auto}
 .settings-modal{max-width:560px;max-height:90vh;overflow:auto}
 .settings-divider{border:0;border-top:1px solid var(--border);margin:2px 0}
+
+/* ---------- Vyro Intelligence (M2-10, architecture + UI only) ---------- */
+.intelligence-banner{background:#fef3c7;color:#78350f;border:1px solid #f59e0b;border-radius:var(--r-sm);padding:8px 10px;font-size:13.5px}
+[data-theme="dark"] .intelligence-banner{background:#451a03;color:#fde68a;border-color:#92400e}
+.intelligence-group{display:flex;flex-direction:column;gap:6px}
+.intelligence-actions{display:flex;gap:6px;flex-wrap:wrap}
+.intelligence-compare{display:flex;flex-direction:column;gap:6px}
+@media print{ .intelligence-panel{display:none!important} }
