@@ -7,7 +7,9 @@ import { loadDocs, saveDocs, createDoc, duplicateDoc, renameDoc, toggleFavorite,
 import { TEMPLATES, getTemplate, templateName, templateDesc } from './lib/templates'
 import { supabase, isSupabaseConfigured } from './lib/supabase'
 import { computeEntitlement } from './lib/entitlement'
-import { loadUiLang, saveUiLang, tr, uiDir, type UiLang, type I18nKey } from './lib/i18n'
+import { saveUiLang, tr, uiDir, type UiLang, type I18nKey } from './lib/i18n'
+import SettingsPanel from './components/SettingsPanel'
+import { loadSettings, saveSettings, resolveTheme, defaultSettings, uiSizeClass, newDocDir, applyNewDocDefaults, type VyroSettings } from './lib/settings'
 
 type CardEdit = { id: string; kind: 'rename' | 'folder' }
 
@@ -35,8 +37,17 @@ export default function App(){
   const [docs,setDocs]=useState<VyroDoc[]>(()=> typeof window!=='undefined'? loadDocs(localStorage):[])
   const [openId,setOpenId]=useState<string|null>(null)
   const [query,setQuery]=useState(''); const [folder,setFolder]=useState(''); const [favOnly,setFavOnly]=useState(false)
-  const [theme,setTheme]=useState(()=>localStorage.getItem('vyro-web-theme')||'light')
-  const [lang,setLang]=useState<UiLang>(()=> typeof window!=='undefined'? loadUiLang(localStorage):'en')
+  // M2-08: ONE settings store is the source of truth for theme + language.
+  // The legacy keys are still written (theme/language compat) but the
+  // settings record wins on load (see lib/settings.ts migration).
+  const [settings,setSettings]=useState<VyroSettings>(()=> typeof window!=='undefined'? loadSettings(localStorage): defaultSettings())
+  const lang=settings.uiLang
+  const [systemDark,setSystemDark]=useState(()=> typeof window!=='undefined' && typeof window.matchMedia==='function' ? window.matchMedia('(prefers-color-scheme: dark)').matches : false)
+  const theme=resolveTheme(settings.theme, systemDark)
+  const setLang=(l:UiLang)=>setSettings(s=>({...s, uiLang:l}))
+  const toggleTheme=()=>setSettings(s=>({...s, theme: resolveTheme(s.theme, systemDark)==='dark'?'light':'dark'}))
+  const [settingsOpen,setSettingsOpen]=useState(false)
+  const [freshDefaults,setFreshDefaults]=useState<{id:string;font:string;size:number}|null>(null)
   const [user,setUser]=useState<any>(null); const [authMsg,setAuthMsg]=useState(''); const [email,setEmail]=useState(''); const [password,setPassword]=useState('')
   const [showPremium,setShowPremium]=useState(false)
   const [saveError,setSaveError]=useState(false)
@@ -63,8 +74,11 @@ export default function App(){
   const entitlement=useMemo(()=> computeEntitlement(user, new Date()),[user])
   const isPremium = isSupabaseConfigured && !!user && entitlement.isPremium
   useEffect(()=>{ const ok=saveDocs(localStorage, docs); if(!ok && !saveErrorShown.current){ saveErrorShown.current=true; setSaveError(true) } if(ok){ saveErrorShown.current=false; setSaveError(false) } },[docs])
-  useEffect(()=>{ document.documentElement.dataset.theme=theme; localStorage.setItem('vyro-web-theme',theme) },[theme])
+  useEffect(()=>{ document.documentElement.dataset.theme=theme; try{ localStorage.setItem('vyro-web-theme',theme) }catch{ /* best-effort */ } },[theme])
   useEffect(()=>{ saveUiLang(localStorage, lang); document.documentElement.lang = lang==='fa' ? 'fa' : 'en' },[lang])
+  useEffect(()=>{ saveSettings(localStorage, settings) },[settings])
+  // Follow-system theme: live-update when the OS preference changes.
+  useEffect(()=>{ if(typeof window.matchMedia!=='function') return; const mq=window.matchMedia('(prefers-color-scheme: dark)'); const h=(e:MediaQueryListEvent)=>setSystemDark(e.matches); setSystemDark(mq.matches); mq.addEventListener('change', h); return ()=>mq.removeEventListener('change', h) },[])
   useEffect(()=>{ try{ localStorage.setItem(SORT_KEY, sort) }catch{ /* best-effort */ } },[sort])
   useEffect(()=>{ if(!supabase) return; (async()=>{ const {data}=await supabase.auth.getUser(); setUser(data.user??null) })(); const {data:sub}=supabase.auth.onAuthStateChange(async()=>{ if(!supabase) return; const {data}=await supabase.auth.getUser(); setUser(data.user??null) }); return ()=>sub.subscription.unsubscribe() },[])
   const liveDocs=useMemo(()=>docs.filter(d=>!d.deletedAt),[docs])
@@ -72,20 +86,25 @@ export default function App(){
   const trashed=useMemo(()=>listTrashed(docs),[docs])
   const folders=listFolders(docs)
   const openDoc=docs.find(d=>d.id===openId && !d.deletedAt)
-  const createFromTemplate=(tid:string)=>{ const tpl=getTemplate(tid); const {docs:nd, doc}=createDoc(docs,{title: tpl&&tpl.id!=='blank'? tpl.name+' — Untitled':'Untitled document', content: JSON.parse(JSON.stringify(tpl?.content||{type:'doc',content:[{type:'paragraph'}]})), dir: tpl?.dir||'ltr', templateId:tid}); setDocs(nd); setOpenId(doc.id) }
+  // M2-08: new-document defaults are wired in at creation only — existing
+  // docs are never mutated. Blank docs take the default direction; a
+  // template keeps its own direction (see newDocDir); font/size defaults
+  // are stamped onto template text nodes, and onto the first keystroke of
+  // blank docs via the Editor's freshDefaults prop.
+  const createFromTemplate=(tid:string)=>{ const tpl=getTemplate(tid); const isBlank=tid==='blank'||!tpl; const content=applyNewDocDefaults(JSON.parse(JSON.stringify(tpl?.content||{type:'doc',content:[{type:'paragraph'}]})), settings); const {docs:nd, doc}=createDoc(docs,{title: tpl&&tpl.id!=='blank'? tpl.name+' — Untitled':'Untitled document', content, dir: newDocDir(tpl?.dir||'ltr', isBlank, settings.defaultDir), templateId:tid}); setDocs(nd); setOpenId(doc.id); setFreshDefaults({id:doc.id, font:settings.defaultFont, size:settings.defaultFontSize}) }
   const paletteCommands=useMemo(()=>buildCommands({
     createBlank: ()=>createFromTemplate('blank'),
     createFromTemplate,
     goDashboard: ()=>setOpenId(null),
-    toggleTheme: ()=>setTheme(th=>th==='dark'?'light':'dark'),
-    toggleLanguage: ()=>setLang(l=>l==='en'?'fa':'en'),
+    toggleTheme,
+    toggleLanguage: ()=>setLang(lang==='en'?'fa':'en'),
     theme, lang, templates: TEMPLATES,
     ...(editorActions||{}),
   // `docs` is a dep on purpose: createFromTemplate closes over it, and a
   // stale copy would overwrite documents created after the palette's last build.
-  }),[theme, lang, editorActions, docs])
+  }),[theme, lang, editorActions, docs, settings])
   const openCustomTemplate=()=>{ if(!isPremium){ setShowPremium(true); return } setTplName(''); setTplModal(true) }
-  const createCustomTemplate=()=>{ const name=tplName.trim(); if(!name) return; const {docs:nd,doc}=createDoc(docs,{title:name, content:{type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Custom template — edit and reuse.'}]}]}}); setDocs(nd); setTplModal(false); setOpenId(doc.id) }
+  const createCustomTemplate=()=>{ const name=tplName.trim(); if(!name) return; const content=applyNewDocDefaults({type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Custom template — edit and reuse.'}]}]}, settings); const {docs:nd,doc}=createDoc(docs,{title:name, content, dir: settings.defaultDir}); setDocs(nd); setTplModal(false); setOpenId(doc.id); setFreshDefaults({id:doc.id, font:settings.defaultFont, size:settings.defaultFontSize}) }
   const patchDoc=(id:string, patch:Partial<VyroDoc>, content?:any)=>{ setDocs(prev=>prev.map(d=> d.id===id? {...d, ...patch, ...(content?{content}:{}), updatedAt:new Date().toISOString()}:d)) }
   const authAction=async(kind:'in'|'up'|'out')=>{ if(!supabase) return; setAuthMsg(''); try{ if(kind==='out'){ await supabase.auth.signOut(); setUser(null) } else if(kind==='in'){ const {error}=await supabase.auth.signInWithPassword({email,password}); if(error) throw error; const {data}=await supabase.auth.getUser(); setUser(data.user) } else { const {error}=await supabase.auth.signUp({email,password}); if(error) throw error; const {data}=await supabase.auth.getUser(); setUser(data.user); setAuthMsg(t('accountCreated')) } }catch(e:any){ setAuthMsg(e.message||t('authFailed')) } }
   const startCardEdit=(d:VyroDoc, kind:'rename'|'folder')=>{ setMenuId(null); setDeleteId(null); setCardEdit({id:d.id, kind}) }
@@ -95,8 +114,8 @@ export default function App(){
   const doRestore=(id:string)=>{ setDocs(prev=>restoreDoc(prev,id)); setPurgeId(null) }
   const doPurge=(id:string)=>{ setDocs(prev=>purgeDoc(prev,id)); setPurgeId(null) }
   const dir=uiDir(lang)
-  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={()=>setTheme(th=>th==='dark'?'light':'dark')} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
-  return <div className={`app${lang==='fa'?' fa':''}`} dir={dir}>
+  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={toggleTheme} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions} writingWidth={settings.writingWidth} toolbarMode={settings.toolbar} autosaveEnabled={settings.autosaveEnabled} autosaveIntervalMs={settings.autosaveIntervalMs} freshDefaults={freshDefaults?.id===openDoc.id? freshDefaults : undefined}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
+  return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}>
     <header className="appbar"><div className="appbar-inner">
       <div className="logo big"><span className="vmark">V</span><span>Vyro Web</span></div>
       <div className="appbar-search">
@@ -107,7 +126,8 @@ export default function App(){
       <div className="appbar-actions">
         <button className="rbtn" onClick={openPalette} title="Ctrl+K" aria-label={t('commandPalette')}>⌘K</button>
         <div className="lang-toggle" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>setLang('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>setLang('fa')}>فارسی</button></div>
-        <button className="rbtn" onClick={()=>setTheme(th=>th==='dark'?'light':'dark')} aria-label={theme==='dark'? t('lightUi'):t('darkUi')}>{theme==='dark'?'☀':'☾'}</button>
+        <button className="rbtn" onClick={()=>setSettingsOpen(true)} aria-label={t('settings')} title={t('settings')}>⚙</button>
+        <button className="rbtn" onClick={toggleTheme} aria-label={theme==='dark'? t('lightUi'):t('darkUi')}>{theme==='dark'?'☀':'☾'}</button>
         <button className="chip-btn" onClick={()=>setShowPremium(true)}>{isPremium? `★ ${t('premiumActive')}` : user? t('free') : t('localFree')}</button>
       </div>
     </div></header>
@@ -207,6 +227,7 @@ export default function App(){
       </main>
     </div>
     <CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>
+    {settingsOpen && <SettingsPanel settings={settings} lang={lang} onChange={(patch)=>setSettings(s=>({...s, ...patch}))} onReset={()=>setSettings(defaultSettings())} onClose={()=>setSettingsOpen(false)}/>}
     {tplModal && <div className="modal-backdrop" onClick={()=>setTplModal(false)}><form className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); createCustomTemplate() }}><h2>{t('customTemplate')}</h2><label className="field">{t('customTemplatePrompt')}<input autoFocus value={tplName} dir="auto" onChange={e=>setTplName(e.target.value)}/></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setTplModal(false)}>{t('cancel')}</button><button type="submit" className="primary small" disabled={!tplName.trim()}>{t('create')}</button></div></form></div>}
     {showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}
   </div>

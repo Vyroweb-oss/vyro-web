@@ -405,3 +405,18 @@ input:focus,select:focus{border-color:var(--brand)}
 .stats-row dt{color:var(--text-2)}
 .stats-row dd{margin:0;font-weight:700;overflow-wrap:anywhere;text-align:end}
 @media print{ .stats-panel{display:none!important} }
+
+/* ---------- personalization (M2-08) ---------- */
+/* UI size scales the app chrome (buttons/inputs inherit .app font-size). */
+.app.ui-size-compact{font-size:14px}
+.app.ui-size-compact .rbtn{padding:5px 10px;min-height:34px}
+.app.ui-size-compact .primary{padding:9px 14px;min-height:40px}
+.app.ui-size-large{font-size:18px}
+.app.ui-size-large .rbtn{padding:9px 14px;min-height:42px}
+.app.ui-size-large .primary{padding:13px 20px;min-height:48px}
+/* Writing width also governs Reading mode (Focus rules live above). */
+.mode-reading .a4-page.focus-width-narrow{max-width:560px;margin-inline:auto}
+.mode-reading .a4-page.focus-width-normal{max-width:700px;margin-inline:auto}
+.mode-reading .a4-page.focus-width-wide{max-width:900px;margin-inline:auto}
+.settings-modal{max-width:560px;max-height:90vh;overflow:auto}
+.settings-divider{border:0;border-top:1px solid var(--border);margin:2px 0}

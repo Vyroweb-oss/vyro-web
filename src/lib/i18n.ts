@@ -277,6 +277,24 @@ const en = {
   linkInvalidFlag: 'Invalid',
   linkEditText: 'Edit',
   linkTextLabel: 'Link text',
+  // M2-08 Personalization
+  settings: 'Settings',
+  uiSize: 'Interface size',
+  uiSizeCompact: 'Compact',
+  uiSizeComfortable: 'Comfortable',
+  uiSizeLarge: 'Large',
+  toolbarDisplay: 'Toolbar',
+  toolbarFull: 'Full',
+  toolbarCompact: 'Compact',
+  themeSystem: 'Follow system',
+  defaultDirection: 'Default direction for new documents',
+  defaultFont: 'Default font',
+  defaultFontSize: 'Default text size',
+  autosaveSettings: 'Autosave',
+  autosaveInterval: 'Autosave interval',
+  autosaveOffNote: 'When off, edits save only when you press Save now or leave the document.',
+  resetSettings: 'Reset to defaults',
+  resetSettingsConfirm: 'Reset all settings to defaults?',
 } as const
 
 export type I18nKey = keyof typeof en
@@ -556,6 +574,24 @@ const fa: Record<I18nKey, string> = {
   linkInvalidFlag: 'نامعتبر',
   linkEditText: 'ویرایش',
   linkTextLabel: 'متن پیوند',
+  // M2-08 Personalization
+  settings: 'تنظیمات',
+  uiSize: 'اندازهٔ رابط کاربری',
+  uiSizeCompact: 'فشرده',
+  uiSizeComfortable: 'معمولی',
+  uiSizeLarge: 'بزرگ',
+  toolbarDisplay: 'نوار ابزار',
+  toolbarFull: 'کامل',
+  toolbarCompact: 'فشرده',
+  themeSystem: 'پیروی از سیستم',
+  defaultDirection: 'جهت پیش‌فرض سند جدید',
+  defaultFont: 'قلم پیش‌فرض',
+  defaultFontSize: 'اندازهٔ پیش‌فرض متن',
+  autosaveSettings: 'ذخیرهٔ خودکار',
+  autosaveInterval: 'فاصلهٔ ذخیرهٔ خودکار',
+  autosaveOffNote: 'وقتی خاموش است، ویرایش‌ها فقط با «حالا ذخیره کن» یا هنگام خروج از سند ذخیره می‌شوند.',
+  resetSettings: 'بازنشانی به پیش‌فرض‌ها',
+  resetSettingsConfirm: 'همهٔ تنظیمات به حالت پیش‌فرض برگردد؟',
 }
 
 export const STRINGS: Record<UiLang, Record<I18nKey, string>> = { en, fa }
