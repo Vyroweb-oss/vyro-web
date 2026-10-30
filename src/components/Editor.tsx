@@ -17,6 +17,8 @@ import { formatDocDate } from '../lib/date'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import NavigationPane from './NavigationPane'
 import FindReplacePanel from './FindReplacePanel'
+import { createSnapshot, addVersion, loadVersions, saveVersions, restoreVersion, listVersions, type VersionSnapshot, type VersionTrigger } from '../lib/versions'
+import { saveDraft, loadDraft, clearDraft, detectRecovery, acceptDraft, type RecoveryInfo } from '../lib/recovery'
 import { FocusDim, createViewSnapshot, focusWidthClass, viewModeClass, type FocusWidth, type ViewMode, type ViewSnapshot } from '../lib/viewModes'
 
 export interface EditorPaletteActions {
@@ -70,6 +72,14 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const saveTimer=useRef<any>(null)
   const pendingJson=useRef<any>(null)
   const onChangeRef=useRef(onChange); onChangeRef.current=onChange
+  const docRef=useRef(doc); docRef.current=doc
+  // M2-04 version history + crash recovery (own storage keys; docs store untouched).
+  const [versionsOpen,setVersionsOpen]=useState(false)
+  const [versions,setVersions]=useState<VersionSnapshot[]>(()=> typeof window!=='undefined' ? loadVersions(localStorage) : [])
+  const [versionLabel,setVersionLabel]=useState('')
+  const [selectedVersionId,setSelectedVersionId]=useState<string|null>(null)
+  const [versionError,setVersionError]=useState('')
+  const [recovery,setRecovery]=useState<RecoveryInfo|null>(null)
   const fileImgRef=useRef<HTMLInputElement>(null)
   const importRef=useRef<HTMLInputElement>(null)
   const workspaceRef=useRef<HTMLDivElement>(null)
@@ -93,6 +103,18 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     return ()=>window.removeEventListener('beforeunload', handler)
   },[])
 
+  // M2-04 crash recovery check, once per opened document: a draft that
+  // differs from the saved doc raises an explicit notice (never an auto
+  // overwrite); a draft identical to the saved doc is stale and cleared.
+  useEffect(()=>{
+    const d = loadDraft(localStorage, doc.id)
+    if (!d) return
+    const info = detectRecovery({ id: doc.id, title: doc.title, content: doc.content }, d)
+    if (info) setRecovery(info)
+    else clearDraft(localStorage, doc.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[doc.id])
+
   const editor=useEditor({
     extensions:[
       StarterKit.configure({ link:false, underline:false } as any),
@@ -108,6 +130,10 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     onUpdate({editor}){
       setSaveState('saving')
       pendingJson.current=editor.getJSON()
+      // M2-04: draft snapshot of the pending JSON (separate key, best-effort).
+      // Cleared explicitly on accept/discard, and silently on reopen when it
+      // turns out identical to the saved doc — never auto-applied.
+      try { saveDraft(localStorage, { docId: docRef.current.id, content: editor.getJSON(), title: docRef.current.title, savedAt: new Date().toISOString() }) } catch { /* draft is best-effort */ }
       if(saveTimer.current) clearTimeout(saveTimer.current)
       saveTimer.current=setTimeout(()=>{ saveTimer.current=null; if(pendingJson.current){ const j=pendingJson.current; pendingJson.current=null; onChangeRef.current({}, j); setSavedAt(new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})); setSaveState('saved') } }, 500)
     },
@@ -170,6 +196,60 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     // date follow the document's current title/direction, not its mount-time ones.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[editor, doc.title, doc.dir])
+
+  // ---- M2-04 version history + crash recovery helpers ----
+  const triggerLabel=(trg:VersionTrigger)=> t(({
+    manual:'versionTriggerManual', auto:'versionTriggerAuto', 'before-replace':'versionTriggerBeforeReplace',
+    'before-risky':'versionTriggerBeforeRisky', 'pre-restore':'versionTriggerPreRestore', recovery:'versionTriggerRecovery',
+  } as const)[trg])
+  /** Snapshot the editor's current JSON (incl. unsaved edits). Returns false only when the version could not be stored. */
+  const snapshotCurrent=(trigger:VersionTrigger, label?:string):boolean=>{
+    if(!editor) return false
+    const snap=createSnapshot({ id: docRef.current.id, title: docRef.current.title, content: editor.getJSON() }, trigger, label)
+    if(!snap) { setVersionError(t('versionSaveFailed')); return false }
+    const store=loadVersions(localStorage)
+    const next=addVersion(store, snap)
+    const ok=saveVersions(localStorage, next)
+    if(ok){ setVersions(next); setVersionError('') } else setVersionError(t('versionSaveFailed'))
+    return ok
+  }
+  const saveVersionManual=()=>{ if(snapshotCurrent('manual', versionLabel)){ setVersionLabel(''); setToast(t('versionSaved')) } }
+  /** Apply restored content/title: pending edits are folded into the pre-restore backup, never silently discarded. */
+  const applyRestored=(restored:{content:any;title:string}, versionsNext:VersionSnapshot[])=>{
+    if(!editor) return
+    if(saveTimer.current){ clearTimeout(saveTimer.current); saveTimer.current=null }
+    pendingJson.current=null
+    setVersions(versionsNext)
+    editor.commands.setContent(restored.content)
+    onChangeRef.current({ title: restored.title }, editor.getJSON())
+    setSaveState('saving')
+  }
+  const restoreSelected=()=>{
+    if(!editor || !selectedVersionId) return
+    // The backup must capture the user's latest work: pending (unsaved) edits
+    // count as current, since the debounce save has not run yet.
+    const current={ id: docRef.current.id, title: docRef.current.title, content: pendingJson.current ?? docRef.current.content }
+    const res=restoreVersion(loadVersions(localStorage), current, selectedVersionId)
+    if(!res){ setVersionError(t('versionSaveFailed')); return }
+    if(!saveVersions(localStorage, res.versions)){ setVersionError(t('versionSaveFailed')); return }
+    applyRestored(res.restored, res.versions)
+    setToast(t('versionRestored'))
+  }
+  const acceptRecovery=()=>{
+    if(!editor || !recovery) return
+    const current={ id: docRef.current.id, title: docRef.current.title, content: pendingJson.current ?? docRef.current.content }
+    const res=acceptDraft(current, recovery.draft, loadVersions(localStorage))
+    if(!res){ setVersionError(t('versionSaveFailed')); return }
+    if(!saveVersions(localStorage, res.versions)){ setVersionError(t('versionSaveFailed')); return }
+    clearDraft(localStorage, docRef.current.id)
+    setRecovery(null)
+    applyRestored(res.restored, res.versions)
+    setToast(t('recoveryAccepted'))
+  }
+  const discardRecovery=()=>{ clearDraft(localStorage, docRef.current.id); setRecovery(null) }
+  const beforeReplaceAll=()=>{ if(!snapshotCurrent('before-replace')) setToast(t('versionSaveFailed')) }
+  const docVersions=listVersions(versions, doc.id)
+  const selectedVersion=docVersions.find(v=>v.id===selectedVersionId) ?? null
 
   if(!editor) return <div className="loading">{t('loadingEditor')}</div>
   const words = editor.getText().trim()? editor.getText().trim().split(/\s+/).length:0
@@ -268,6 +348,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       {tab==='View' && <>
         <Group label={t('navigationPane')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn><Btn active={findOpen} onClick={()=>setFindOpen(o=>!o)}>{t('findReplace')}</Btn></Group>
         <Group label={t('groupViewModes')}><Btn onClick={enterFocus}>{t('focusMode')}</Btn><Btn onClick={enterReading}>{t('readingMode')}</Btn></Group>
+        <Group label={t('versions')}><Btn active={versionsOpen} onClick={()=>setVersionsOpen(o=>!o)}>{t('versions')}</Btn></Group>
         <Group label={t('groupZoom')}><Btn onClick={()=>setZoom(z=>Math.max(50,z-10))}>−</Btn><span className="static-stat">{zoom}%</span><Btn onClick={()=>setZoom(z=>Math.min(200,z+10))}>+</Btn><Btn onClick={()=>setZoom(100)}>100%</Btn><Btn onClick={()=>setZoom(50)}>50%</Btn><Btn onClick={()=>setZoom(200)}>200%</Btn></Group>
         <Group label={t('groupTheme')}><Btn onClick={onToggleTheme}>{theme==='dark'? t('lightUi'):t('darkUi')}</Btn></Group>
         <Group label={t('groupDirection')}><span className="static-stat">{t('documentLabel')}: {doc.dir.toUpperCase()}</span></Group>
@@ -278,7 +359,35 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <div className="row"><button className="primary small" onClick={applyLink}>{t('save')}</button>{editor.isActive('link') && <button className="rbtn" onClick={removeLink}>{t('removeLink')}</button>}<button className="rbtn" onClick={()=>setLinkOpen(false)}>{t('cancel')}</button></div>
       </div>}
     </div>}
-    {viewMode==='edit' && findOpen && <FindReplacePanel editor={editor} lang={lang} onClose={()=>setFindOpen(false)} />}
+    {viewMode==='edit' && findOpen && <FindReplacePanel editor={editor} lang={lang} onClose={()=>setFindOpen(false)} onBeforeReplaceAll={beforeReplaceAll} />}
+    {viewMode==='edit' && recovery && <div className="recovery-banner" role="alert">
+      <div><b>{t('recoveryNotice')}</b> — {t('recoveryDiff')}</div>
+      <div className="recovery-compare" dir="auto">{t('saved')}: {recovery.savedLength} {t('chars')} · {t('versionTriggerRecovery')}: {recovery.draftLength} {t('chars')}</div>
+      <div className="recovery-excerpt" dir="auto"><span>{t('saved')}: “{recovery.savedExcerpt}”</span><span>{t('versionTriggerRecovery')}: “{recovery.draftExcerpt}”</span></div>
+      <div className="row"><button type="button" className="primary small" onClick={acceptRecovery}>{t('recoveryAccept')}</button><button type="button" className="rbtn" onClick={discardRecovery}>{t('recoveryDiscard')}</button></div>
+    </div>}
+    {viewMode==='edit' && versionsOpen && <div className="versions-panel" role="region" aria-label={t('versions')}>
+      <div className="find-row">
+        <input value={versionLabel} dir="auto" onChange={e=>setVersionLabel(e.target.value)} placeholder={t('versionNamePlaceholder')} aria-label={t('versionNamePlaceholder')}/>
+        <button type="button" className="primary small" onClick={saveVersionManual}>{t('versionSave')}</button>
+        <button type="button" className="rbtn" onClick={()=>setVersionsOpen(false)} aria-label={t('close')}>×</button>
+      </div>
+      {versionError && <div className="versions-error" role="alert">{versionError}</div>}
+      {docVersions.length===0
+        ? <p className="muted">{t('versionListEmpty')}</p>
+        : <ul className="version-list">
+            {docVersions.map(v=><li key={v.id}>
+              <button type="button" className={`version-item${selectedVersionId===v.id?' active':''}`} onClick={()=>setSelectedVersionId(v.id)}>
+                <span className="version-meta">{new Date(v.createdAt).toLocaleString()} · {triggerLabel(v.trigger)}</span>
+                {v.label && <span className="version-label" dir="auto">{v.label}</span>}
+              </button>
+            </li>)}
+          </ul>}
+      {selectedVersion && <div className="version-preview">
+        <div className="find-row"><span className="find-preview-label">{t('versionPreview')}</span><button type="button" className="primary small" onClick={restoreSelected}>{t('restore')}</button></div>
+        <div className="version-preview-text" dir="auto">{jsonToPlainText(selectedVersion.content).slice(0, 5000)}</div>
+      </div>}
+    </div>}
     <div className="editor-body">
     {viewMode==='edit' && navOpen && <NavigationPane editor={editor} lang={lang} onCollapse={()=>setNavOpen(false)} />}
     <div className="workspace" ref={workspaceRef}>

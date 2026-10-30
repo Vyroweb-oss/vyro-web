@@ -16,10 +16,12 @@ import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 // count); navigation and Replace-one are unaffected. The user can clear the
 // scope to search the whole document. Navigation never silently changes the
 // scope, because navigating selects matches in the editor.
-export default function FindReplacePanel({ editor, lang, onClose }: {
+export default function FindReplacePanel({ editor, lang, onClose, onBeforeReplaceAll }: {
   editor: Editor
   lang: UiLang
   onClose: () => void
+  /** M2-04: called BEFORE the bulk replacement runs, so the caller can snapshot the pre-replace document. */
+  onBeforeReplaceAll?: () => void
 }) {
   const t = (k: I18nKey) => tr(lang, k)
   const [query, setQuery] = useState('')
@@ -59,6 +61,7 @@ export default function FindReplacePanel({ editor, lang, onClose }: {
   }
   const doReplaceAll = () => {
     if (!matches.length) return
+    onBeforeReplaceAll?.()
     replaceAllMatches(editor, matches, replacement)
     setMatchIdx(0)
   }
