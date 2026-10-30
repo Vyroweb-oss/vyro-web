@@ -354,6 +354,17 @@ const en = {
   intelligenceOriginal: 'Original',
   intelligenceSuggestion: 'Suggestion',
   intelligenceSuggestionEmpty: 'No suggestion yet — nothing has been produced while disconnected.',
+  // M2-11 Document Outline & section management
+  sectionLevel: 'Heading level',
+  sectionSelect: 'Select section',
+  sectionCollapse: 'Collapse section',
+  sectionExpand: 'Expand section',
+  sectionMoveUp: 'Move section up',
+  sectionMoveDown: 'Move section down',
+  sectionMoveInto: 'Move into previous heading',
+  sectionDragHandle: 'Drag to move section',
+  sectionSkipWarning: 'Level skips a level',
+  sectionSkipCount: 'level-skip warnings',
 } as const
 
 export type I18nKey = keyof typeof en
@@ -710,6 +721,17 @@ const fa: Record<I18nKey, string> = {
   intelligenceOriginal: 'اصلی',
   intelligenceSuggestion: 'پیشنهاد',
   intelligenceSuggestionEmpty: 'هنوز پیشنهادی نیست — در حالت بدون اتصال چیزی ساخته نشده است.',
+  // M2-11 Document Outline & section management
+  sectionLevel: 'سطح تیتر',
+  sectionSelect: 'انتخاب بخش',
+  sectionCollapse: 'بستن بخش',
+  sectionExpand: 'بازکردن بخش',
+  sectionMoveUp: 'انتقال بخش به بالا',
+  sectionMoveDown: 'انتقال بخش به پایین',
+  sectionMoveInto: 'انتقال به درون تیتر قبلی',
+  sectionDragHandle: 'بکشید تا بخش جابه‌جا شود',
+  sectionSkipWarning: 'پرش سطح تیتر',
+  sectionSkipCount: 'هشدار پرش سطح',
 }
 
 export const STRINGS: Record<UiLang, Record<I18nKey, string>> = { en, fa }

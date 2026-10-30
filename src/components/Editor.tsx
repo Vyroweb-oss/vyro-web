@@ -27,6 +27,7 @@ import { sanitizePastedHtml, htmlToPlainText, getContextMenuItems, type MenuItem
 import { createSnapshot, addVersion, loadVersions, saveVersions, restoreVersion, listVersions, type VersionSnapshot, type VersionTrigger } from '../lib/versions'
 import { saveDraft, loadDraft, clearDraft, detectRecovery, acceptDraft, type RecoveryInfo } from '../lib/recovery'
 import { FocusDim, createViewSnapshot, focusWidthClass, viewModeClass, type FocusWidth, type ViewMode, type ViewSnapshot } from '../lib/viewModes'
+import { SectionCollapse } from '../lib/sections'
 import { EDITOR_FONTS, EDITOR_FONT_SIZES, resolveAutosaveDelay, type VyroSettings } from '../lib/settings'
 
 export interface EditorPaletteActions {
@@ -169,7 +170,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       TextStyleKit, Highlight.configure({multicolor:true}),
       TableKit.configure({ table:{ resizable:true } }),
       Image, Placeholder.configure({ placeholder: t('startTyping') }),
-      CharacterCount, PageBreak, FocusDim,
+      CharacterCount, PageBreak, FocusDim, SectionCollapse,
     ],
     content: doc.content,
     editorProps:{ attributes:{ dir: doc.dir, spellcheck: String(spell) } as any },
