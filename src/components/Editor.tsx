@@ -18,6 +18,7 @@ import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import NavigationPane from './NavigationPane'
 import StatsPanel from './StatsPanel'
 import SaveDiagnosticsPanel from './SaveDiagnosticsPanel'
+import ExportPresetsPanel from './ExportPresetsPanel'
 import { initialSaveDiag, recordAttempt, recordSuccess, recordFailure, withBackup, saveBackup, loadBackup, type SaveDiagnostics, type SaveBackup } from '../lib/saveDiagnostics'
 import LinkManagerPanel from './LinkManagerPanel'
 import ComparePanel from './ComparePanel'
@@ -77,6 +78,9 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [diag,setDiag]=useState<SaveDiagnostics>(()=>initialSaveDiag())
   const [backup,setBackup]=useState<SaveBackup|null>(()=> typeof window!=='undefined' ? loadBackup(localStorage) : null)
   const [saveDiagOpen,setSaveDiagOpen]=useState(false)
+  // M2-14 export presets: panel state only; all export work goes through
+  // the callbacks below (download / gated print), never from the panel.
+  const [exportPresetsOpen,setExportPresetsOpen]=useState(false)
   const [spell,setSpell]=useState(true)
   const [toast,setToast]=useState('')
   const [linkOpen,setLinkOpen]=useState(false)
@@ -626,7 +630,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('groupDocument')}><Btn onClick={goBack}>{t('dashboard')}</Btn><Btn onClick={()=>{ pendingJson.current=editor.getJSON(); flushSave() }}>{t('saveNow')}</Btn></Group>
         <Group label={t('versions')}><Btn active={versionsOpen} onClick={()=>setVersionsOpen(o=>!o)}>{t('versions')}</Btn></Group>
         <Group label={t('groupImport')}><Btn onClick={()=>importRef.current?.click()}>{t('importBtn')}</Btn></Group>
-        <Group label={t('groupExport')}><Btn onClick={exportTxt}>{t('exportTxt')}</Btn><Btn onClick={exportHtml}>{t('exportHtml')}</Btn><Btn onClick={()=>gated(()=>exportDocx(editor.getJSON(), doc.title))}>{t('exportDocx')} {!isPremium&&'🔒'}</Btn><Btn onClick={()=>gated(()=>window.print())}>{t('printPdf')} {!isPremium&&'🔒'}</Btn></Group>
+        <Group label={t('groupExport')}><Btn onClick={exportTxt}>{t('exportTxt')}</Btn><Btn onClick={exportHtml}>{t('exportHtml')}</Btn><Btn onClick={()=>gated(()=>exportDocx(editor.getJSON(), doc.title))}>{t('exportDocx')} {!isPremium&&'🔒'}</Btn><Btn onClick={()=>gated(()=>window.print())}>{t('printPdf')} {!isPremium&&'🔒'}</Btn><Btn active={exportPresetsOpen} onClick={()=>setExportPresetsOpen(o=>!o)}>{t('exportPresets')}</Btn></Group>
       </>}
       {tab==='Home' && <>
         <Group label={t('groupClipboard')}><Btn onClick={()=>copySelection(true)}>{t('menuCut')}</Btn><Btn onClick={()=>copySelection(false)}>{t('menuCopy')}</Btn><Btn onClick={()=>{ void pastePlainText() }}>{t('menuPastePlain')}</Btn></Group>
@@ -680,6 +684,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     </div>}
     {viewMode==='edit' && statsOpen && <StatsPanel editor={editor} lang={lang} onClose={()=>setStatsOpen(false)} />}
     {viewMode==='edit' && saveDiagOpen && <SaveDiagnosticsPanel editor={editor} doc={doc} lang={lang} diag={diag} backup={backup} autosaveEnabled={autosaveEnabled ?? true} autosaveIntervalMs={autosaveIntervalMs ?? 500} hasPendingEdits={saveState==='pending' || saveState==='failed'} onRetry={retrySave} onCreateBackup={createBackupNow} onDownloadBackup={downloadBackup} onClose={()=>setSaveDiagOpen(false)} />}
+    {viewMode==='edit' && exportPresetsOpen && <ExportPresetsPanel editor={editor} doc={doc} lang={lang} onClose={()=>setExportPresetsOpen(false)} onExportText={(name,text,mime)=>download(name,text,mime)} onExportHtml={(name,html)=>download(name, `<!doctype html><html dir="${doc.dir}"><head><meta charset="utf-8"><title>${escapeHtml(doc.title)}</title></head><body>${html}</body></html>`, 'text/html')} onExportArchive={(name,payload)=>download(name,payload,'application/json')} onPrint={()=>gated(()=>window.print())} />}
     {viewMode==='edit' && compareOpen && <ComparePanel editor={editor} doc={doc} versions={versions} lang={lang} onClose={()=>setCompareOpen(false)} onVersionsSaved={(next)=>setVersions(next)} />}
     {viewMode==='edit' && intelligenceOpen && <IntelligencePanel editor={editor} lang={lang} onClose={()=>setIntelligenceOpen(false)} />}
     {viewMode==='edit' && linksOpen && <LinkManagerPanel editor={editor} lang={lang} onClose={()=>setLinksOpen(false)} onEditLink={openLinkAt} />}

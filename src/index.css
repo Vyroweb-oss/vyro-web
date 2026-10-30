@@ -468,6 +468,20 @@ input:focus,select:focus{border-color:var(--brand)}
 .saved.failed,.status-save.failed{color:var(--danger);font-weight:700}
 @media print{ .save-diag-panel{display:none!important} }
 
+/* ---------- export presets (M2-14) ---------- */
+.export-presets-panel{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;flex-direction:column;gap:8px}
+.preset-selector{display:flex;gap:8px;flex-wrap:wrap}
+.preset-btn{padding:8px 12px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);cursor:pointer;font:inherit}
+.preset-btn.active{background:var(--brand);border-color:var(--brand-strong);color:#fff;font-weight:700}
+.keeps-drops{display:flex;gap:24px;flex-wrap:wrap}
+.keeps-list,.drops-list{margin:4px 0 0;padding-inline-start:18px;font-size:13.5px;color:var(--text-2)}
+.export-date-check{display:flex;gap:8px;align-items:center;font-size:13.5px;cursor:pointer}
+.export-preview-box{background:var(--surface-2);border-radius:var(--r-sm);padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.export-preview-text{font-size:13.5px;color:var(--text-2);white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto;margin:0}
+.export-error{color:var(--danger);font-weight:700;font-size:13.5px}
+.export-success{color:var(--success,#2e7d32);font-weight:600;font-size:13.5px;margin:0}
+@media print{ .export-presets-panel{display:none!important} }
+
 /* ---------- personalization (M2-08) ---------- */
 /* UI size scales the app chrome (buttons/inputs inherit .app font-size). */
 .app.ui-size-compact{font-size:14px}
