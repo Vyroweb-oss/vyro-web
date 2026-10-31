@@ -1054,7 +1054,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     </header>}
     {viewMode==='edit' && <div className={`ribbon-wrap${toolsOpen?' expanded':''}`}>
       <nav className="ribbon-tabs">{TABS.map(tb=><button key={tb.id} className={tab===tb.id?'tab active':'tab'} onMouseDown={keepEditorFocus} onClick={()=>setTab(tb.id)}>{t(tb.key)}</button>)}<button className="tools-toggle" aria-expanded={toolsOpen} onMouseDown={keepEditorFocus} onClick={()=>setToolsOpen(o=>!o)}>{t('moreTools')} {toolsOpen?'▴':'▾'}</button></nav>
-      <div className="ribbon">
+      <div className="ribbon" data-tab={tab}>
       {tab==='File' && <>
         <Group label={t('groupDocument')}><Btn onClick={goBack}>{t('dashboard')}</Btn><Btn onClick={()=>{ pendingJson.current=editor.getJSON(); flushSave() }}>{t('saveNow')}</Btn></Group>
         <Group label={t('versions')}><Btn active={versionsOpen} onClick={()=>setVersionsOpen(o=>!o)}>{t('versions')}</Btn></Group>
@@ -1086,7 +1086,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('groupDirection')}><Btn active={doc.dir==='ltr'} onClick={()=>onChange({dir:'ltr'})}>LTR</Btn><Btn active={doc.dir==='rtl'} onClick={()=>onChange({dir:'rtl'})}>RTL (Dari/Persian)</Btn></Group>
       </>}
       {tab==='References' && <Group label={t('groupContents')}><Btn onClick={insertToc}>{t('insertToc')}</Btn><Btn onClick={updateToc}>{t('updateToc')}</Btn></Group>}
-      {tab==='Mailings' && <Group label={t('mailMerge')}><Btn active={mailMergeOpen} onClick={()=>setMailMergeOpen(o=>!o)}>{t('mailMerge')}</Btn></Group>}
+      {tab==='Mailings' && <Group label={t('mailMerge')}><Btn active={mailMergeOpen} onClick={()=>setMailMergeOpen(o=>!o)}>{t('mailMerge')}</Btn><span className="static-stat mailings-note">{t('mailMergeLocal')}</span></Group>}
       {tab==='Review' && <>
         <Group label={t('groupProofing')}><Btn active={spell} onClick={()=>setSpell(s=>!s)}>{t('spellcheck')} {spell? t('on'):t('off')}</Btn></Group>
         <Group label={t('groupCount')}><span className="static-stat">{words} {t('words')} · {chars} {t('characters')} · {editor.getText().split(/\n/).filter(Boolean).length} {t('paragraphsApprox')}</span><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>

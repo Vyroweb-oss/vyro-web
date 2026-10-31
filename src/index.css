@@ -234,6 +234,7 @@ input:focus,select:focus{border-color:var(--brand)}
 .color-wrap{display:inline-flex;flex-direction:column;align-items:center;gap:0;font-size:12px;font-weight:700;line-height:1.05;padding:3px 5px;border-radius:var(--r-sm);cursor:pointer}
 .color-wrap:hover{background:var(--surface-2)}
 .color-wrap input{width:26px;height:16px;padding:0;border:0;background:none;cursor:pointer}
+.mailings-note{display:none}
 .static-stat{font-size:13px;align-self:center;color:var(--text-2);white-space:nowrap}
 .link-pop{position:absolute;top:10px;inset-inline-end:12px;z-index:45;background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-lg);border-radius:var(--r-md);padding:14px;display:flex;flex-direction:column;gap:10px;width:min(360px,calc(100vw - 24px))}
 .link-pop label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600}
@@ -408,9 +409,9 @@ input:focus,select:focus{border-color:var(--brand)}
      view by an Editor effect); the "More tools" toggle is sticky at the
      strip's end so it is always reachable; the command row snap-scrolls
      group by group; expanding opens a labelled sheet over the page. */
-  .ribbon-tabs{padding:4px 8px 0;scroll-snap-type:x proximity}
-  .ribbon-tabs .tab{min-height:48px;padding:10px 18px;font-size:15px;scroll-snap-align:start}
-  .tools-toggle{display:inline-flex;align-items:center;min-height:48px;padding:10px 14px;font-size:14px;position:sticky;inset-inline-end:0;background:var(--surface-2);z-index:2}
+  .ribbon-tabs{padding:4px 8px 0;scroll-snap-type:none;flex-wrap:wrap;overflow-x:visible}
+  .ribbon-tabs .tab{min-height:48px;padding:10px 18px;font-size:15px;scroll-snap-align:none}
+  .tools-toggle{display:inline-flex;align-items:center;min-height:48px;padding:10px 14px;font-size:14px;background:var(--surface-2);z-index:2}
   .ribbon{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding:6px 8px;scrollbar-width:none;scroll-snap-type:x proximity}
   .ribbon::-webkit-scrollbar{display:none}
   .ribbon .rgroup{flex:0 0 auto;padding:2px 9px;scroll-snap-align:start}
@@ -422,6 +423,18 @@ input:focus,select:focus{border-color:var(--brand)}
   .ribbon-wrap.expanded .rgroup{flex:0 1 auto;scroll-snap-align:none}
   .ribbon-wrap.expanded .rgroup-items{flex-wrap:wrap}
   .ribbon-wrap.expanded .rgroup-label{display:block}
+  /* Mobile ribbon fix (owner order, 2026-10-31): the small tabs WRAP so no
+     tool hides in the sideways strip; group labels return in wrapped mode;
+     the wide tabs (File/Home/Insert) keep the strip but gain a VISIBLE thin
+     scrollbar as the scroll cue. Desktop rules are untouched. */
+  .ribbon{scrollbar-width:thin}
+  .ribbon::-webkit-scrollbar{display:block;height:6px}
+  .ribbon::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+  .ribbon[data-tab='Layout'],.ribbon[data-tab='References'],.ribbon[data-tab='Mailings'],.ribbon[data-tab='Review'],.ribbon[data-tab='View']{flex-wrap:wrap;overflow-x:visible;overflow-y:visible;scroll-snap-type:none}
+  .ribbon[data-tab='Layout'] .rgroup,.ribbon[data-tab='References'] .rgroup,.ribbon[data-tab='Mailings'] .rgroup,.ribbon[data-tab='Review'] .rgroup,.ribbon[data-tab='View'] .rgroup{flex:0 1 auto;scroll-snap-align:none}
+  .ribbon[data-tab='Layout'] .rgroup-items,.ribbon[data-tab='References'] .rgroup-items,.ribbon[data-tab='Mailings'] .rgroup-items,.ribbon[data-tab='Review'] .rgroup-items,.ribbon[data-tab='View'] .rgroup-items{flex-wrap:wrap}
+  .ribbon[data-tab='Layout'] .rgroup-label,.ribbon[data-tab='References'] .rgroup-label,.ribbon[data-tab='Mailings'] .rgroup-label,.ribbon[data-tab='Review'] .rgroup-label,.ribbon[data-tab='View'] .rgroup-label{display:block}
+  .mailings-note{display:inline;max-width:230px}
   .workspace{padding:12px 6px 32px}
   .status-bar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:0;font-size:12px;padding-bottom:calc(5px + env(safe-area-inset-bottom))}
   .status-bar::-webkit-scrollbar{display:none}
