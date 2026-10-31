@@ -19,7 +19,7 @@
   --shadow-sm:0 1px 2px rgba(16,27,45,.07),0 1px 3px rgba(16,27,45,.06);
   --shadow-md:0 6px 18px rgba(16,27,45,.12);
   --shadow-lg:0 16px 40px rgba(16,27,45,.22);
-  --shadow-page:0 1px 2px rgba(16,27,45,.08),0 4px 14px rgba(16,27,45,.08);
+  --shadow-page:0 1px 3px rgba(16,27,45,.14),0 10px 30px rgba(16,27,45,.13);
   --font-ui:Inter,system-ui,'Segoe UI',Roboto,'Helvetica Neue',Arial,Vazirmatn,Tahoma,sans-serif;
   --font-fa:'Vazirmatn',Tahoma,Inter,system-ui,'Segoe UI',sans-serif;
   --focus:#7db1ff;
@@ -32,7 +32,7 @@
   --canvas:#070c15; --danger:#ff6b63; --danger-soft:#3d1d1e;
   --warn-bg:#3a2f14; --warn-text:#f2cd7e; --warn-border:#7a5f22;
   --shadow-sm:0 1px 2px rgba(0,0,0,.4); --shadow-md:0 6px 18px rgba(0,0,0,.45); --shadow-lg:0 16px 40px rgba(0,0,0,.55);
-  --shadow-page:0 1px 2px rgba(0,0,0,.35),0 4px 14px rgba(0,0,0,.30);
+  --shadow-page:0 1px 3px rgba(0,0,0,.45),0 10px 30px rgba(0,0,0,.40);
   --focus:#8dbcff;
 }
 
@@ -174,13 +174,13 @@ input:focus,select:focus{border-color:var(--brand)}
 
 /* ribbon */
 .ribbon-wrap{position:relative}
-.ribbon-tabs{display:flex;gap:2px;background:var(--surface);border-bottom:1px solid var(--border);padding:6px 12px 0;align-items:flex-end;overflow-x:auto;scrollbar-width:none}
+.ribbon-tabs{display:flex;gap:2px;background:linear-gradient(90deg,var(--brand-deep),var(--brand));border-bottom:1px solid var(--brand-deep);padding:6px 12px 0;align-items:flex-end;overflow-x:auto;scrollbar-width:none}
 .ribbon-tabs::-webkit-scrollbar{display:none}
-.tab{background:transparent;border:0;color:var(--text-2);padding:9px 16px;border-radius:8px 8px 0 0;white-space:nowrap;min-height:40px;font-size:14px;border-bottom:2px solid transparent}
-.tab:hover{background:var(--surface-2);color:var(--text)}
+.tab{background:transparent;border:0;color:#d7e5ff;padding:9px 16px;border-radius:8px 8px 0 0;white-space:nowrap;min-height:40px;font-size:14px;border-bottom:2px solid transparent}
+.tab:hover{background:rgba(255,255,255,.14);color:#fff}
 .tab.active{background:var(--surface);color:var(--brand-ink);font-weight:700;border-bottom-color:var(--brand)}
 .tools-toggle{display:none;margin-inline-start:auto;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-bottom:0;border-radius:8px 8px 0 0;padding:9px 13px;min-height:40px;white-space:nowrap;font-size:13.5px}
-.ribbon{display:flex;flex-wrap:wrap;background:var(--surface);border-bottom:1px solid var(--border);padding:8px 10px 6px;row-gap:2px}
+.ribbon{display:flex;flex-wrap:wrap;background:var(--surface-2);border-bottom:1px solid var(--border);padding:8px 10px 6px;row-gap:2px}
 .rgroup{display:flex;flex-direction:column;justify-content:space-between;padding:2px 11px;border-inline-end:1px solid var(--border)}
 .rgroup:last-child{border-inline-end:0}
 .rgroup-items{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
@@ -248,7 +248,7 @@ input:focus,select:focus{border-color:var(--brand)}
 .a4-page hr.page-break::after{content:'Page break';font-size:11px;color:var(--brand)}
 
 /* status bar */
-.status-bar{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:5px 14px;background:linear-gradient(90deg,var(--brand-deep),var(--brand));color:#eaf1ff;font-size:12.5px;flex-wrap:wrap}
+.status-bar{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:5px 14px;background:var(--surface);color:var(--text);border-top:1px solid var(--border);font-size:12.5px;flex-wrap:wrap}
 .status-bar .status-dir{font-weight:600}
 /* PC4: the footer save status is visible on desktop too (it was
    display:none above 768px). The title-bar save status uses the separate
@@ -257,9 +257,9 @@ input:focus,select:focus{border-color:var(--brand)}
 .status-stats-btn{background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:0}
 .status-stats-btn:hover{text-decoration:underline}
 .status-zoom{display:flex;gap:8px;align-items:center}
-.status-zoom input[type=range]{width:132px;padding:0;accent-color:#fff;background:transparent;border:0}
-.status-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:26px;background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:6px;font-size:15px;line-height:1}
-.status-btn:hover{background:rgba(255,255,255,.28)}
+.status-zoom input[type=range]{width:132px;padding:0;accent-color:var(--brand);background:transparent;border:0}
+.status-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:26px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;font-size:15px;line-height:1}
+.status-btn:hover{background:var(--surface-3)}
 
 
 /* ---------- SPRINT-WORD: title bar QAT, styles gallery, status views, local chip ---------- */
@@ -268,17 +268,20 @@ input:focus,select:focus{border-color:var(--brand)}
 .qat-btn:hover{background:var(--surface-2);border-color:var(--border)}
 .qat-btn:disabled{opacity:.45;cursor:default}
 .local-chip{display:inline-flex;align-items:center;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);border-radius:var(--r-pill);padding:5px 11px;font-size:12px;font-weight:600;white-space:nowrap}
-.styles-gallery{display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap}
-.style-gal{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:8px 12px;color:var(--text);line-height:1.2;white-space:nowrap}
+.styles-gallery{display:flex;gap:6px;align-items:stretch;flex-wrap:wrap}
+.style-gal{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:78px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 10px 5px;color:var(--text);line-height:1.2;white-space:nowrap}
 .style-gal:hover{border-color:var(--brand)}
-.style-gal.active{background:var(--brand-soft);border-color:var(--brand);color:var(--brand-ink);font-weight:700}
-.style-gal.style-h1{font-size:17px;font-weight:800}
-.style-gal.style-h2{font-size:15px;font-weight:700}
-.style-gal.style-h3{font-size:14px;font-weight:700}
-.style-gal.style-title{font-size:19px;font-weight:800}
+.style-gal.active{background:var(--brand-soft);border-color:var(--brand);color:var(--brand-ink)}
+.style-gal .style-sample{font-size:13.5px;line-height:1.05}
+.style-gal .style-name{font-size:10.5px;color:var(--text-2);font-weight:400}
+.style-gal.active .style-name{color:var(--brand-ink)}
+.style-gal.style-h1 .style-sample{font-size:17px;font-weight:800}
+.style-gal.style-h2 .style-sample{font-size:15px;font-weight:700}
+.style-gal.style-h3 .style-sample{font-size:14px;font-weight:700}
+.style-gal.style-title .style-sample{font-size:19px;font-weight:800}
 .status-views{display:flex;gap:4px;align-items:center}
-.status-view-btn{background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:6px;padding:4px 10px;font-size:12.5px;min-height:26px}
-.status-view-btn:hover{background:rgba(255,255,255,.28)}
+.status-view-btn{background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:12.5px;min-height:26px}
+.status-view-btn:hover{background:var(--surface-3)}
 
 /* ---------- PC1: title-bar overflow menu (<720px) ---------- */
 .title-overflow-wrap{position:relative;display:flex;align-items:center}
@@ -309,6 +312,16 @@ input:focus,select:focus{border-color:var(--brand)}
   .top-end{gap:7px}
   .saved{font-size:12px}
   .title-input{font-size:15px}
+  /* Visual-round fix (owner screenshot review, 2026-10-31): at phone
+     widths the Free badge plus the save text squeezed the title out and
+     the bar's groups overlapped. Plan info lives on the dashboard and in
+     the premium dialog, so the badge hides here; QAT tightens; the save
+     text never wraps; the title keeps a real, ellipsised column. */
+  .editor-top .badge{display:none}
+  .editor-top .qat-btn{width:32px;height:32px}
+  .editor-top{gap:6px}
+  .saved{white-space:nowrap;font-size:11.5px}
+  .title-input{min-width:0;text-overflow:ellipsis}
 }
 
 /* ---------- responsive: tablets & phones ---------- */
