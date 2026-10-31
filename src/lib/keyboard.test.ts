@@ -44,11 +44,35 @@ describe('shortcut catalogue honesty', () => {
   })
   it('the catalogue never claims a reserved shortcut as an app shortcut', () => {
     const claimed = new Set(SHORTCUT_CATALOGUE.filter((s) => s.chord).map((s) => s.chord!.code))
-    // Only Ctrl+U overlaps, and only because it is genuinely the editor's
-    // underline chord — every other reserved code is absent.
+    // Only Ctrl+U and Ctrl+S overlap, and only because they are genuinely
+    // the editor's underline / save-now chords — every other reserved
+    // code is absent.
     for (const code of RESERVED_CODES) {
-      if (code === 'KeyU') continue
+      if (code === 'KeyU' || code === 'KeyS') continue
       expect(claimed.has(code), `reserved ${code} claimed`).toBe(false)
+    }
+  })
+  it('P2-2: strikethrough is Ctrl+Shift+S (installed TipTap), never Ctrl+Shift+X', () => {
+    const strike = SHORTCUT_CATALOGUE.find((s) => s.id === 'strike')!
+    expect(strike.keys).toContain('Ctrl+Shift+S')
+    expect(strike.chord).toEqual({ code: 'KeyS', mod: true, shift: true })
+    expect(SHORTCUT_CATALOGUE.some((s) => s.chord?.code === 'KeyX')).toBe(false)
+  })
+  it('P2-2: the audited new entries exist with their exact chords', () => {
+    const byId = new Map(SHORTCUT_CATALOGUE.map((s) => [s.id, s]))
+    expect(byId.get('save')?.chord).toEqual({ code: 'KeyS', mod: true })
+    expect(byId.get('page-break')?.chord).toEqual({ code: 'Enter', mod: true })
+    expect(byId.get('heading1')?.chord).toEqual({ code: 'Digit1', mod: true, alt: true })
+    expect(byId.get('heading2')?.chord).toEqual({ code: 'Digit2', mod: true, alt: true })
+    expect(byId.get('heading3')?.chord).toEqual({ code: 'Digit3', mod: true, alt: true })
+    expect(byId.get('bullet-list')?.chord).toEqual({ code: 'Digit8', mod: true, shift: true })
+    expect(byId.get('ordered-list')?.chord).toEqual({ code: 'Digit7', mod: true, shift: true })
+    expect(byId.get('blockquote')?.chord).toEqual({ code: 'KeyB', mod: true, shift: true })
+    // Alt chords are never reserved (the guard exempts Alt), and the
+    // list/quote chords use codes outside the reserved list.
+    for (const id of ['heading1', 'bullet-list', 'ordered-list', 'blockquote']) {
+      const s = byId.get(id)!
+      expect(isReservedShortcut(chordEvent(s.chord!.code, { mod: s.chord!.mod, shift: s.chord!.shift, alt: s.chord!.alt }), true), id).toBe(false)
     }
   })
 })
@@ -71,6 +95,10 @@ describe('reserved shortcut guard', () => {
   it('Ctrl+U is reserved outside the editor but free inside it (underline)', () => {
     expect(isReservedShortcut(chordEvent('KeyU', { mod: true }), false)).toBe(true)
     expect(isReservedShortcut(chordEvent('KeyU', { mod: true }), true)).toBe(false)
+  })
+  it('Ctrl+S is reserved outside the editor but free inside it (save now)', () => {
+    expect(isReservedShortcut(chordEvent('KeyS', { mod: true }), false)).toBe(true)
+    expect(isReservedShortcut(chordEvent('KeyS', { mod: true }), true)).toBe(false)
   })
   it('falls back to e.key when e.code is missing (layout-independent guard)', () => {
     expect(isReservedShortcut({ key: 't', ctrlKey: true, metaKey: false })).toBe(true)

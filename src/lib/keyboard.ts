@@ -46,19 +46,34 @@ export interface ShortcutEntry {
  *  - app:escape — Esc closes dialogs/menus/panels/view-modes (each owner).
  *  - app:tab — native Tab order + useDialogFocus trap inside dialogs.
  *  - app:activate — native Enter/Space on <button> controls.
- *  - tiptap:* — TipTap StarterKit / Underline / TableKit default keymaps.
+ *  - app:save — Editor.tsx Ctrl/Cmd+S handler (save now, editor view only).
+ *  - app:page-break — Editor.tsx PageBreakShortcut (Ctrl/Cmd+Enter).
+ *  - tiptap:* — TipTap StarterKit / Underline / TableKit default keymaps,
+ *    audited against the installed @tiptap packages (v3.32.1) in the
+ *    P2-2 round: heading Mod-Alt-1/2/3, bullet Mod-Shift-8, ordered
+ *    Mod-Shift-7, blockquote Mod-Shift-b, strike Mod-Shift-s (the
+ *    catalogue previously claimed Ctrl+Shift+X for strike — wrong, fixed).
+ *    Alignment chords (Mod-Shift-L/E/R/J) are deliberately NOT listed:
+ *    their codes collide with the reserved-browser guard (L/R) and the
+ *    visible ribbon buttons carry no shortcut claim for them.
  *  - app:menu-arrows / app:menu-enter — CommandPalette + ContextMenu. */
 export const DOCUMENTED_HANDLERS = [
   'app:palette',
   'app:escape',
   'app:tab',
   'app:activate',
+  'app:save',
+  'app:page-break',
   'tiptap:undo',
   'tiptap:redo',
   'tiptap:bold',
   'tiptap:italic',
   'tiptap:underline',
   'tiptap:strike',
+  'tiptap:heading',
+  'tiptap:bullet-list',
+  'tiptap:ordered-list',
+  'tiptap:blockquote',
   'tiptap:table-tab',
   'app:menu-arrows',
   'app:menu-enter',
@@ -74,7 +89,15 @@ export const SHORTCUT_CATALOGUE: ShortcutEntry[] = [
   { id: 'bold', keys: 'Ctrl+B / ⌘B', group: 'editing', label: 'shortcutBold', handler: 'tiptap:bold', chord: { code: 'KeyB', mod: true } },
   { id: 'italic', keys: 'Ctrl+I / ⌘I', group: 'editing', label: 'shortcutItalic', handler: 'tiptap:italic', chord: { code: 'KeyI', mod: true } },
   { id: 'underline', keys: 'Ctrl+U / ⌘U', group: 'editing', label: 'shortcutUnderline', handler: 'tiptap:underline', chord: { code: 'KeyU', mod: true } },
-  { id: 'strike', keys: 'Ctrl+Shift+X', group: 'editing', label: 'shortcutStrike', handler: 'tiptap:strike', chord: { code: 'KeyX', mod: true, shift: true } },
+  { id: 'strike', keys: 'Ctrl+Shift+S / ⌘⇧S', group: 'editing', label: 'shortcutStrike', handler: 'tiptap:strike', chord: { code: 'KeyS', mod: true, shift: true } },
+  { id: 'save', keys: 'Ctrl+S / ⌘S', group: 'editing', label: 'shortcutSave', handler: 'app:save', chord: { code: 'KeyS', mod: true } },
+  { id: 'page-break', keys: 'Ctrl+Enter / ⌘Enter', group: 'editing', label: 'shortcutPageBreak', handler: 'app:page-break', chord: { code: 'Enter', mod: true } },
+  { id: 'heading1', keys: 'Ctrl+Alt+1 / ⌘⌥1', group: 'editing', label: 'shortcutHeading1', handler: 'tiptap:heading', chord: { code: 'Digit1', mod: true, alt: true } },
+  { id: 'heading2', keys: 'Ctrl+Alt+2 / ⌘⌥2', group: 'editing', label: 'shortcutHeading2', handler: 'tiptap:heading', chord: { code: 'Digit2', mod: true, alt: true } },
+  { id: 'heading3', keys: 'Ctrl+Alt+3 / ⌘⌥3', group: 'editing', label: 'shortcutHeading3', handler: 'tiptap:heading', chord: { code: 'Digit3', mod: true, alt: true } },
+  { id: 'bullet-list', keys: 'Ctrl+Shift+8 / ⌘⇧8', group: 'editing', label: 'shortcutBulletList', handler: 'tiptap:bullet-list', chord: { code: 'Digit8', mod: true, shift: true } },
+  { id: 'ordered-list', keys: 'Ctrl+Shift+7 / ⌘⇧7', group: 'editing', label: 'shortcutOrderedList', handler: 'tiptap:ordered-list', chord: { code: 'Digit7', mod: true, shift: true } },
+  { id: 'blockquote', keys: 'Ctrl+Shift+B / ⌘⇧B', group: 'editing', label: 'shortcutBlockquote', handler: 'tiptap:blockquote', chord: { code: 'KeyB', mod: true, shift: true } },
   { id: 'table-tab', keys: 'Tab (in tables)', group: 'editing', label: 'shortcutTableTab', handler: 'tiptap:table-tab' },
   { id: 'menu-arrows', keys: '↑ / ↓', group: 'dialogs', label: 'shortcutMenuArrows', handler: 'app:menu-arrows' },
   { id: 'menu-enter', keys: 'Enter', group: 'dialogs', label: 'shortcutMenuEnter', handler: 'app:menu-enter' },
@@ -88,11 +111,13 @@ export const SHORTCUT_GROUP_LABEL: Record<ShortcutGroup, I18nKey> = {
   dialogs: 'shortcutGroupDialogs',
 }
 
-/** Essential browser shortcuts (Ctrl/Cmd + key). The app binds NONE of
- *  these: Ctrl+F deliberately stays the browser's find (see
- *  FindReplacePanel's header comment), and no handler preventDefaults
- *  them. Deliberately NOT here: Ctrl+K (the app's palette), Ctrl+Z/Y/B/
- *  I/U/X (editing shortcuts that genuinely work in the editor). */
+/** Essential browser shortcuts (Ctrl/Cmd + key). Outside the editor the
+ *  app binds NONE of these: Ctrl+F deliberately stays the browser's find
+ *  (see FindReplacePanel's header comment), and no handler preventDefaults
+ *  them there. Inside the editor, Ctrl+U and Ctrl+S are the documented
+ *  exceptions (underline, save-now) — see isReservedShortcut. Deliberately
+ *  NOT here: Ctrl+K (the app's palette), Ctrl+Z/Y/B/I (editing shortcuts
+ *  that genuinely work in the editor). */
 export const RESERVED_CODES = [
   'KeyT', // new tab
   'KeyW', // close tab
@@ -106,15 +131,18 @@ export const RESERVED_CODES = [
   'KeyD', // bookmark
   'KeyJ', // downloads
   'KeyU', // view source — note: NOT Ctrl+U in the editor. See below.
+  // KeyS stays listed: outside the editor it IS the browser's save; the
+  // inEditor exception above is what frees it for the editor's save-now.
   'KeyG', // find next
 ] as const
 
 /**
- * True when the event is a reserved browser shortcut. Ctrl+U is special:
- * inside the editable document it is TipTap's underline (a real app
- * shortcut), but in a plain field / outside the editor it belongs to the
- * browser — so callers pass `inEditor` and this guard only reserves Ctrl+U
- * when NOT editing. Every other reserved code is reserved everywhere.
+ * True when the event is a reserved browser shortcut. Ctrl+U and Ctrl+S
+ * are special: inside the editable document they are TipTap's underline
+ * and the editor's save-now (a real app shortcut), but in a plain field /
+ * outside the editor they belong to the browser — so callers pass
+ * `inEditor` and this guard only reserves Ctrl+U / Ctrl+S when NOT
+ * editing. Every other reserved code is reserved everywhere.
  */
 export function isReservedShortcut(
   e: { code?: string; key?: string; ctrlKey: boolean; metaKey: boolean; altKey?: boolean },
@@ -123,7 +151,7 @@ export function isReservedShortcut(
   if (!(e.ctrlKey || e.metaKey) || e.altKey) return false
   const code = e.code ?? (e.key && /^[a-zA-Z]$/.test(e.key) ? `Key${e.key.toUpperCase()}` : undefined)
   if (!code) return false
-  if (code === 'KeyU' && inEditor) return false
+  if ((code === 'KeyU' || code === 'KeyS') && inEditor) return false
   return (RESERVED_CODES as readonly string[]).includes(code)
 }
 
