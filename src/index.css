@@ -250,7 +250,12 @@ input:focus,select:focus{border-color:var(--brand)}
 /* status bar */
 .status-bar{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:5px 14px;background:linear-gradient(90deg,var(--brand-deep),var(--brand));color:#eaf1ff;font-size:12.5px;flex-wrap:wrap}
 .status-bar .status-dir{font-weight:600}
-.status-save{display:none}
+/* PC4: the footer save status is visible on desktop too (it was
+   display:none above 768px). The title-bar save status uses the separate
+   .saved class and is untouched — duplication with it is Word-like. */
+.status-save{display:inline}
+.status-stats-btn{background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:0}
+.status-stats-btn:hover{text-decoration:underline}
 .status-zoom{display:flex;gap:8px;align-items:center}
 .status-zoom input[type=range]{width:132px;padding:0;accent-color:#fff;background:transparent;border:0}
 .status-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:26px;background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:6px;font-size:15px;line-height:1}

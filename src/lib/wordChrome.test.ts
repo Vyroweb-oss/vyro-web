@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clampZoom, zoomStep, docLanguageLabel, estimatedPagesFromWords, activeParagraphStyle, type ParagraphStyleState } from './wordChrome'
+import { clampZoom, zoomStep, docLanguageLabel, documentLanguageLabel, documentDirectionLabel, estimatedPagesFromWords, activeParagraphStyle, type ParagraphStyleState } from './wordChrome'
 
 describe('clampZoom', () => {
   it('keeps in-range values and clamps both ends', () => {
@@ -30,6 +30,31 @@ describe('docLanguageLabel', () => {
     expect(docLanguageLabel('rtl')).toBe('RTL · دری/فارسی')
     expect(docLanguageLabel('ltr')).toBe('LTR · English')
     expect(docLanguageLabel('')).toBe('LTR · English')
+  })
+})
+
+describe('PC4 split status-bar labels', () => {
+  it('language item is Dari/Persian for rtl and English otherwise', () => {
+    expect(documentLanguageLabel('rtl')).toBe('دری/فارسی')
+    expect(documentLanguageLabel('ltr')).toBe('English')
+    expect(documentLanguageLabel('')).toBe('English')
+  })
+  it('direction item is RTL for rtl and LTR otherwise', () => {
+    expect(documentDirectionLabel('rtl')).toBe('RTL')
+    expect(documentDirectionLabel('ltr')).toBe('LTR')
+    expect(documentDirectionLabel('')).toBe('LTR')
+  })
+  it('split items recombine exactly to the legacy merged label', () => {
+    for (const dir of ['rtl', 'ltr', '']) {
+      expect(`${documentDirectionLabel(dir)} · ${documentLanguageLabel(dir)}`).toBe(docLanguageLabel(dir))
+    }
+  })
+  it('the footer page figure stays an estimate, never a true page count: no true-page-count helper exists', () => {
+    // The editor is a single continuous growing page, so "Page X of Y" is
+    // not computable; the footer data source is the 250-words/page estimate.
+    expect(estimatedPagesFromWords(250)).toBe(1)
+    expect(estimatedPagesFromWords(251)).toBe(2)
+    expect(estimatedPagesFromWords(0)).toBe(0)
   })
 })
 

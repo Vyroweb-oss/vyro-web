@@ -19,9 +19,22 @@ export function zoomStep(current: number, delta: number): number {
   return clampZoom(current + delta)
 }
 
-/** Status-bar language/direction label for a document direction. */
+/** Status-bar language/direction label for a document direction.
+ * Kept for backward compatibility; the footer now shows language and
+ * direction as two distinct items via documentLanguageLabel /
+ * documentDirectionLabel below, which recombine to this exact string. */
 export function docLanguageLabel(dir: string): string {
   return dir === 'rtl' ? 'RTL · دری/فارسی' : 'LTR · English'
+}
+
+/** Status-bar language item for a document direction (PC4 split). */
+export function documentLanguageLabel(dir: string): string {
+  return dir === 'rtl' ? 'دری/فارسی' : 'English'
+}
+
+/** Status-bar direction item for a document direction (PC4 split). */
+export function documentDirectionLabel(dir: string): string {
+  return dir === 'rtl' ? 'RTL' : 'LTR'
 }
 
 /** Estimated pages from a word count, exactly as stats.ts defines it. */

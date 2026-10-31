@@ -35,7 +35,7 @@ import { createSnapshot, addVersion, loadVersions, saveVersions, restoreVersion,
 import { saveDraft, loadDraft, clearDraft, detectRecovery, acceptDraft, type RecoveryInfo } from '../lib/recovery'
 import { FocusDim, createViewSnapshot, focusWidthClass, viewModeClass, type FocusWidth, type ViewMode, type ViewSnapshot } from '../lib/viewModes'
 import { SectionCollapse } from '../lib/sections'
-import { clampZoom, zoomStep, docLanguageLabel, estimatedPagesFromWords, activeParagraphStyle } from '../lib/wordChrome'
+import { clampZoom, zoomStep, documentLanguageLabel, documentDirectionLabel, estimatedPagesFromWords, activeParagraphStyle } from '../lib/wordChrome'
 import { computeDocumentStats } from '../lib/stats'
 import { EDITOR_FONTS, EDITOR_FONT_SIZES, resolveAutosaveDelay, type VyroSettings } from '../lib/settings'
 import { isTitleBarOverflowWidth } from '../lib/titleBar'
@@ -826,9 +826,15 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     </div>
     </div>
     {viewMode==='edit' && <footer className="status-bar">
+      {/* PC4: no true "Page X of Y" here — the editor is a single continuous
+         growing page, not paginated sheets, so a true page count is not
+         computable in this architecture. statusPages stays the honest
+         estimated-pages figure from estimatedPagesFromWords (250 words/page),
+         labelled as estimated (statsEstimatedPages) — never as a real count. */}
       <span className={saveState==='failed' ? 'status-save failed' : 'status-save'}>{saveText}</span>
-      <span>{statusStats.words} {t('words')} · {statusStats.charsWithSpaces} {t('chars')} · {statusPages} {t('statsEstimatedPages')}</span>
-      <span className="status-dir">{docLanguageLabel(doc.dir)}</span>
+      <button type="button" className="status-stats-btn" onClick={()=>setStatsOpen(true)} aria-label={t('documentStatistics')} title={t('documentStatistics')}>{statusStats.words} {t('words')} · {statusStats.charsWithSpaces} {t('chars')} · {statusPages} {t('statsEstimatedPages')}</button>
+      <span className="status-dir" aria-label={t('language')} title={t('language')}>{documentLanguageLabel(doc.dir)}</span>
+      <span className="status-dir" aria-label={t('direction')} title={t('direction')}>{documentDirectionLabel(doc.dir)}</span>
       <div className="status-views"><button type="button" className="status-view-btn" onClick={enterFocus}>{t('focusMode')}</button><button type="button" className="status-view-btn" onClick={enterReading}>{t('readingMode')}</button></div>
       <div className="status-zoom"><span>{t('zoom')}</span><button type="button" className="status-btn" aria-label={t('zoomOut')} onClick={()=>setZoom(z=>zoomStep(z,-10))}>−</button><input type="range" min={50} max={200} step={5} value={zoom} onChange={e=>setZoom(clampZoom(Number(e.target.value)))} aria-label={t('zoom')}/><span>{zoom}%</span><button type="button" className="status-btn" aria-label={t('zoomIn')} onClick={()=>setZoom(z=>zoomStep(z,10))}>+</button></div>
     </footer>}
