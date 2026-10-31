@@ -30,6 +30,10 @@ export interface VyroSettings {
   defaultFontSize: number
   autosaveEnabled: boolean
   autosaveIntervalMs: number
+  /** Tier-1 S3: browser spellcheck on/off for the editor. Persisted like
+   *  every other setting; defaults ON (the pre-S3 behaviour). This only
+   *  toggles the browser's own checker — Vyro ships no dictionary/engine. */
+  spellcheck: boolean
 }
 
 /** Fonts the editor already offers (Editor.tsx font select). Kept here so
@@ -51,6 +55,7 @@ export const DEFAULT_SETTINGS: VyroSettings = {
   defaultFontSize: 16,
   autosaveEnabled: true,
   autosaveIntervalMs: 500,
+  spellcheck: true,
 }
 
 /** Fresh copy of the defaults (callers mutate the result freely). */
@@ -95,6 +100,7 @@ export function sanitizeSettings(raw: unknown, legacy?: { theme?: string | null;
   if (typeof r.defaultFont === 'string' && (EDITOR_FONTS as readonly string[]).includes(r.defaultFont)) out.defaultFont = r.defaultFont
   if (typeof r.defaultFontSize === 'number' && Number.isFinite(r.defaultFontSize) && (EDITOR_FONT_SIZES as readonly number[]).includes(r.defaultFontSize)) out.defaultFontSize = r.defaultFontSize
   if (typeof r.autosaveEnabled === 'boolean') out.autosaveEnabled = r.autosaveEnabled
+  if (typeof r.spellcheck === 'boolean') out.spellcheck = r.spellcheck
   if (typeof r.autosaveIntervalMs === 'number' && Number.isFinite(r.autosaveIntervalMs)) {
     out.autosaveIntervalMs = Math.min(MAX_AUTOSAVE_MS, Math.max(MIN_AUTOSAVE_MS, Math.round(r.autosaveIntervalMs)))
   }

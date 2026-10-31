@@ -37,6 +37,7 @@ import FindReplacePanel from './FindReplacePanel'
 import ContextMenu from './ContextMenu'
 import { sanitizePastedHtml, htmlToPlainText, getContextMenuItems, type MenuItemId } from '../lib/paste'
 import { createSnapshot, addVersion, loadVersions, saveVersions, restoreVersion, listVersions, hasSnapshotWorthyContent, type VersionSnapshot, type VersionTrigger } from '../lib/versions'
+import { languageTagForDir } from '../lib/dir'
 import { saveDraft, loadDraft, clearDraft, detectRecovery, acceptDraft, type RecoveryInfo } from '../lib/recovery'
 import { FocusDim, createViewSnapshot, focusWidthClass, viewModeClass, type FocusWidth, type ViewMode, type ViewSnapshot } from '../lib/viewModes'
 import { SectionCollapse } from '../lib/sections'
@@ -179,7 +180,12 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // the callbacks below (download / print), never from the panel. Print is
   // FREE for everyone (owner policy, 2026-10-31); only DOCX export is gated.
   const [exportPresetsOpen,setExportPresetsOpen]=useState(false)
-  const [spell,setSpell]=useState(true)
+  // Tier-1 S3: spellcheck state is seeded from Settings and persisted
+  // back on toggle; without settings plumbing it is a session-only toggle
+  // (the pre-S3 behaviour). A later external settings change re-applies.
+  const [spell,setSpellState]=useState(()=> settings?.spellcheck ?? true)
+  useEffect(()=>{ if(settings) setSpellState(settings.spellcheck) },[settings?.spellcheck])
+  const toggleSpell=()=>{ const next=!spell; setSpellState(next); onSettingsChange?.({ spellcheck: next }) }
   const [toast,setToast]=useState('')
   const [linkOpen,setLinkOpen]=useState(false)
   const [linkUrl,setLinkUrl]=useState('')
@@ -397,7 +403,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       CharacterCount, PageBreak, PageBreakShortcut, PaginationExtension, FocusDim, SectionCollapse, TocBlock,
     ],
     content: doc.content,
-    editorProps:{ attributes:{ dir: doc.dir, spellcheck: String(spell) } as any },
+    editorProps:{ attributes:{ dir: doc.dir, spellcheck: String(spell), lang: languageTagForDir(doc.dir) } as any },
     onUpdate({editor}){
       pendingJson.current=editor.getJSON()
       // M2-04: draft snapshot of the pending JSON (separate key, best-effort).
@@ -416,7 +422,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     },
   },[doc.id])
 
-  useEffect(()=>{ if(editor){ editor.view.dom.setAttribute('spellcheck', String(spell)); editor.view.dom.setAttribute('dir', doc.dir) } },[spell, doc.dir, editor])
+  useEffect(()=>{ if(editor){ editor.view.dom.setAttribute('spellcheck', String(spell)); editor.view.dom.setAttribute('dir', doc.dir); editor.view.dom.setAttribute('lang', languageTagForDir(doc.dir)) } },[spell, doc.dir, editor])
 
   // M2-08: a freshly created document carries the user's default font/size
   // as stored marks, so the first keystroke in a blank document is typed in
@@ -1111,7 +1117,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       {tab==='References' && <Group label={t('groupContents')}><Btn onClick={insertToc}>{t('insertToc')}</Btn><Btn onClick={updateToc}>{t('updateToc')}</Btn></Group>}
       {tab==='Mailings' && <Group label={t('mailMerge')}><Btn active={mailMergeOpen} onClick={()=>setMailMergeOpen(o=>!o)}>{t('mailMerge')}</Btn><span className="static-stat mailings-note">{t('mailMergeLocal')}</span></Group>}
       {tab==='Review' && <>
-        <Group label={t('groupProofing')}><Btn active={spell} onClick={()=>setSpell(s=>!s)}>{t('spellcheck')} {spell? t('on'):t('off')}</Btn></Group>
+        <Group label={t('groupProofing')}><Btn active={spell} onClick={toggleSpell}>{t('spellcheck')} {spell? t('on'):t('off')}</Btn></Group>
         <Group label={t('groupCount')}><span className="static-stat">{statusStats.words} {t('words')} · {statusStats.charsWithSpaces} {t('characters')} · {statusStats.paragraphs} {t('statsParagraphs')}</span><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
         <Group label={t('compare')}><Btn active={compareOpen} onClick={()=>setCompareOpen(o=>!o)}>{t('compare')}</Btn></Group>
         <Group label={t('intelligence')}><Btn active={intelligenceOpen} onClick={()=>setIntelligenceOpen(o=>!o)}>{t('intelligence')}</Btn></Group>

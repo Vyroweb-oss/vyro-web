@@ -164,3 +164,23 @@ describe('new-document defaults', () => {
     expect(applyNewDocDefaults('x', defaultSettings())).toBe('x')
   })
 })
+
+describe('Tier-1 S3: spellcheck setting', () => {
+  it('defaults to true (the pre-S3 behaviour)', () => {
+    expect(defaultSettings().spellcheck).toBe(true)
+    expect(loadSettings(fakeStorage() as any).spellcheck).toBe(true)
+  })
+  it('round-trips false and true through storage', () => {
+    const s = fakeStorage()
+    expect(saveSettings(s as any, { ...defaultSettings(), spellcheck: false })).toBe(true)
+    expect(loadSettings(s as any).spellcheck).toBe(false)
+    expect(saveSettings(s as any, { ...defaultSettings(), spellcheck: true })).toBe(true)
+    expect(loadSettings(s as any).spellcheck).toBe(true)
+  })
+  it('a legacy record without the field, or a corrupt value, falls back to true', () => {
+    const legacy = fakeStorage({ [SETTINGS_KEY]: JSON.stringify({ uiLang: 'en', theme: 'dark' }) })
+    expect(loadSettings(legacy as any).spellcheck).toBe(true)
+    const corrupt = fakeStorage({ [SETTINGS_KEY]: JSON.stringify({ spellcheck: 'yes' }) })
+    expect(loadSettings(corrupt as any).spellcheck).toBe(true)
+  })
+})
