@@ -21,12 +21,13 @@ export type VersionTrigger =
   | 'manual'
   | 'auto'
   | 'before-replace'
+  | 'before-import'
   | 'before-risky'
   | 'pre-restore'
   | 'recovery'
 
 export const VERSION_TRIGGERS: VersionTrigger[] = [
-  'manual', 'auto', 'before-replace', 'before-risky', 'pre-restore', 'recovery',
+  'manual', 'auto', 'before-replace', 'before-import', 'before-risky', 'pre-restore', 'recovery',
 ]
 
 export interface VersionSnapshot {
@@ -246,4 +247,24 @@ export function snapshotToPlainText(content: any): string {
   }
   rec(content)
   return out.replace(/\n{3,}/g, '\n\n').trim()
+}
+
+/**
+ * Tier-1 S1: does this content hold anything worth protecting with a
+ * version snapshot before a destructive replacement (DOCX/TXT import)?
+ * True when any text node carries non-whitespace text, or the doc holds a
+ * structural block whose loss matters even without text (image, table,
+ * TOC, page break, rule). Pure and total — never throws on odd shapes.
+ */
+export function hasSnapshotWorthyContent(content: any): boolean {
+  const STRUCTURAL = new Set(['image', 'table', 'tocBlock', 'pageBreak', 'horizontalRule'])
+  let worthy = false
+  const walk = (n: any): void => {
+    if (worthy || !n || typeof n !== 'object') return
+    if (n.type === 'text' && typeof n.text === 'string' && n.text.trim().length > 0) { worthy = true; return }
+    if (typeof n.type === 'string' && STRUCTURAL.has(n.type)) { worthy = true; return }
+    if (Array.isArray(n.content)) for (const c of n.content) walk(c)
+  }
+  walk(content)
+  return worthy
 }
