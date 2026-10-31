@@ -24,6 +24,7 @@ import SaveDiagnosticsPanel from './SaveDiagnosticsPanel'
 import ExportPresetsPanel from './ExportPresetsPanel'
 import { initialSaveDiag, recordAttempt, recordSuccess, recordFailure, withBackup, saveBackup, loadBackup, type SaveDiagnostics, type SaveBackup } from '../lib/saveDiagnostics'
 import LinkManagerPanel from './LinkManagerPanel'
+import MailMergePanel from './MailMergePanel'
 import ComparePanel from './ComparePanel'
 import IntelligencePanel from './IntelligencePanel'
 import { validateImageFile, imageSizeKb, IMAGE_WIDTH_PRESETS } from '../lib/images'
@@ -69,10 +70,10 @@ const FONT_SIZES = EDITOR_FONT_SIZES
 const LINE_HEIGHTS = ['1','1.15','1.5','2']
 const TABS: { id:string; key:I18nKey }[] = [
   { id:'File', key:'tabFile' }, { id:'Home', key:'tabHome' }, { id:'Insert', key:'tabInsert' },
-  { id:'Design', key:'tabDesign' }, { id:'Layout', key:'tabLayout' }, { id:'References', key:'tabReferences' }, { id:'Review', key:'tabReview' }, { id:'View', key:'tabView' },
+  { id:'Layout', key:'tabLayout' }, { id:'References', key:'tabReferences' }, { id:'Mailings', key:'tabMailings' }, { id:'Review', key:'tabReview' }, { id:'View', key:'tabView' },
 ]
 
-export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults, settings, onSettingsChange, onSettingsReset, isLocal }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number }; settings?: VyroSettings; onSettingsChange?: (patch: Partial<VyroSettings>)=>void; onSettingsReset?: ()=>void; isLocal?: boolean }){
+export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults, settings, onSettingsChange, onSettingsReset, isLocal, onCreateMergedDocs }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number }; settings?: VyroSettings; onSettingsChange?: (patch: Partial<VyroSettings>)=>void; onSettingsReset?: ()=>void; isLocal?: boolean; onCreateMergedDocs?: (items:{title:string;content:any}[])=>void }){
   const t=(k:I18nKey)=>tr(lang,k)
   const [tab,setTab]=useState('Home')
   const [zoom,setZoom]=useState(100)
@@ -93,6 +94,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [linkText,setLinkText]=useState('')
   const [linkTextShown,setLinkTextShown]=useState(false)
   const [linksOpen,setLinksOpen]=useState(false)
+  // PC2 Mailings: local CSV mail-merge panel (session-only; CSV never stored).
+  const [mailMergeOpen,setMailMergeOpen]=useState(false)
   // M2-07 image dialog (width presets + caption via native attrs) and
   // insert-preview (file is only inserted after the user confirms).
   const [imgEditOpen,setImgEditOpen]=useState(false)
@@ -656,6 +659,11 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // extension, and stored docs only gain an additive textStyle attr.
   const curLineHeight = fontState?.lineHeight || ''
   const styleId = activeParagraphStyle({ isHeading1: editor.isActive('heading',{level:1}), isHeading2: editor.isActive('heading',{level:2}), isHeading3: editor.isActive('heading',{level:3}), isParagraph: editor.isActive('paragraph'), isBold: editor.isActive('bold'), fontSizePx: Number.isNaN(curSizeNum) ? null : curSizeNum })
+  // PC2 font grow/shrink: ±2px within the existing font-size range. With
+  // no explicit size at the cursor, the document default size is the base
+  // (settings default, else 16) — the size select's read-back already
+  // shows 16 in that case, so the first step lands on a real size.
+  const adjustFontSize=(delta:number)=>{ const base = Number.isNaN(curSizeNum) ? (settings?.defaultFontSize ?? 16) : curSizeNum; const next = Math.min(FONT_SIZES[FONT_SIZES.length-1], Math.max(FONT_SIZES[0], base+delta)); editor.chain().focus().setFontSize(next+'px').run() }
   const applyTitleStyle = () => { editor.chain().focus().setParagraph().setFontSize('28px').run(); if(!editor.isActive('bold')) editor.chain().focus().toggleBold().run() }
 
   const pageW = doc.orientation==='landscape' ? '297mm':'210mm'
@@ -708,7 +716,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       </>}
       {tab==='Home' && <>
         <Group label={t('groupClipboard')}><Btn onClick={()=>copySelection(true)}>{t('menuCut')}</Btn><Btn onClick={()=>copySelection(false)}>{t('menuCopy')}</Btn><Btn onClick={()=>{ void pastePlainText() }}>{t('menuPastePlain')}</Btn></Group>
-        <Group label={t('groupFont')}><select aria-label={t('fontFamily')} value={curFamily} onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(!v) c.unsetFontFamily().run(); else c.setFontFamily(v).run() }}><option value="">{t('fontFamily')}</option>{curFamily && !FONT_FAMILIES.includes(curFamily) && <option value={curFamily}>{curFamily.replace(/'/g,'')}</option>}{FONT_FAMILIES.map(f=><option key={f} value={f}>{f.replace(/'/g,'')}</option>)}</select><select aria-label="Font size" value={sizeSelectValue} onChange={e=>{ if(e.target.value) editor.chain().focus().setFontSize(e.target.value+'px').run() }}>{sizeSelectValue==='' && <option value="">{curSizeNum}px</option>}{FONT_SIZES.map(s=><option key={s} value={s}>{s}px</option>)}</select><Btn active={editor.isActive('bold')} onClick={()=>editor.chain().focus().toggleBold().run()}><b>B</b></Btn><Btn active={editor.isActive('italic')} onClick={()=>editor.chain().focus().toggleItalic().run()}><i>I</i></Btn><Btn active={editor.isActive('underline')} onClick={()=>editor.chain().focus().toggleUnderline().run()}><u>U</u></Btn><Btn active={editor.isActive('strike')} onClick={()=>editor.chain().focus().toggleStrike().run()}><s>S</s></Btn>
+        <Group label={t('groupFont')}><select aria-label={t('fontFamily')} value={curFamily} onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(!v) c.unsetFontFamily().run(); else c.setFontFamily(v).run() }}><option value="">{t('fontFamily')}</option>{curFamily && !FONT_FAMILIES.includes(curFamily) && <option value={curFamily}>{curFamily.replace(/'/g,'')}</option>}{FONT_FAMILIES.map(f=><option key={f} value={f}>{f.replace(/'/g,'')}</option>)}</select><select aria-label="Font size" value={sizeSelectValue} onChange={e=>{ if(e.target.value) editor.chain().focus().setFontSize(e.target.value+'px').run() }}>{sizeSelectValue==='' && <option value="">{curSizeNum}px</option>}{FONT_SIZES.map(s=><option key={s} value={s}>{s}px</option>)}</select><Btn title={t('fontGrow')} onClick={()=>adjustFontSize(2)}>A▲</Btn><Btn title={t('fontShrink')} onClick={()=>adjustFontSize(-2)}>A▼</Btn><Btn active={editor.isActive('bold')} onClick={()=>editor.chain().focus().toggleBold().run()}><b>B</b></Btn><Btn active={editor.isActive('italic')} onClick={()=>editor.chain().focus().toggleItalic().run()}><i>I</i></Btn><Btn active={editor.isActive('underline')} onClick={()=>editor.chain().focus().toggleUnderline().run()}><u>U</u></Btn><Btn active={editor.isActive('strike')} onClick={()=>editor.chain().focus().toggleStrike().run()}><s>S</s></Btn>
         <label className="color-wrap" title={t('textColour')}>A<input type="color" onChange={e=>editor.chain().focus().setColor(e.target.value).run()}/></label>
         <label className="color-wrap" title={t('highlight')}>H<input type="color" defaultValue="#ffff00" onChange={e=>editor.chain().focus().toggleHighlight({color:e.target.value}).run()}/></label>
         <Btn onClick={()=>editor.chain().focus().unsetAllMarks().clearNodes().run()}>{t('clearFormatting')}</Btn></Group>
@@ -723,13 +731,13 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         {!compactToolbar && <Group label={t('groupLinksBreaks')}><Btn active={editor.isActive('link')} onClick={openLink}>{t('link')}</Btn><Btn active={linksOpen} onClick={()=>setLinksOpen(o=>!o)}>{t('linkManager')}</Btn><Btn onClick={()=>editor.chain().focus().setHorizontalRule().run()}>{t('horizontalLine')}</Btn><Btn onClick={()=>editor.chain().focus().insertPageBreak().run()}>{t('pageBreak')}</Btn></Group>}
         <Group label={t('groupText')}><Btn onClick={insertDate}>{t('insertDate')}</Btn></Group>
       </>}
-      {tab==='Design' && <><Group label={t('groupThemes')}><Btn onClick={onToggleTheme}>{theme==='dark'? t('lightUi'):t('darkUi')}</Btn></Group></>}
       {tab==='Layout' && <>
         <Group label={t('groupMargins')}><Btn active={(doc.margins||'normal')==='narrow'} onClick={()=>onChange({margins:'narrow'})}>{t('narrow')}</Btn><Btn active={(doc.margins||'normal')==='normal'} onClick={()=>onChange({margins:'normal'})}>{t('normal')}</Btn><Btn active={(doc.margins||'normal')==='wide'} onClick={()=>onChange({margins:'wide'})}>{t('wide')}</Btn></Group>
         <Group label={t('groupOrientation')}><Btn active={(doc.orientation||'portrait')==='portrait'} onClick={()=>onChange({orientation:'portrait'})}>{t('portrait')}</Btn><Btn active={doc.orientation==='landscape'} onClick={()=>onChange({orientation:'landscape'})}>{t('landscape')}</Btn></Group>
         <Group label={t('groupDirection')}><Btn active={doc.dir==='ltr'} onClick={()=>onChange({dir:'ltr'})}>LTR</Btn><Btn active={doc.dir==='rtl'} onClick={()=>onChange({dir:'rtl'})}>RTL (Dari/Persian)</Btn></Group>
       </>}
       {tab==='References' && <Group label={t('groupContents')}><Btn onClick={insertToc}>{t('insertToc')}</Btn></Group>}
+      {tab==='Mailings' && <Group label={t('mailMerge')}><Btn active={mailMergeOpen} onClick={()=>setMailMergeOpen(o=>!o)}>{t('mailMerge')}</Btn></Group>}
       {tab==='Review' && <>
         <Group label={t('groupProofing')}><Btn active={spell} onClick={()=>setSpell(s=>!s)}>{t('spellcheck')} {spell? t('on'):t('off')}</Btn></Group>
         <Group label={t('groupCount')}><span className="static-stat">{words} {t('words')} · {chars} {t('characters')} · {editor.getText().split(/\n/).filter(Boolean).length} {t('paragraphsApprox')}</span><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
@@ -738,6 +746,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       </>}
       {tab==='View' && <>
         <Group label={t('groupViews')}><Btn onClick={enterFocus}>{t('focusMode')}</Btn><Btn onClick={enterReading}>{t('readingMode')}</Btn></Group>
+        <Group label={t('groupThemes')}><Btn onClick={onToggleTheme}>{theme==='dark'? t('lightUi'):t('darkUi')}</Btn></Group>
         <Group label={t('groupShow')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn></Group>
         <Group label={t('saveDiagnostics')}><Btn active={saveDiagOpen} onClick={()=>setSaveDiagOpen(o=>!o)}>{t('saveDiagnostics')}</Btn></Group>
         <Group label={t('keyboardShortcuts')}><Btn active={shortcutsOpen} onClick={()=>setShortcutsOpen(o=>!o)}>{t('keyboardShortcuts')}</Btn></Group>
@@ -763,6 +772,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     {viewMode==='edit' && compareOpen && <ComparePanel editor={editor} doc={doc} versions={versions} lang={lang} onClose={()=>setCompareOpen(false)} onVersionsSaved={(next)=>setVersions(next)} />}
     {viewMode==='edit' && intelligenceOpen && <IntelligencePanel editor={editor} lang={lang} onClose={()=>setIntelligenceOpen(false)} />}
     {viewMode==='edit' && linksOpen && <LinkManagerPanel editor={editor} lang={lang} onClose={()=>setLinksOpen(false)} onEditLink={openLinkAt} />}
+    {viewMode==='edit' && mailMergeOpen && <MailMergePanel editor={editor} doc={doc} lang={lang} onCreateMergedDocs={onCreateMergedDocs} onClose={()=>setMailMergeOpen(false)} />}
     {viewMode==='edit' && versionsOpen && <div className="versions-panel" role="region" aria-label={t('versions')}
       onKeyDown={(e) => { if (e.key === 'Escape') setVersionsOpen(false) }}>
       <div className="find-row">
