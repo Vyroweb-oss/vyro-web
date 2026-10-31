@@ -40,6 +40,8 @@ import { computeDocumentStats } from '../lib/stats'
 import { EDITOR_FONTS, EDITOR_FONT_SIZES, resolveAutosaveDelay, type VyroSettings } from '../lib/settings'
 import { isTitleBarOverflowWidth } from '../lib/titleBar'
 import SettingsPanel from './SettingsPanel'
+import { HorizontalRuler, VerticalRuler, RULER_SIZE } from './Rulers'
+import { marginMmFor } from '../lib/ruler'
 
 export interface EditorPaletteActions {
   insertTable: () => void
@@ -110,6 +112,9 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [findOpen,setFindOpen]=useState(false)
   // M2-03 view modes: session-only editor state, never persisted to the doc.
   const [viewMode,setViewMode]=useState<ViewMode>('edit')
+  // PC3 page rulers: session-only toggle, default ON; shown only in edit
+  // mode (never focus/reading, never print — see the print CSS).
+  const [showRuler,setShowRuler]=useState(true)
   // M2-08: the settings writing width is the initial focus/reading width,
   // and a later settings change re-applies it (the in-mode width select
   // remains a session override until settings change again).
@@ -747,7 +752,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       {tab==='View' && <>
         <Group label={t('groupViews')}><Btn onClick={enterFocus}>{t('focusMode')}</Btn><Btn onClick={enterReading}>{t('readingMode')}</Btn></Group>
         <Group label={t('groupThemes')}><Btn onClick={onToggleTheme}>{theme==='dark'? t('lightUi'):t('darkUi')}</Btn></Group>
-        <Group label={t('groupShow')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn></Group>
+        <Group label={t('groupShow')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn><Btn active={showRuler} aria-label={t('ruler')} onClick={()=>setShowRuler(o=>!o)}>{showRuler ? t('hideRuler') : t('showRuler')}</Btn></Group>
         <Group label={t('saveDiagnostics')}><Btn active={saveDiagOpen} onClick={()=>setSaveDiagOpen(o=>!o)}>{t('saveDiagnostics')}</Btn></Group>
         <Group label={t('keyboardShortcuts')}><Btn active={shortcutsOpen} onClick={()=>setShortcutsOpen(o=>!o)}>{t('keyboardShortcuts')}</Btn></Group>
         <Group label={t('groupZoom')}><Btn onClick={()=>setZoom(z=>zoomStep(z,-10))}>−</Btn><span className="static-stat">{zoom}%</span><Btn onClick={()=>setZoom(z=>zoomStep(z,10))}>+</Btn><Btn onClick={()=>setZoom(100)}>100%</Btn><Btn onClick={()=>setZoom(50)}>50%</Btn><Btn onClick={()=>setZoom(200)}>200%</Btn></Group>
@@ -799,6 +804,13 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     <div className="editor-body">
     {viewMode==='edit' && navOpen && <NavigationPane editor={editor} lang={lang} onCollapse={()=>setNavOpen(false)} />}
     <div className="workspace" ref={workspaceRef}>
+      {/* PC3: the ruler frame wraps the existing .page-scaler untouched —
+         fitScale measurement (workspaceRef clientWidth) and the pagePxH
+         ResizeObserver are reused as-is; the rulers only read them. */}
+      <div className={`page-frame${viewMode==='edit' && showRuler ? ' with-rulers' : ''}`} style={{ width:`${Math.round(pageMmW*MM_PX*effScale) + (viewMode==='edit' && showRuler ? RULER_SIZE : 0)}px` }}>
+      {viewMode==='edit' && showRuler && <div className="ruler-corner" aria-hidden="true" />}
+      {viewMode==='edit' && showRuler && <HorizontalRuler pageMm={pageMmW} marginPreset={doc.margins} marginMm={marginMmFor(doc.margins)} scale={effScale} />}
+      {viewMode==='edit' && showRuler && <VerticalRuler pageMm={pageMmH} marginPreset={doc.margins} marginMm={marginMmFor(doc.margins)} scale={effScale} pagePxH={pagePxH} />}
       <div className="page-scaler" style={{ width:`${Math.round(pageMmW*MM_PX*effScale)}px`, height:`${Math.round(pagePxH*effScale)}px` }}>
         <div className="page-scale-inner" style={{ transform:`scale(${effScale})`, width:`${Math.round(pageMmW*MM_PX)}px` }}>
           <div ref={pageRef} className={`a4-page ${doc.orientation==='landscape'?'landscape':'portrait'}${viewMode==='focus' || viewMode==='reading' ? ` ${focusWidthClass(focusWidth)}` : ''}`} style={{ width:pageW, minHeight:pageMinH, padding:MARGINS[doc.margins||'normal'] }}
@@ -809,6 +821,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
             <EditorContent editor={editor}/>
           </div>
         </div>
+      </div>
       </div>
     </div>
     </div>

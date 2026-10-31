@@ -19,7 +19,7 @@
   --shadow-sm:0 1px 2px rgba(16,27,45,.07),0 1px 3px rgba(16,27,45,.06);
   --shadow-md:0 6px 18px rgba(16,27,45,.12);
   --shadow-lg:0 16px 40px rgba(16,27,45,.22);
-  --shadow-page:0 2px 6px rgba(16,27,45,.18),0 18px 44px rgba(16,27,45,.22);
+  --shadow-page:0 1px 2px rgba(16,27,45,.08),0 4px 14px rgba(16,27,45,.08);
   --font-ui:Inter,system-ui,'Segoe UI',Roboto,'Helvetica Neue',Arial,Vazirmatn,Tahoma,sans-serif;
   --font-fa:'Vazirmatn',Tahoma,Inter,system-ui,'Segoe UI',sans-serif;
   --focus:#7db1ff;
@@ -32,7 +32,7 @@
   --canvas:#070c15; --danger:#ff6b63; --danger-soft:#3d1d1e;
   --warn-bg:#3a2f14; --warn-text:#f2cd7e; --warn-border:#7a5f22;
   --shadow-sm:0 1px 2px rgba(0,0,0,.4); --shadow-md:0 6px 18px rgba(0,0,0,.45); --shadow-lg:0 16px 40px rgba(0,0,0,.55);
-  --shadow-page:0 2px 6px rgba(0,0,0,.5),0 18px 44px rgba(0,0,0,.55);
+  --shadow-page:0 1px 2px rgba(0,0,0,.35),0 4px 14px rgba(0,0,0,.30);
   --focus:#8dbcff;
 }
 
@@ -199,9 +199,30 @@ input:focus,select:focus{border-color:var(--brand)}
 /* page / canvas */
 .workspace{background:var(--canvas);flex:1;overflow:auto;padding:30px 18px 60px}
 .page-scaler{position:relative;margin:0 auto}
+/* ---------- PC3: page rulers (display-only, edit mode only) ---------- */
+/* The frame centres the whole ruler+page assembly in .workspace. With
+   rulers it is a 2×2 grid (corner, horizontal ruler / vertical ruler,
+   page); without them it is a plain block around the unchanged scaler. */
+.page-frame{margin:0 auto}
+.page-frame.with-rulers{display:grid;grid-template-columns:24px max-content;grid-template-rows:24px max-content}
+.ruler-corner{background:var(--canvas)}
+.ruler{position:relative;overflow:hidden;background:#eef1f4;border:1px solid #c9d2dd}
+[data-theme="dark"] .ruler{background:#1a2637;border-color:#2a3a50}
+.ruler-h{height:24px;border-bottom:0}
+.ruler-v{width:24px;border-inline-end:0}
+.ruler-zone{position:absolute;background:rgba(37,99,235,.14)}
+.ruler-h .ruler-zone{top:0;bottom:0}
+.ruler-v .ruler-zone{left:0;right:0}
+.ruler-tick{position:absolute;background:#7a8794}
+.ruler-tick-h{top:0;width:1px}
+.ruler-tick-v{left:0;height:1px}
+.ruler-label{position:absolute;font-size:9px;line-height:1;color:#5a6a80;white-space:nowrap}
+[data-theme="dark"] .ruler-label{color:#9db0c6}
+.ruler-label-h{top:13px}
+.ruler-label-v{left:13px}
 .page-scale-inner{position:absolute;top:0;left:0;transform-origin:top left}
 .a4-page{background:#fff;color:#141a21;margin:0;box-shadow:var(--shadow-page);border-radius:3px}
-.a4-page .tiptap{outline:none;min-height:196mm;font-family:var(--font-ui);font-size:16px;line-height:1.65;color:#141a21}
+.a4-page .tiptap{outline:none;min-height:196mm;font-family:var(--font-ui);font-size:16px;line-height:1.65;color:#141a21;overflow-wrap:break-word}
 .a4-page.landscape .tiptap{min-height:118mm}
 .a4-page .tiptap p{margin:0 0 .6em}
 .a4-page .tiptap h1{font-size:2em;line-height:1.25} .a4-page .tiptap h2{font-size:1.5em;line-height:1.3} .a4-page .tiptap h3{font-size:1.2em}
@@ -340,6 +361,10 @@ input:focus,select:focus{border-color:var(--brand)}
 @media print{
   body{background:#fff}
   .editor-top,.ribbon-wrap,.status-bar,.toast,.banner,.appbar{display:none!important}
+  /* PC3: rulers never print — and the frame must not keep its grid. */
+  .ruler,.ruler-corner{display:none!important}
+  .page-frame{width:auto!important}
+  .page-frame.with-rulers{display:block}
   .editor-shell{height:auto}
   .workspace{background:#fff;padding:0;overflow:visible}
   .page-scaler{width:auto!important;height:auto!important}

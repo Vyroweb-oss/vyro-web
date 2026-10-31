@@ -448,6 +448,10 @@ const en = {
   groupThemes: 'Themes',
   groupViews: 'Views',
   groupShow: 'Show',
+  // PC3 Page rulers (display-only)
+  ruler: 'Ruler',
+  showRuler: 'Show ruler',
+  hideRuler: 'Hide ruler',
   styleTitle: 'Title',
   // M2-12 Smart Templates & document forms
   smartTemplates: 'Smart templates & forms',
@@ -956,6 +960,10 @@ const fa: Record<I18nKey, string> = {
   groupThemes: 'پوسته‌ها',
   groupViews: 'نماها',
   groupShow: 'نمایش',
+  // PC3 Page rulers (display-only)
+  ruler: 'خط‌کش',
+  showRuler: 'نمایش خط‌کش',
+  hideRuler: 'پنهان‌کردن خط‌کش',
   styleTitle: 'عنوان',
   // M2-12 Smart Templates & document forms
   smartTemplates: 'الگوهای هوشمند و فرم‌ها',
