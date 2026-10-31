@@ -24,6 +24,7 @@ import KeyboardShortcutsDialog from './KeyboardShortcutsDialog'
 import { useDialogFocus } from './useDialogFocus'
 import { restoreFocus } from '../lib/keyboard'
 import StatsPanel from './StatsPanel'
+import AccessibilityPanel from './AccessibilityPanel'
 import SaveDiagnosticsPanel from './SaveDiagnosticsPanel'
 import ExportPresetsPanel from './ExportPresetsPanel'
 import { initialSaveDiag, recordAttempt, recordSuccess, recordFailure, withBackup, saveBackup, loadBackup, type SaveDiagnostics, type SaveBackup } from '../lib/saveDiagnostics'
@@ -198,6 +199,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [navOpen,setNavOpen]=useState(false)
   // M2-05 document statistics panel (derived live, no stored state).
   const [statsOpen,setStatsOpen]=useState(false)
+  // P2-5 accessibility checker panel (diagnostic only, never mutates the doc).
+  const [a11yOpen,setA11yOpen]=useState(false)
   const [findOpen,setFindOpen]=useState(false)
   // M2-03 view modes: session-only editor state, never persisted to the doc.
   const [viewMode,setViewMode]=useState<ViewMode>('edit')
@@ -1118,6 +1121,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('groupThemes')}><Btn onClick={onToggleTheme}>{theme==='dark'? t('lightUi'):t('darkUi')}</Btn></Group>
         <Group label={t('groupShow')}><Btn active={navOpen} onClick={()=>setNavOpen(o=>!o)}>{t('navigationPane')}</Btn><Btn active={showRuler} aria-label={t('ruler')} onClick={()=>setShowRuler(o=>!o)}>{showRuler ? t('hideRuler') : t('showRuler')}</Btn></Group>
         <Group label={t('saveDiagnostics')}><Btn active={saveDiagOpen} onClick={()=>setSaveDiagOpen(o=>!o)}>{t('saveDiagnostics')}</Btn></Group>
+        <Group label={t('accessibilityChecker')}><Btn active={a11yOpen} onClick={()=>setA11yOpen(o=>!o)}>{t('accessibilityChecker')}</Btn></Group>
         <Group label={t('keyboardShortcuts')}><Btn active={shortcutsOpen} onClick={()=>setShortcutsOpen(o=>!o)}>{t('keyboardShortcuts')}</Btn></Group>
         <Group label={t('groupZoom')}><Btn onClick={()=>setZoom(z=>zoomStep(z,-10))}>−</Btn><span className="static-stat">{zoom}%</span><Btn onClick={()=>setZoom(z=>zoomStep(z,10))}>+</Btn><Btn onClick={()=>setZoom(100)}>100%</Btn><Btn onClick={()=>setZoom(50)}>50%</Btn><Btn onClick={()=>setZoom(200)}>200%</Btn></Group>
       </>}
@@ -1136,6 +1140,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <div className="row"><button type="button" className="primary small" onClick={acceptRecovery}>{t('recoveryAccept')}</button><button type="button" className="rbtn" onClick={discardRecovery}>{t('recoveryDiscard')}</button></div>
     </div>}
     {viewMode==='edit' && statsOpen && <StatsPanel editor={editor} lang={lang} pages={pageCount} onClose={()=>setStatsOpen(false)} />}
+    {viewMode==='edit' && a11yOpen && <AccessibilityPanel editor={editor} lang={lang} onClose={()=>setA11yOpen(false)} />}
     {viewMode==='edit' && saveDiagOpen && <SaveDiagnosticsPanel editor={editor} doc={doc} lang={lang} diag={diag} backup={backup} autosaveEnabled={autosaveEnabled ?? true} autosaveIntervalMs={autosaveIntervalMs ?? 500} hasPendingEdits={saveState==='pending' || saveState==='failed'} onRetry={retrySave} onCreateBackup={createBackupNow} onDownloadBackup={downloadBackup} onClose={()=>setSaveDiagOpen(false)} />}
     {viewMode==='edit' && exportPresetsOpen && <ExportPresetsPanel editor={editor} doc={doc} lang={lang} onClose={()=>setExportPresetsOpen(false)} onExportText={(name,text,mime)=>download(name,text,mime)} onExportHtml={(name,html)=>download(name, `<!doctype html><html dir="${doc.dir}"><head><meta charset="utf-8"><title>${escapeHtml(doc.title)}</title></head><body>${html}</body></html>`, 'text/html')} onExportArchive={(name,payload)=>download(name,payload,'application/json')} onPrint={()=>window.print()} />}
     {viewMode==='edit' && compareOpen && <ComparePanel editor={editor} doc={doc} versions={versions} lang={lang} onClose={()=>setCompareOpen(false)} onVersionsSaved={(next)=>setVersions(next)} />}

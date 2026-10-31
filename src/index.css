@@ -664,6 +664,13 @@ input:focus,select:focus{border-color:var(--brand)}
 .stats-row dd{margin:0;font-weight:700;overflow-wrap:anywhere;text-align:end}
 @media print{ .stats-panel{display:none!important} }
 
+/* ---------- accessibility checker (P2-5) ---------- */
+.a11y-panel{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;flex-direction:column;gap:8px}
+.a11y-group{display:flex;flex-direction:column;gap:4px}
+.a11y-group-title{font-weight:700;font-size:13.5px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+.a11y-list{margin:0;padding-inline-start:20px;display:flex;flex-direction:column;gap:4px;font-size:13.5px;overflow-wrap:anywhere}
+@media print{ .a11y-panel{display:none!important} }
+
 /* ---------- autosave diagnostics (M2-13) ---------- */
 .save-diag-panel{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;flex-direction:column;gap:8px}
 .diag-row{display:flex;justify-content:space-between;gap:12px;font-size:13.5px}
