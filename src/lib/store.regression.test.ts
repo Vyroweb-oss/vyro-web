@@ -69,3 +69,15 @@ describe('html/link safety helpers', () => {
     expect(isSafeLinkUrl('')).toBe(false)
   })
 })
+
+describe('sanitizeDoc header/footer (release mission)', () => {
+  it('carries headerText/footerText, trims and caps them, drops empty ones', () => {
+    const base = { id: 'x1', title: 'T', content: { type: 'doc', content: [] }, createdAt: 'a', updatedAt: 'b' }
+    const d = sanitizeDoc({ ...base, headerText: '  My Header  ', footerText: 'My Footer' })!
+    expect(d.headerText).toBe('My Header')
+    expect(d.footerText).toBe('My Footer')
+    const empty = sanitizeDoc({ ...base, headerText: '   ', footerText: 42 })!
+    expect(empty.headerText).toBeUndefined()
+    expect(empty.footerText).toBeUndefined()
+  })
+})

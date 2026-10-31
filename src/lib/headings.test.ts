@@ -108,3 +108,22 @@ describe('extractLiveHeadings + active heading (real doc)', () => {
     expect(activeHeadingIndex(headings, headings[1].to + 1)).toBe(1) // inside "tail"
   })
 })
+
+describe('P2-1b regression: ribbon heading style + Enter must not destroy the heading text', () => {
+  it('the gallery chain (toggleHeading + collapse selection to its end) makes splitBlock safe', async () => {
+    const { Editor } = await import('@tiptap/core')
+    const StarterKit = (await import('@tiptap/starter-kit')).default
+    const ed = new Editor({ extensions: [StarterKit], content: '<p>First Heading</p>' })
+    try {
+      ed.commands.setTextSelection({ from: 1, to: 14 })
+      const to = ed.state.selection.to
+      ;(ed.chain() as any).toggleHeading({ level: 1 }).setTextSelection(to).run()
+      ed.commands.splitBlock()
+      ed.commands.insertContent('Body')
+      const texts: string[] = []
+      ed.state.doc.forEach((n: any) => texts.push(`${n.type.name}(${(n.textContent || '')})`))
+      expect(texts[0]).toBe('heading(First Heading)')
+      expect(texts.join(' ')).toContain('paragraph(Body)')
+    } finally { ed.destroy() }
+  })
+})

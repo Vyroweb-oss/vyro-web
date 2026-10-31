@@ -708,3 +708,13 @@ input:focus,select:focus{border-color:var(--brand)}
 .onboarding-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:14px}
 @media (max-width:768px){ .onboarding-guide{padding:16px} }
 @media print{ .onboarding-guide{display:none!important} }
+
+/* Release mission: table-of-contents block (a field-like block node). */
+.toc-block{ border:1px solid #d8dde6; background:#f7f9fc; border-radius:4px; padding:10px 14px; margin:10px 0; }
+.toc-block-title{ font-weight:700; font-size:1.05em; margin:0 0 6px; }
+.toc-block-item{ margin:2px 0; color:#2b2b2b; }
+.toc-block.ProseMirror-selectednode{ outline:2px solid var(--accent,#2f5fd0); }
+
+/* Release mission: repeated header/footer text on each sheet. */
+.sheet-header{ position:absolute; top:6mm; left:0; right:0; text-align:center; font-size:10pt; color:#666; pointer-events:none; }
+.sheet-footer{ position:absolute; bottom:11mm; left:0; right:0; text-align:center; font-size:10pt; color:#666; pointer-events:none; }

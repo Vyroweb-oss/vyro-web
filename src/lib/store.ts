@@ -98,6 +98,10 @@ export function sanitizeDoc(raw: any): VyroDoc | null {
     pageW: typeof raw.pageW === 'number' && Number.isFinite(raw.pageW) ? raw.pageW : undefined,
     pageH: typeof raw.pageH === 'number' && Number.isFinite(raw.pageH) ? raw.pageH : undefined,
     customMargins: isMarginsShape(raw.customMargins) ? raw.customMargins : undefined,
+    // Release mission: header/footer text — same drop-on-reload hazard as
+    // the pagination fields above; carry them explicitly.
+    headerText: typeof raw.headerText === 'string' && raw.headerText.trim() ? raw.headerText.trim().slice(0, 200) : undefined,
+    footerText: typeof raw.footerText === 'string' && raw.footerText.trim() ? raw.footerText.trim().slice(0, 200) : undefined,
     deletedAt: typeof raw.deletedAt === 'string' && raw.deletedAt ? raw.deletedAt : undefined,
   }
 }

@@ -56,6 +56,7 @@ export interface EditorPaletteActions {
   zoomOut: () => void
   zoomReset: () => void
   pastePlainText: () => void
+  openNavigation: () => void
 }
 
 const PageBreak = Node.create({
@@ -85,6 +86,61 @@ const PageBreak = Node.create({
 })
 
 declare module '@tiptap/core' { interface Commands<ReturnType> { pageBreak: { insertPageBreak: () => ReturnType } } }
+
+// Release mission: a REAL table-of-contents block. Unlike the old static
+// HTML snapshot, this node stores its entries (from the document headings)
+// and can be refreshed in place with the Update command — Word's TOC is a
+// field, and this is the honest local equivalent. Entries are plain data
+// in node attrs; rendering is derived, the block itself is not editable.
+const TocBlock = Node.create({
+  name: 'tocBlock', group: 'block', atom: true, selectable: true,
+  addAttributes() {
+    return {
+      title: { default: 'Contents' },
+      items: {
+        default: [],
+        parseHTML: (el: any) => { try { return JSON.parse(el.getAttribute('data-items') || '[]') } catch { return [] } },
+        renderHTML: (attrs: any) => ({ 'data-items': JSON.stringify(attrs.items || []) }),
+      },
+    }
+  },
+  parseHTML() { return [{ tag: 'div[data-toc-block]' }] },
+  renderHTML({ node }: any) {
+    const items = (node.attrs.items || []) as { level: number; text: string }[]
+    return ['div', { 'data-toc-block': '', class: 'toc-block' },
+      ['p', { class: 'toc-block-title' }, String(node.attrs.title || 'Contents')],
+      ...items.map((i) => ['p', { class: 'toc-block-item', style: `margin-left:${(Math.max(1, i.level) - 1) * 18}px` }, i.text || ''])]
+  },
+  addCommands() {
+    return {
+      insertTocBlock: () => ({ state, dispatch, editor }: any) => {
+        const items: { level: number; text: string }[] = []
+        state.doc.descendants((n: any) => { if (n.type.name === 'heading') items.push({ level: n.attrs.level, text: n.textContent }) })
+        if (!items.length) return false
+        const node = state.schema.nodes.tocBlock.create({ title: (editor as any)?.storage?.vyroTocTitle || 'Contents', items })
+        if (dispatch) dispatch(state.tr.replaceSelectionWith(node).scrollIntoView())
+        return true
+      },
+      updateTocBlocks: () => ({ state, dispatch }: any) => {
+        const items: { level: number; text: string }[] = []
+        state.doc.descendants((n: any) => { if (n.type.name === 'heading') items.push({ level: n.attrs.level, text: n.textContent }) })
+        const found: { pos: number; node: any }[] = []
+        state.doc.descendants((n: any, pos: number) => { if (n.type.name === 'tocBlock') found.push({ pos, node: n }) })
+        if (!found.length) return false
+        let tr = state.tr
+        // Replace from the end backwards so earlier positions stay valid.
+        for (let i = found.length - 1; i >= 0; i--) {
+          const fresh = state.schema.nodes.tocBlock.create({ title: found[i].node.attrs.title, items })
+          tr = tr.replaceWith(found[i].pos, found[i].pos + found[i].node.nodeSize, fresh)
+        }
+        if (dispatch) dispatch(tr)
+        return true
+      },
+    } as any
+  },
+})
+
+declare module '@tiptap/core' { interface Commands<ReturnType> { tocBlock: { insertTocBlock: () => ReturnType; updateTocBlocks: () => ReturnType } } }
 
 // Pagination mission: Ctrl/Cmd+Enter inserts a manual page break, as in Word.
 const PageBreakShortcut = Extension.create({
@@ -144,6 +200,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [findOpen,setFindOpen]=useState(false)
   // M2-03 view modes: session-only editor state, never persisted to the doc.
   const [viewMode,setViewMode]=useState<ViewMode>('edit')
+  const viewModeRef=useRef(viewMode); viewModeRef.current=viewMode
   // PC3 page rulers: session-only toggle, default ON; shown only in edit
   // mode (never focus/reading, never print — see the print CSS).
   const [showRuler,setShowRuler]=useState(true)
@@ -333,7 +390,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       TextStyleKit, Highlight.configure({multicolor:true}),
       TableKit.configure({ table:{ resizable:true } }),
       Image, Placeholder.configure({ placeholder: t('startTyping') }),
-      CharacterCount, PageBreak, PageBreakShortcut, PaginationExtension, FocusDim, SectionCollapse,
+      CharacterCount, PageBreak, PageBreakShortcut, PaginationExtension, FocusDim, SectionCollapse, TocBlock,
     ],
     content: doc.content,
     editorProps:{ attributes:{ dir: doc.dir, spellcheck: String(spell) } as any },
@@ -546,11 +603,14 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   useEffect(()=>{
     const el=document.createElement('style')
     el.setAttribute('data-vyro-print','')
-    el.textContent=`@page{size:${cssPageSize(setup)};margin:${setup.margins.top}mm ${setup.margins.right}mm ${setup.margins.bottom + FOOTER_RESERVE_MM}mm ${setup.margins.left}mm;@bottom-center{content:counter(page);font-size:10pt;font-family:Arial,sans-serif;color:#666}}`
+    const cssStr=(v:string)=>'"'+v.replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/[\n\r]+/g,' ')+'"'
+    const hf='font-size:10pt;font-family:Arial,sans-serif;color:#666'
+    const boxes=[ doc.footerText ? `@bottom-center{content:${cssStr(doc.footerText)};${hf}}@bottom-right{content:counter(page);${hf}}` : `@bottom-center{content:counter(page);${hf}}`, ...(doc.headerText ? [`@top-center{content:${cssStr(doc.headerText)};${hf}}`] : []) ].join('')
+    el.textContent=`@page{size:${cssPageSize(setup)};margin:${setup.margins.top}mm ${setup.margins.right}mm ${setup.margins.bottom + FOOTER_RESERVE_MM}mm ${setup.margins.left}mm;${boxes}}`
     document.head.appendChild(el)
     return ()=>{ el.remove() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[setup.widthMm, setup.heightMm, setup.margins.top, setup.margins.right, setup.margins.bottom, setup.margins.left])
+  },[setup.widthMm, setup.heightMm, setup.margins.top, setup.margins.right, setup.margins.bottom, setup.margins.left, doc.headerText, doc.footerText])
 
   // Page-setup dialog (custom size / custom margins).
   const [setupDialog,setSetupDialog]=useState<null|'size'|'margins'>(null)
@@ -560,6 +620,13 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [psW,setPsW]=useState(''); const [psH,setPsH]=useState('')
   const [pmT,setPmT]=useState(''); const [pmR,setPmR]=useState(''); const [pmB,setPmB]=useState(''); const [pmL,setPmL]=useState('')
   const [psError,setPsError]=useState('')
+  // Release mission: header & footer dialog (per-document repeated text).
+  const [hfOpen,setHfOpen]=useState(false)
+  const [hfDraft,setHfDraft]=useState({header:'',footer:''})
+  const hfDialogRef=useRef<HTMLFormElement>(null)
+  useDialogFocus(hfOpen, { containerRef: hfDialogRef, onClose: ()=>setHfOpen(false), autofocus: true, trap: true, opener: dialogOpenerRef.current })
+  const openHfDialog=()=>{ dialogOpenerRef.current=document.activeElement; setHfDraft({ header: docRef.current.headerText||'', footer: docRef.current.footerText||'' }); setHfOpen(true) }
+  const applyHfDialog=()=>{ onChange({ headerText: hfDraft.header.trim() || undefined, footerText: hfDraft.footer.trim() || undefined } as any); setHfOpen(false) }
   const openSetupDialog=(mode:'size'|'margins')=>{
     setPsError('')
     if(mode==='size'){
@@ -619,6 +686,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       zoomOut: ()=>setZoom(z=>zoomStep(z,-10)),
       zoomReset: ()=>setZoom(100),
       pastePlainText: ()=>{ void pastePlainText() },
+      openNavigation: ()=>{ if(viewModeRef.current!=='edit') exitMode(); setNavOpen(true) },
     })
     return ()=>onEditorActions(null)
     // doc.title/dir are deps on purpose: export filenames and the inserted
@@ -704,7 +772,73 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const exportTxt=()=> download(`${doc.title}.txt`, jsonToPlainText(editor.getJSON()), 'text/plain')
   const exportHtml=()=> download(`${doc.title}.html`, `<!doctype html><html dir="${doc.dir}"><head><meta charset="utf-8"><title>${escapeHtml(doc.title)}</title></head><body>${editor.getHTML()}</body></html>`, 'text/html')
   const insertDate=()=>{ editor.chain().focus().insertContent({ type:'text', text: formatDocDate(doc.dir) }).run() }
-  const insertToc=()=>{ const items:{level:number;text:string}[]=[]; editor.state.doc.descendants((n:any)=>{ if(n.type.name==='heading') items.push({level:n.attrs.level, text:n.textContent}) }); if(!items.length){ setToast(t('noHeadings')); return } const html=`<h2>${escapeHtml(t('tocHeading'))}</h2>`+items.map(i=>`<p style="margin-left:${(i.level-1)*18}px">${escapeHtml(i.text)}</p>`).join(''); editor.chain().focus().insertContent(html).run() }
+  // Release mission: format painter (Word's paintbrush). Click once to
+  // capture the formatting at the current selection (inline marks of its
+  // first text + the block type/alignment), then select target text and
+  // the captured formatting is applied once. Esc cancels. A caret-only
+  // click keeps the painter armed until a range is selected.
+  const painterRef = useRef<null | { marks: { type: string; attrs: any }[]; block: { name: string; level?: number; textAlign?: string } }>(null)
+  const [painterArmed, setPainterArmed] = useState(false)
+  const PAINTER_MARKS = ['bold', 'italic', 'underline', 'strike', 'code', 'textStyle', 'highlight', 'link']
+  const captureFormat = () => {
+    if (painterRef.current) { painterRef.current = null; setPainterArmed(false); return }
+    const sel = editor.state.selection as any
+    const marks: { type: string; attrs: any }[] = []
+    for (const type of PAINTER_MARKS) {
+      const attrs = (editor as any).getAttributes?.(type)
+      const active = type === 'textStyle' ? (attrs && Object.keys(attrs).length > 0) : editor.isActive(type)
+      if (active) marks.push({ type, attrs: attrs || {} })
+    }
+    const parent = sel.$from.parent
+    painterRef.current = { marks, block: { name: parent.type.name, level: parent.attrs?.level, textAlign: parent.attrs?.textAlign }, from: sel.from, to: sel.to } as any
+    setPainterArmed(true)
+  }
+  useEffect(() => {
+    if (!editor) return
+    let settleTimer: ReturnType<typeof setTimeout> | null = null
+    const applyNow = () => {
+      const p = painterRef.current
+      if (!p) return
+      const sel = editor.state.selection as any
+      if (sel.empty) return
+      // Never paint onto the very range the format was captured from.
+      if ((p as any).from === sel.from && (p as any).to === sel.to) return
+      const chain = editor.chain().focus()
+      for (const type of PAINTER_MARKS) {
+        const got = p.marks.find((m) => m.type === type)
+        if (got) chain.setMark(type as any, got.attrs)
+        else chain.unsetMark(type as any)
+      }
+      if (p.block.name === 'heading' && p.block.level) chain.setHeading({ level: p.block.level as any })
+      else if (p.block.name === 'paragraph') chain.setParagraph()
+      if (p.block.textAlign) chain.setTextAlign(p.block.textAlign)
+      chain.run()
+      painterRef.current = null
+      setPainterArmed(false)
+    }
+    // Paint only once the selection SETTLES: selectionUpdate fires for
+    // every intermediate step of a shift-selection or mouse drag, and
+    // painting then would format a partial range (found by the release
+    // suite, 2026-10-31). 250ms of stillness = the user finished selecting.
+    const onSel = () => {
+      if (!painterRef.current) return
+      if (settleTimer) clearTimeout(settleTimer)
+      settleTimer = setTimeout(applyNow, 250)
+    }
+    editor.on('selectionUpdate', onSel)
+    return () => { editor.off('selectionUpdate', onSel); if (settleTimer) clearTimeout(settleTimer) }
+  }, [editor])
+  useEffect(() => {
+    if (!painterArmed) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); painterRef.current = null; setPainterArmed(false) }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [painterArmed])
+
+  const insertToc=()=>{ const has=(()=>{ let f=false; editor.state.doc.descendants((n:any)=>{ if(n.type.name==='heading') f=true }); return f })(); if(!has){ setToast(t('noHeadings')); return } (editor.storage as any).vyroTocTitle=t('tocHeading'); editor.chain().focus().insertTocBlock().run() }
+  const updateToc=()=>{ const ok=editor.chain().focus().updateTocBlocks().run(); if(!ok) setToast(t('tocNothingToUpdate')); else setToast(t('tocUpdated')) }
 
   const onImport=async(e:React.ChangeEvent<HTMLInputElement>)=>{ const f=e.target.files?.[0]; if(!f) return; try{
     const isDocx=/\.docx$/i.test(f.name); const isTxt=/\.txt$/i.test(f.name)
@@ -848,7 +982,15 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     if(Math.abs(touch.clientX-ref.x) > 10 || Math.abs(touch.clientY-ref.y) > 10) clearLongPress()
   }
 
-  const Btn=(p:{onClick:()=>void; active?:boolean; title?:string; label?:string; children:any; disabled?:boolean})=>(<button type="button" className={`rbtn${p.active?' active':''}`} onClick={p.onClick} title={p.title||''} aria-label={p.label||undefined} disabled={p.disabled}>{p.children}</button>)
+  // Ribbon buttons must never steal the editor's focus/selection on
+  // mousedown: without this, the browser blur collapses the DOM selection
+  // and chain().focus() restores a stale caret (position ~0), so the next
+  // Enter lands at the start of the block — which is how heading text was
+  // destroyed after applying a heading style with the mouse (P2-1b,
+  // found live 2026-10-31, reproduced locally). Keyboard activation is
+  // unaffected (Tab + Enter/Space still fire click).
+  const keepEditorFocus=(e:any)=>{ e.preventDefault() }
+  const Btn=(p:{onClick:()=>void; active?:boolean; title?:string; label?:string; children:any; disabled?:boolean})=>(<button type="button" className={`rbtn${p.active?' active':''}`} onMouseDown={keepEditorFocus} onClick={p.onClick} title={p.title||''} aria-label={p.label||undefined} disabled={p.disabled}>{p.children}</button>)
   const Group=(p:{label:string; cls?:string; children:any})=>(<div className={`rgroup${p.cls?' '+p.cls:''}`}><div className="rgroup-items">{p.children}</div><div className="rgroup-label">{p.label}</div></div>)
 
   // Controlled values for the font selects, derived from the read-back state.
@@ -866,7 +1008,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // (settings default, else 16) — the size select's read-back already
   // shows 16 in that case, so the first step lands on a real size.
   const adjustFontSize=(delta:number)=>{ const base = Number.isNaN(curSizeNum) ? (settings?.defaultFontSize ?? 16) : curSizeNum; const next = Math.min(FONT_SIZES[FONT_SIZES.length-1], Math.max(FONT_SIZES[0], base+delta)); editor.chain().focus().setFontSize(next+'px').run() }
-  const applyTitleStyle = () => { editor.chain().focus().setParagraph().setFontSize('28px').run(); if(!editor.isActive('bold')) editor.chain().focus().toggleBold().run() }
+  const applyTitleStyle = () => { const to=editor.state.selection.to; editor.chain().focus().setParagraph().setFontSize('28px').setTextSelection(to).run(); if(!editor.isActive('bold')) editor.chain().focus().toggleBold().run() }
 
   const pageW = `${setup.widthMm}mm`
   const pageMinH = viewMode==='edit'
@@ -910,7 +1052,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       </div>
     </header>}
     {viewMode==='edit' && <div className={`ribbon-wrap${toolsOpen?' expanded':''}`}>
-      <nav className="ribbon-tabs">{TABS.map(tb=><button key={tb.id} className={tab===tb.id?'tab active':'tab'} onClick={()=>setTab(tb.id)}>{t(tb.key)}</button>)}<button className="tools-toggle" aria-expanded={toolsOpen} onClick={()=>setToolsOpen(o=>!o)}>{t('moreTools')} {toolsOpen?'▴':'▾'}</button></nav>
+      <nav className="ribbon-tabs">{TABS.map(tb=><button key={tb.id} className={tab===tb.id?'tab active':'tab'} onMouseDown={keepEditorFocus} onClick={()=>setTab(tb.id)}>{t(tb.key)}</button>)}<button className="tools-toggle" aria-expanded={toolsOpen} onMouseDown={keepEditorFocus} onClick={()=>setToolsOpen(o=>!o)}>{t('moreTools')} {toolsOpen?'▴':'▾'}</button></nav>
       <div className="ribbon">
       {tab==='File' && <>
         <Group label={t('groupDocument')}><Btn onClick={goBack}>{t('dashboard')}</Btn><Btn onClick={()=>{ pendingJson.current=editor.getJSON(); flushSave() }}>{t('saveNow')}</Btn></Group>
@@ -919,13 +1061,13 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('groupExport')}><Btn onClick={exportTxt}>{t('exportTxt')}</Btn><Btn onClick={exportHtml}>{t('exportHtml')}</Btn><Btn onClick={()=>gated(()=>exportDocx(editor.getJSON(), doc.title))}>{t('exportDocx')} {!isPremium&&'🔒'}</Btn><Btn onClick={()=>gated(()=>window.print())}>{t('printPdf')} {!isPremium&&'🔒'}</Btn><Btn active={exportPresetsOpen} onClick={()=>setExportPresetsOpen(o=>!o)}>{t('exportPresets')}</Btn></Group>
       </>}
       {tab==='Home' && <>
-        <Group label={t('groupClipboard')} cls="g-fixed"><Btn label={t('menuPastePlain')} title={t('menuPastePlain')} onClick={()=>{ void pastePlainText() }}><span aria-hidden="true">📋</span></Btn><Btn label={t('menuCut')} title={t('menuCut')} onClick={()=>copySelection(true)}><span aria-hidden="true">✂</span></Btn><Btn label={t('menuCopy')} title={t('menuCopy')} onClick={()=>copySelection(false)}><span aria-hidden="true">⧉</span></Btn></Group>
+        <Group label={t('groupClipboard')} cls="g-fixed"><Btn label={t('menuPastePlain')} title={t('menuPastePlain')} onClick={()=>{ void pastePlainText() }}><span aria-hidden="true">📋</span></Btn><Btn label={t('menuCut')} title={t('menuCut')} onClick={()=>copySelection(true)}><span aria-hidden="true">✂</span></Btn><Btn label={t('menuCopy')} title={t('menuCopy')} onClick={()=>copySelection(false)}><span aria-hidden="true">⧉</span></Btn><Btn label={t('formatPainter')} title={t('formatPainter')} active={painterArmed} onClick={captureFormat}><span aria-hidden="true">🖌</span></Btn></Group>
         <Group label={t('groupFont')} cls="g-font"><select className="font-select" aria-label={t('fontFamily')} value={curFamily} onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(!v) c.unsetFontFamily().run(); else c.setFontFamily(v).run() }}><option value="">{t('fontFamily')}</option>{curFamily && !FONT_FAMILIES.includes(curFamily) && <option value={curFamily}>{curFamily.replace(/'/g,'')}</option>}{FONT_FAMILIES.map(f=><option key={f} value={f}>{f.replace(/'/g,'')}</option>)}</select><select className="size-select" aria-label="Font size" value={sizeSelectValue} onChange={e=>{ if(e.target.value) editor.chain().focus().setFontSize(e.target.value+'px').run() }}>{sizeSelectValue==='' && <option value="">{curSizeNum}px</option>}{FONT_SIZES.map(s=><option key={s} value={s}>{s}px</option>)}</select><Btn title={t('fontGrow')} onClick={()=>adjustFontSize(2)}>A▲</Btn><Btn title={t('fontShrink')} onClick={()=>adjustFontSize(-2)}>A▼</Btn><Btn active={editor.isActive('bold')} onClick={()=>editor.chain().focus().toggleBold().run()}><b>B</b></Btn><Btn active={editor.isActive('italic')} onClick={()=>editor.chain().focus().toggleItalic().run()}><i>I</i></Btn><Btn active={editor.isActive('underline')} onClick={()=>editor.chain().focus().toggleUnderline().run()}><u>U</u></Btn><Btn active={editor.isActive('strike')} onClick={()=>editor.chain().focus().toggleStrike().run()}><s>S</s></Btn>
         <label className="color-wrap" title={t('textColour')}>A<input type="color" onChange={e=>editor.chain().focus().setColor(e.target.value).run()}/></label>
         <label className="color-wrap" title={t('highlight')}>H<input type="color" defaultValue="#ffff00" onChange={e=>editor.chain().focus().toggleHighlight({color:e.target.value}).run()}/></label>
         <Btn label={t('clearFormatting')} title={t('clearFormatting')} onClick={()=>editor.chain().focus().unsetAllMarks().clearNodes().run()}><span className="cf-ico" aria-hidden="true">A<span className="cf-mark">✕</span></span></Btn></Group>
         <Group label={t('groupParagraph')} cls="g-para"><Btn active={editor.isActive({textAlign:'left'})} label={t('alignLeft')} title={t('alignLeft')} onClick={()=>editor.chain().focus().setTextAlign('left').run()}><span className="al-ico al-left" aria-hidden="true"><i/><i/><i/><i/></span></Btn><Btn active={editor.isActive({textAlign:'center'})} label={t('alignCenter')} title={t('alignCenter')} onClick={()=>editor.chain().focus().setTextAlign('center').run()}><span className="al-ico al-center" aria-hidden="true"><i/><i/><i/><i/></span></Btn><Btn active={editor.isActive({textAlign:'right'})} label={t('alignRight')} title={t('alignRight')} onClick={()=>editor.chain().focus().setTextAlign('right').run()}><span className="al-ico al-right" aria-hidden="true"><i/><i/><i/><i/></span></Btn><Btn active={editor.isActive({textAlign:'justify'})} label={t('alignJustify')} title={t('alignJustify')} onClick={()=>editor.chain().focus().setTextAlign('justify').run()}><span className="al-ico al-justify" aria-hidden="true"><i/><i/><i/><i/></span></Btn><select className="ls-select" aria-label={t('lineSpacing')} value={curLineHeight} onChange={e=>{ const v=e.target.value; const c=editor.chain().focus(); if(!v) c.unsetLineHeight().run(); else c.setLineHeight(v).run() }}><option value="">{t('lineSpacing')}</option>{curLineHeight && !LINE_HEIGHTS.includes(curLineHeight) && <option value={curLineHeight}>{curLineHeight}</option>}{LINE_HEIGHTS.map(v=><option key={v} value={v}>{v}</option>)}</select>{!compactToolbar && <><Btn active={editor.isActive('bulletList')} label={t('bulletList')} title={t('bulletList')} onClick={()=>editor.chain().focus().toggleBulletList().run()}><span className="lst-ico" aria-hidden="true"><span className="lst-row"><b>•</b><i/></span><span className="lst-row"><b>•</b><i/></span><span className="lst-row"><b>•</b><i/></span></span></Btn><Btn active={editor.isActive('orderedList')} label={t('orderedList')} title={t('orderedList')} onClick={()=>editor.chain().focus().toggleOrderedList().run()}><span className="lst-ico" aria-hidden="true"><span className="lst-row"><b>1</b><i/></span><span className="lst-row"><b>2</b><i/></span><span className="lst-row"><b>3</b><i/></span></span></Btn><Btn active={editor.isActive('blockquote')} label={t('quote')} title={t('quote')} onClick={()=>editor.chain().focus().toggleBlockquote().run()}><span aria-hidden="true">❝</span></Btn></>}</Group>
-        <Group label={t('groupStyles')}><div className="styles-gallery" role="group" aria-label={t('groupStyles')}><button type="button" className={`style-gal${styleId==='normal'?' active':''}`} aria-label={t('paragraph')} onClick={()=>editor.chain().focus().setParagraph().run()}><span className="style-sample" aria-hidden="true">AaBbCc</span><span className="style-name">{t('paragraph')}</span></button><button type="button" className={`style-gal style-h1${styleId==='heading1'?' active':''}`} aria-label={t('heading1')} onClick={()=>editor.chain().focus().toggleHeading({level:1}).run()}><span className="style-sample" aria-hidden="true">AaBbCc</span><span className="style-name">{t('heading1')}</span></button><button type="button" className={`style-gal style-h2${styleId==='heading2'?' active':''}`} aria-label={t('heading2')} onClick={()=>editor.chain().focus().toggleHeading({level:2}).run()}><span className="style-sample" aria-hidden="true">AaBbCc</span><span className="style-name">{t('heading2')}</span></button><button type="button" className={`style-gal style-h3${styleId==='heading3'?' active':''}`} aria-label={t('heading3')} onClick={()=>editor.chain().focus().toggleHeading({level:3}).run()}><span className="style-sample" aria-hidden="true">AaBbCc</span><span className="style-name">{t('heading3')}</span></button><button type="button" className={`style-gal style-title${styleId==='title'?' active':''}`} aria-label={t('styleTitle')} onClick={applyTitleStyle}><span className="style-sample" aria-hidden="true">AaBbCc</span><span className="style-name">{t('styleTitle')}</span></button></div></Group>
+        <Group label={t('groupStyles')}><div className="styles-gallery" role="group" aria-label={t('groupStyles')}><button type="button" onMouseDown={keepEditorFocus} className={`style-gal${styleId==='normal'?' active':''}`} aria-label={t('paragraph')} onClick={()=>{ const to=editor.state.selection.to; editor.chain().focus().setParagraph().setTextSelection(to).run() }}><span className="style-sample" aria-hidden="true">AaBbCc</span><span className="style-name">{t('paragraph')}</span></button><button type="button" onMouseDown={keepEditorFocus} className={`style-gal style-h1${styleId==='heading1'?' active':''}`} aria-label={t('heading1')} onClick={()=>{ const to=editor.state.selection.to; editor.chain().focus().toggleHeading({level:1}).setTextSelection(to).run() }}><span className="style-sample" aria-hidden="true">AaBbCc</span><span className="style-name">{t('heading1')}</span></button><button type="button" onMouseDown={keepEditorFocus} className={`style-gal style-h2${styleId==='heading2'?' active':''}`} aria-label={t('heading2')} onClick={()=>{ const to=editor.state.selection.to; editor.chain().focus().toggleHeading({level:2}).setTextSelection(to).run() }}><span className="style-sample" aria-hidden="true">AaBbCc</span><span className="style-name">{t('heading2')}</span></button><button type="button" onMouseDown={keepEditorFocus} className={`style-gal style-h3${styleId==='heading3'?' active':''}`} aria-label={t('heading3')} onClick={()=>{ const to=editor.state.selection.to; editor.chain().focus().toggleHeading({level:3}).setTextSelection(to).run() }}><span className="style-sample" aria-hidden="true">AaBbCc</span><span className="style-name">{t('heading3')}</span></button><button type="button" onMouseDown={keepEditorFocus} className={`style-gal style-title${styleId==='title'?' active':''}`} aria-label={t('styleTitle')} onClick={applyTitleStyle}><span className="style-sample" aria-hidden="true">AaBbCc</span><span className="style-name">{t('styleTitle')}</span></button></div></Group>
         <Group label={t('groupEditing')}><Btn onClick={()=>{ findOpenerRef.current=document.activeElement; setFindOpen(true) }}>{t('findReplace')}</Btn></Group>
       </>}
       {tab==='Insert' && <>
@@ -934,6 +1076,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('groupMedia')}><Btn onClick={()=>fileImgRef.current?.click()}>{t('imageLocal')}</Btn><Btn onClick={openImageEdit} disabled={!editor.isActive('image')}>{t('imageEdit')}</Btn></Group>
         {!compactToolbar && <Group label={t('groupLinksBreaks')}><Btn active={editor.isActive('link')} onClick={openLink}>{t('link')}</Btn><Btn active={linksOpen} onClick={()=>setLinksOpen(o=>!o)}>{t('linkManager')}</Btn><Btn onClick={()=>editor.chain().focus().setHorizontalRule().run()}>{t('horizontalLine')}</Btn><Btn onClick={()=>editor.chain().focus().insertPageBreak().run()}>{t('pageBreak')}</Btn></Group>}
         <Group label={t('groupText')}><Btn onClick={insertDate}>{t('insertDate')}</Btn></Group>
+        <Group label={t('headerFooter')}><Btn onClick={openHfDialog}>{t('headerFooterEdit')}</Btn></Group>
       </>}
       {tab==='Layout' && <>
         <Group label={t('groupPageSize')}><select className="ps-select" aria-label={t('pageSize')} value={setup.sizeId} onChange={e=>{ const v=e.target.value as PageSizeId; if(v==='Custom'){ openSetupDialog('size') } else { onChange({ pageSize: v }) } }}>{PAGE_SIZE_IDS.map(id=><option key={id} value={id}>{id==='Custom' ? t('pageSizeCustom') : id}</option>)}</select><span className="ps-label" title={pageSizeLabel(setup)}>{pageSizeLabel(setup)}</span>{setup.sizeId==='Custom' && <Btn onClick={()=>openSetupDialog('size')}>{t('pageSizeCustom')}</Btn>}</Group>
@@ -941,7 +1084,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('groupOrientation')}><Btn active={(doc.orientation||'portrait')==='portrait'} onClick={()=>onChange({orientation:'portrait'})}>{t('portrait')}</Btn><Btn active={doc.orientation==='landscape'} onClick={()=>onChange({orientation:'landscape'})}>{t('landscape')}</Btn></Group>
         <Group label={t('groupDirection')}><Btn active={doc.dir==='ltr'} onClick={()=>onChange({dir:'ltr'})}>LTR</Btn><Btn active={doc.dir==='rtl'} onClick={()=>onChange({dir:'rtl'})}>RTL (Dari/Persian)</Btn></Group>
       </>}
-      {tab==='References' && <Group label={t('groupContents')}><Btn onClick={insertToc}>{t('insertToc')}</Btn></Group>}
+      {tab==='References' && <Group label={t('groupContents')}><Btn onClick={insertToc}>{t('insertToc')}</Btn><Btn onClick={updateToc}>{t('updateToc')}</Btn></Group>}
       {tab==='Mailings' && <Group label={t('mailMerge')}><Btn active={mailMergeOpen} onClick={()=>setMailMergeOpen(o=>!o)}>{t('mailMerge')}</Btn></Group>}
       {tab==='Review' && <>
         <Group label={t('groupProofing')}><Btn active={spell} onClick={()=>setSpell(s=>!s)}>{t('spellcheck')} {spell? t('on'):t('off')}</Btn></Group>
@@ -1018,7 +1161,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
             onContextMenu={(e)=>{ if(Date.now()-longPressMenuRef.current < 1000 && ctxMenu){ e.preventDefault(); return } e.preventDefault(); openContextMenu(e.clientX, e.clientY) }}
             onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={clearLongPress} onTouchCancel={clearLongPress}
           >
-            {viewMode==='edit' && <div className="sheet-layer" aria-hidden="true">{Array.from({length: pageCount},(_,i)=>(<div key={i} className="sheet" style={{ top:`${Math.round(i*(pageHPx+PAGE_GAP_PX))}px`, height:`${Math.round(pageHPx)}px` }}><span className="sheet-num">{i+1}</span></div>))}</div>}
+            {viewMode==='edit' && <div className="sheet-layer" aria-hidden="true">{Array.from({length: pageCount},(_,i)=>(<div key={i} className="sheet" style={{ top:`${Math.round(i*(pageHPx+PAGE_GAP_PX))}px`, height:`${Math.round(pageHPx)}px` }}>{doc.headerText && <span className="sheet-header">{doc.headerText}</span>}{doc.footerText && <span className="sheet-footer">{doc.footerText}</span>}<span className="sheet-num">{i+1}</span></div>))}</div>}
             <EditorContent editor={editor}/>
           </div>
         </div>
@@ -1059,6 +1202,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       {psError && <p className="form-error" role="alert">{psError}</p>}
       <div className="row end"><button type="button" className="rbtn" onClick={()=>setSetupDialog(null)}>{t('cancel')}</button><button type="submit" className="primary small">{t('apply')}</button></div>
     </form></div>}
+    {hfOpen && <div className="modal-backdrop" onClick={()=>setHfOpen(false)}><form className="modal" ref={hfDialogRef} onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyHfDialog() }}><h2>{t('headerFooter')}</h2><label className="field">{t('headerTextLabel')}<input value={hfDraft.header} dir="auto" maxLength={200} onChange={e=>setHfDraft(d=>({...d, header:e.target.value}))}/></label><label className="field">{t('footerTextLabel')}<input value={hfDraft.footer} dir="auto" maxLength={200} onChange={e=>setHfDraft(d=>({...d, footer:e.target.value}))}/></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setHfOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('apply')}</button></div></form></div>}
     {toast && <div className="toast" role="alert">{toast}</div>}
     <input ref={fileImgRef} type="file" accept="image/*" hidden onChange={onImage}/>
     <input ref={replaceImgRef} type="file" accept="image/*" hidden onChange={onReplaceImage}/>

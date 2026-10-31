@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { useDialogFocus } from './useDialogFocus'
 import {
   blankSmartValues, validateSmartForm, sectionChecklist,
   smartFieldLabel, smartName, smartSectionTitle,
@@ -16,6 +17,9 @@ export default function SmartTemplateForm({ tpl, lang, onClose, onCreate }:{
   onCreate: (values: Record<string, string>) => void
 }) {
   const t = (k: I18nKey) => tr(lang, k)
+  const formRef = useRef<HTMLFormElement>(null)
+  // M2-15 remainder (release mission): Esc closes, Tab trapped, focus returns.
+  useDialogFocus(true, { containerRef: formRef, onClose, autofocus: true, trap: true })
   const [values, setValues] = useState<Record<string, string>>(() => blankSmartValues(tpl))
   const [attempted, setAttempted] = useState(false)
   const validation = validateSmartForm(tpl, values)
@@ -32,7 +36,7 @@ export default function SmartTemplateForm({ tpl, lang, onClose, onCreate }:{
   const reset = () => { setValues(blankSmartValues(tpl)); setAttempted(false) }
 
   return <div className="modal-backdrop" onClick={onClose}>
-    <form className="modal smart-modal" dir={tpl.dir} onClick={e => e.stopPropagation()} onSubmit={submit}>
+    <form ref={formRef} className="modal smart-modal" dir={tpl.dir} onClick={e => e.stopPropagation()} onSubmit={submit}>
       <h2>{smartName(tpl, lang)}</h2>
       <div className="smart-checklist" aria-label={t('smartSectionChecklist')}>
         <div className="smart-checklist-title">{t('smartSectionChecklist')}</div>

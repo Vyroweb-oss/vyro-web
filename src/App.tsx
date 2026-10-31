@@ -11,6 +11,7 @@ import { loadDocs, saveDocs, createDoc, duplicateDoc, renameDoc, toggleFavorite,
 import { TEMPLATES, getTemplate, templateName, templateDesc } from './lib/templates'
 import { SMART_TEMPLATES, smartName, smartDesc, createSmartDocument, duplicateSmartTemplate, loadSmartCopies, saveSmartCopies, type SmartTemplate } from './lib/smartTemplates'
 import SmartTemplateForm from './components/SmartTemplateForm'
+import { useDialogFocus } from './components/useDialogFocus'
 import { uid } from './lib/types'
 import { supabase, isSupabaseConfigured } from './lib/supabase'
 import { computeEntitlement } from './lib/entitlement'
@@ -65,6 +66,8 @@ export default function App(){
   const [view,setView]=useState<'docs'|'trash'>('docs')
   const [sort,setSort]=useState<SortMode>(()=>{ try{ const s=localStorage.getItem(SORT_KEY); return s==='name'||s==='created'||s==='updated'? s : 'updated' }catch{ return 'updated' } })
   const [tplModal,setTplModal]=useState(false); const [tplName,setTplName]=useState('')
+  const tplFormRef=useRef<HTMLFormElement>(null)
+  useDialogFocus(tplModal, { containerRef: tplFormRef, onClose: ()=>setTplModal(false), autofocus: false, trap: true })
   // M2-12: smart templates — built-ins plus the user's personal copies (localStorage only).
   const [smartForm,setSmartForm]=useState<SmartTemplate|null>(null)
   const [smartCopies,setSmartCopies]=useState<SmartTemplate[]>(()=> typeof window!=='undefined'? loadSmartCopies(localStorage):[])
@@ -290,9 +293,9 @@ export default function App(){
     <CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>
     {shortcutsOpen && <KeyboardShortcutsDialog open={shortcutsOpen} onClose={()=>setShortcutsOpen(false)} lang={lang}/>}
     {settingsOpen && <SettingsPanel settings={settings} lang={lang} onChange={(patch)=>setSettings(s=>({...s, ...patch}))} onReset={()=>setSettings(defaultSettings())} onClose={()=>setSettingsOpen(false)}/>}
-    {tplModal && <div className="modal-backdrop" onClick={()=>setTplModal(false)}><form className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); createCustomTemplate() }}><h2>{t('customTemplate')}</h2><label className="field">{t('customTemplatePrompt')}<input autoFocus value={tplName} dir="auto" onChange={e=>setTplName(e.target.value)}/></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setTplModal(false)}>{t('cancel')}</button><button type="submit" className="primary small" disabled={!tplName.trim()}>{t('create')}</button></div></form></div>}
+    {tplModal && <div className="modal-backdrop" onClick={()=>setTplModal(false)}><form ref={tplFormRef} className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); createCustomTemplate() }}><h2>{t('customTemplate')}</h2><label className="field">{t('customTemplatePrompt')}<input autoFocus value={tplName} dir="auto" onChange={e=>setTplName(e.target.value)}/></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setTplModal(false)}>{t('cancel')}</button><button type="submit" className="primary small" disabled={!tplName.trim()}>{t('create')}</button></div></form></div>}
     {showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}
     {smartForm && <SmartTemplateForm tpl={smartForm} lang={lang} onClose={()=>setSmartForm(null)} onCreate={createFromSmartForm}/>}
   </div>
 }
-function PremiumModal({onClose,isPremium,lang}:{onClose:()=>void;isPremium:boolean;lang:UiLang}){ const t=(k:I18nKey)=>tr(lang,k); return <div className="modal-backdrop" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}><h2>{t('premiumTitle')}</h2>{isPremium?<p>{t('premiumThanks')}</p>:<><p>{t('premiumDesc')}</p><ul><li>{t('planMonthly')}</li><li>{t('planQuarterly')}</li></ul><ol><li>{t('payStep1')} <b>+93 779 528 228</b></li><li>{t('payStep2')}</li><li>{t('payStep3')}</li></ol></>}<button className="primary" onClick={onClose}>{t('close')}</button></div></div> }
+function PremiumModal({onClose,isPremium,lang}:{onClose:()=>void;isPremium:boolean;lang:UiLang}){ const t=(k:I18nKey)=>tr(lang,k); const modalRef=useRef<HTMLDivElement>(null); useDialogFocus(true, { containerRef: modalRef, onClose, autofocus: true, trap: true }); return <div className="modal-backdrop" onClick={onClose}><div ref={modalRef} className="modal" onClick={e=>e.stopPropagation()}><h2>{t('premiumTitle')}</h2>{isPremium?<p>{t('premiumThanks')}</p>:<><p>{t('premiumDesc')}</p><ul><li>{t('planMonthly')}</li><li>{t('planQuarterly')}</li></ul><ol><li>{t('payStep1')} <b>+93 779 528 228</b></li><li>{t('payStep2')}</li><li>{t('payStep3')}</li></ol></>}<button className="primary" onClick={onClose}>{t('close')}</button></div></div> }

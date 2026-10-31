@@ -100,3 +100,4 @@ describe('sanitizeDoc pagination fields (regression: reload dropped them)', () =
     expect(back[0].customMargins).toBeUndefined()
   })
 })
+

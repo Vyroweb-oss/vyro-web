@@ -9,6 +9,9 @@ export interface VyroDoc {
   pageW?: number; pageH?: number;
   /** Custom margins in millimetres, used when margins === 'custom'. */
   customMargins?: { top: number; right: number; bottom: number; left: number };
+  /** Release mission: per-document header/footer text, repeated on every sheet (screen) and via @page margin boxes (print). */
+  headerText?: string;
+  footerText?: string;
   /** ISO timestamp when the doc was moved to trash; absent = not trashed. Additive/optional for backward compatibility. */
   deletedAt?: string;
 }
