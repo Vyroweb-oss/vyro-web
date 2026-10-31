@@ -10,6 +10,7 @@ export const TITLE_BAR_OVERFLOW_BREAKPOINT = 720
 export type TitleBarItemId =
   | 'back'
   | 'logo'
+  | 'file'
   | 'qat'
   | 'title'
   | 'saveStatus'
@@ -51,7 +52,7 @@ export function isTitleBarOverflowWidth(width: number): boolean {
  */
 export function titleBarLayout(width: number): TitleBarLayout {
   const overflow = isTitleBarOverflowWidth(width)
-  const visible: TitleBarItemId[] = ['back', 'logo', 'qat', 'title', 'saveStatus']
+  const visible: TitleBarItemId[] = ['back', 'logo', 'file', 'qat', 'title', 'saveStatus']
   const overflowed: TitleBarItemId[] = []
   for (const item of TITLE_BAR_OVERFLOWABLE) {
     if (overflow) overflowed.push(item)

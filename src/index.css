@@ -165,6 +165,20 @@ input:focus,select:focus{border-color:var(--brand)}
 .editor-top .rbtn.active{background:#fff;border-color:#fff;color:var(--brand-deep)}
 .editor-top .title-local-chip{background:transparent;border:0;color:rgba(255,255,255,.85);padding:0;font-weight:400}
 .back-label{display:none}
+/* TITLE BAR REDESIGN (owner mission, 2026-10-31): the File menu and the
+   account label in the title bar, plus the failed-save retry button. */
+.file-menu-wrap{position:relative}
+.file-btn{background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:var(--r-sm);padding:7px 14px;font-weight:700;font-size:13.5px;min-height:36px;white-space:nowrap}
+.file-btn:hover{background:rgba(255,255,255,.24)}
+.file-menu{position:absolute;top:calc(100% + 6px);inset-inline-start:0;min-width:248px;max-width:min(320px,86vw);background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:10px;box-shadow:0 14px 40px rgba(10,20,40,.28);padding:6px;z-index:90;display:flex;flex-direction:column;gap:1px}
+.file-item{display:flex;align-items:center;gap:8px;width:100%;text-align:start;background:transparent;border:0;border-radius:7px;padding:9px 11px;font-size:13.5px;color:var(--text);min-height:38px}
+.file-item:hover{background:var(--surface-2)}
+.file-item:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+.file-sep{height:1px;background:var(--border);margin:5px 4px}
+.file-open-list{max-height:224px;overflow:auto;display:flex;flex-direction:column;gap:1px;border-inline-start:2px solid var(--border);margin-inline-start:10px;padding-inline-start:4px}
+.file-open-item{font-size:13px;color:var(--text-2)}
+.account-label{max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:rgba(255,255,255,.9)}
+.saved-retry{background:transparent;border:0;color:#ffd7d7;font:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:3px;padding:0}
 .back-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid rgba(255,255,255,.45);border-radius:var(--r-sm);padding:7px 12px;color:#fff;min-height:38px;white-space:nowrap}
 .back-btn:hover{background:rgba(255,255,255,.18)}
 .title-input{max-width:430px;width:36vw;text-align:center;justify-self:center;font-weight:700;font-size:16px;border:1px solid transparent;background:transparent;border-radius:var(--r-sm);padding:7px 10px;color:#fff;min-width:0}
@@ -337,6 +351,16 @@ input:focus,select:focus{border-color:var(--brand)}
   .editor-top .logo-name{display:none}
   .editor-top .back-label{display:none}
   .back-btn{padding:7px 10px}
+  /* Title-bar redesign: with the File button added, the standalone back
+     button leaves the phone bar — Back to dashboard is the File menu's
+     last item, one tap away, so the title keeps its column. */
+  .editor-top .back-btn{display:none}
+  .file-btn{padding:7px 11px;min-height:40px}
+  /* The save STATUS TEXT also leaves the phone title bar (the status bar
+     at the bottom always shows it); the failed-save RETRY BUTTON is a
+     different element and stays — it is the one control that must never
+     be hidden. The freed width goes to the document title. */
+  .editor-top span.saved{display:none}
   .top-end{gap:7px}
   .saved{font-size:12px}
   .title-input{font-size:15px}

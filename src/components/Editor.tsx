@@ -39,6 +39,7 @@ import { clampZoom, zoomStep, documentLanguageLabel, documentDirectionLabel, est
 import { computeDocumentStats } from '../lib/stats'
 import { EDITOR_FONTS, EDITOR_FONT_SIZES, resolveAutosaveDelay, type VyroSettings } from '../lib/settings'
 import { isTitleBarOverflowWidth } from '../lib/titleBar'
+import { resolveTitleCommit } from '../lib/titleEdit'
 import SettingsPanel from './SettingsPanel'
 import { HorizontalRuler, VerticalRuler, RULER_SIZE } from './Rulers'
 import { marginMmFor } from '../lib/ruler'
@@ -75,7 +76,7 @@ const TABS: { id:string; key:I18nKey }[] = [
   { id:'Layout', key:'tabLayout' }, { id:'References', key:'tabReferences' }, { id:'Mailings', key:'tabMailings' }, { id:'Review', key:'tabReview' }, { id:'View', key:'tabView' },
 ]
 
-export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults, settings, onSettingsChange, onSettingsReset, isLocal, onCreateMergedDocs }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number }; settings?: VyroSettings; onSettingsChange?: (patch: Partial<VyroSettings>)=>void; onSettingsReset?: ()=>void; isLocal?: boolean; onCreateMergedDocs?: (items:{title:string;content:any}[])=>void }){
+export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults, settings, onSettingsChange, onSettingsReset, isLocal, onCreateMergedDocs, onNewDoc, onOpenDoc, onMakeCopy, docsList, accountLabel }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number }; settings?: VyroSettings; onSettingsChange?: (patch: Partial<VyroSettings>)=>void; onSettingsReset?: ()=>void; isLocal?: boolean; onCreateMergedDocs?: (items:{title:string;content:any}[])=>void; onNewDoc?: ()=>void; onOpenDoc?: (id:string)=>void; onMakeCopy?: (id:string)=>void; docsList?: { id:string; title:string; updatedAt:string }[]; accountLabel?: string }){
   const t=(k:I18nKey)=>tr(lang,k)
   const [tab,setTab]=useState('Home')
   const [zoom,setZoom]=useState(100)
@@ -158,6 +159,33 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     document.addEventListener('mousedown',onDown); document.addEventListener('keydown',onKey)
     return ()=>{ document.removeEventListener('mousedown',onDown); document.removeEventListener('keydown',onKey) }
   },[overflowOpen])
+  // TITLE BAR REDESIGN (owner mission, 2026-10-31): the File menu in the
+  // title bar — same close discipline as the ⋯ menu (outside mousedown
+  // closes silently; Escape closes and returns focus to the opener).
+  const [fileOpen,setFileOpen]=useState(false)
+  const [openListOpen,setOpenListOpen]=useState(false)
+  const fileRef=useRef<HTMLDivElement>(null)
+  const fileBtnRef=useRef<HTMLButtonElement>(null)
+  useEffect(()=>{ if(!fileOpen) return
+    const onDown=(e:MouseEvent)=>{ if(fileRef.current && e.target instanceof globalThis.Node && !fileRef.current.contains(e.target)){ setFileOpen(false); setOpenListOpen(false) } }
+    const onKey=(e:KeyboardEvent)=>{ if(e.key==='Escape'){ setFileOpen(false); setOpenListOpen(false); restoreFocus(fileBtnRef.current) } }
+    document.addEventListener('mousedown',onDown); document.addEventListener('keydown',onKey)
+    return ()=>{ document.removeEventListener('mousedown',onDown); document.removeEventListener('keydown',onKey) }
+  },[fileOpen])
+  // Rename semantics (spec §5): while the title input is being edited it
+  // holds a LOCAL draft — nothing is saved per keystroke. Enter/blur
+  // commits through resolveTitleCommit (empty/unchanged drafts revert);
+  // Escape discards the draft, so the previous title always survives a
+  // cancelled or invalid rename.
+  const [titleDraft,setTitleDraft]=useState<string|null>(null)
+  const titleDraftRef=useRef<string|null>(null)
+  const titleInputRef=useRef<HTMLInputElement>(null)
+  // The draft is mirrored in a ref: Escape clears the draft and blurs in
+  // the same tick, and the blur handler must see the CLEARED draft, not
+  // the stale state value — otherwise a cancelled rename would commit.
+  const setDraft=(v:string|null)=>{ titleDraftRef.current=v; setTitleDraft(v) }
+  useEffect(()=>{ setDraft(null) },[doc.id])
+  const commitTitle=()=>{ const d=titleDraftRef.current; if(d==null) return; const r=resolveTitleCommit(doc.title, d); setDraft(null); if(r.changed) onChange({ title: r.title }) }
   // M2-06 contextual menu + image alt-text dialog (transient UI only).
   const [ctxMenu,setCtxMenu]=useState<{ items:MenuItemId[]; x:number; y:number; linkHref:string|null }|null>(null)
   const [altOpen,setAltOpen]=useState(false)
@@ -336,9 +364,10 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // lib's classifyError is ready for an error object if App ever passes
   // one through, but that would require touching App.tsx.
   useEffect(()=>{
-    if(saveFailed && failureHandledForRef.current!==doc.updatedAt){
-      failureHandledForRef.current=doc.updatedAt
-      lastSeenUpdatedAtRef.current=doc.updatedAt
+    // Shared failure handling (auto-backup + diagnostics + 'failed').
+    const applyFailure=(forUpdatedAt:string)=>{
+      failureHandledForRef.current=forUpdatedAt
+      lastSeenUpdatedAtRef.current=forUpdatedAt
       awaitingRef.current=false
       if(confirmTimerRef.current){ clearTimeout(confirmTimerRef.current); confirmTimerRef.current=null }
       const now=new Date().toISOString()
@@ -350,6 +379,15 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       if(snap) setBackup(snap)
       setDiag(prev=>{ const next=recordFailure(prev, 'unknown', now); return snap ? withBackup(next, snap) : next })
       setSaveState('failed')
+    }
+    // Retry race (title-bar redesign, 2026-10-31): while a write is in
+    // flight (awaiting), a still-raised saveFailed flag belongs to the
+    // PREVIOUS write — the parent clears it only after this write's
+    // storage effect runs. Judging the in-flight write here would
+    // misclassify a successful retry as a new failure and stick the
+    // status on 'failed' forever; the confirm timer below is its judge.
+    if(saveFailed && !awaitingRef.current && failureHandledForRef.current!==doc.updatedAt){
+      applyFailure(doc.updatedAt)
       return
     }
     if(awaitingRef.current && doc.updatedAt!==lastSeenUpdatedAtRef.current){
@@ -359,7 +397,12 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       const seenUpdatedAt=doc.updatedAt
       confirmTimerRef.current=setTimeout(()=>{
         confirmTimerRef.current=null
-        if(!awaitingRef.current || saveFailedRef.current) return
+        if(!awaitingRef.current) return
+        // By now the parent's storage effect has reported this write's
+        // real outcome: a raised flag means THIS write failed — run the
+        // failure handling here, since the synchronous branch above
+        // deliberately does not judge in-flight writes.
+        if(saveFailedRef.current){ if(failureHandledForRef.current!==seenUpdatedAt) applyFailure(seenUpdatedAt); return }
         awaitingRef.current=false
         lastSeenUpdatedAtRef.current=seenUpdatedAt
         setSavedAt(new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))
@@ -505,6 +548,14 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // JSON through the same confirmation loop; backup creation is local
   // only; backup download is a local file download, never an upload.
   const retrySave=()=>{ if(!editor) return; pendingJson.current=editor.getJSON(); flushSave() }
+  // Ctrl/Cmd+S (spec §4): save now, never the browser's Save dialog.
+  // TipTap does not bind this chord, so there is no editor conflict; the
+  // handler only captures the pending JSON and flushes the normal save.
+  useEffect(()=>{
+    const h=(e:KeyboardEvent)=>{ if((e.ctrlKey||e.metaKey) && !e.altKey && (e.key==='s' || e.key==='S')){ e.preventDefault(); if(editor){ pendingJson.current=editor.getJSON() } flushRef.current() } }
+    window.addEventListener('keydown', h)
+    return ()=>window.removeEventListener('keydown', h)
+  },[editor])
   const createBackupNow=()=>{ if(!editor) return; const now=new Date().toISOString(); const snap={ docId: docRef.current.id, title: docRef.current.title, content: editor.getJSON(), savedAt: now }; if(saveBackup(localStorage, snap)){ setBackup(snap); setDiag(prev=>withBackup(prev, snap)); setToast(t('saveBackupSaved')) } else setToast(t('saveFailedStatus')) }
   const downloadBackup=()=>{ if(!backup || backup.docId!==docRef.current.id) return; download(`${docRef.current.title}-backup.json`, JSON.stringify(backup, null, 2), 'application/json') }
   const exportTxt=()=> download(`${doc.title}.txt`, jsonToPlainText(editor.getJSON()), 'text/plain')
@@ -691,10 +742,11 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <button type="button" className="rbtn view-mode-exit" onClick={exitMode}>{viewMode==='focus' ? t('exitFocusMode') : t('exitReadingMode')}</button>
     </div>}
     {viewMode==='edit' && <header className="editor-top">
-      <div className="top-start"><div className="logo"><span className="vmark">V</span><span className="logo-name">Vyro Web</span></div><div className="qat" role="group" aria-label={t('quickAccessToolbar')}><button type="button" className="qat-btn" title={t('saveNow')} aria-label={t('saveNow')} onClick={()=>{ pendingJson.current=editor.getJSON(); flushSave() }}>💾</button><button type="button" className="qat-btn" title={t('undo')} aria-label={t('undo')} disabled={!editor.can().undo()} onClick={()=>editor.chain().focus().undo().run()}>↶</button><button type="button" className="qat-btn" title={t('redo')} aria-label={t('redo')} disabled={!editor.can().redo()} onClick={()=>editor.chain().focus().redo().run()}>↷</button></div><button className="back-btn" onClick={goBack} title={t('dashboard')} aria-label={t('dashboard')}>← <span className="back-label">{t('dashboard')}</span></button></div>
-      <input className="title-input" value={doc.title} dir="auto" onChange={e=>onChange({title:e.target.value})} aria-label={t('docTitleLabel')}/>
+      <div className="top-start"><div className="logo"><span className="vmark">V</span><span className="logo-name">Vyro Web</span></div><div className="file-menu-wrap" ref={fileRef}><button type="button" ref={fileBtnRef} className="file-btn" aria-haspopup="menu" aria-expanded={fileOpen} onClick={()=>setFileOpen(o=>!o)}>{t('fileMenu')}</button>{fileOpen && <div className="file-menu" role="menu" aria-label={t('fileMenu')}>{onNewDoc && <button type="button" role="menuitem" className="file-item" onClick={()=>{ setFileOpen(false); onNewDoc() }}>{t('newDocPlain')}</button>}{onOpenDoc && docsList && <button type="button" role="menuitem" className="file-item" aria-expanded={openListOpen} onClick={()=>setOpenListOpen(o=>!o)}>{t('openDocument')} {openListOpen?'▴':'▸'}</button>}{openListOpen && onOpenDoc && docsList && <div className="file-open-list">{docsList.filter(d=>d.id!==doc.id).slice(0,8).map(d=><button key={d.id} type="button" role="menuitem" className="file-item file-open-item" onClick={()=>{ setFileOpen(false); setOpenListOpen(false); flushSave(); onOpenDoc(d.id) }}>{d.title}</button>)}{!docsList.some(d=>d.id!==doc.id) && <span className="file-item file-open-item" aria-disabled="true">{t('noOtherDocuments')}</span>}</div>}<button type="button" role="menuitem" className="file-item" onClick={()=>{ setFileOpen(false); titleInputRef.current?.focus() }}>{t('rename')}</button>{onMakeCopy && <button type="button" role="menuitem" className="file-item" onClick={()=>{ setFileOpen(false); onMakeCopy(doc.id) }}>{t('makeCopy')}</button>}<div className="file-sep"/><button type="button" role="menuitem" className="file-item" onClick={()=>{ setFileOpen(false); importRef.current?.click() }}>{t('importBtn')}</button><div className="file-sep"/><button type="button" role="menuitem" className="file-item" onClick={()=>{ setFileOpen(false); exportTxt() }}>{t('exportTxt')}</button><button type="button" role="menuitem" className="file-item" onClick={()=>{ setFileOpen(false); exportHtml() }}>{t('exportHtml')}</button><button type="button" role="menuitem" className="file-item" onClick={()=>{ setFileOpen(false); gated(()=>exportDocx(editor.getJSON(), doc.title)) }}>{t('exportDocx')} {!isPremium&&'🔒'}</button><button type="button" role="menuitem" className="file-item" onClick={()=>{ setFileOpen(false); gated(()=>window.print()) }}>{t('printPdf')} {!isPremium&&'🔒'}</button><div className="file-sep"/><button type="button" role="menuitem" className="file-item" onClick={()=>{ setFileOpen(false); setVersionsOpen(o=>!o) }}>{t('versions')}</button>{settingsAvailable && <button type="button" role="menuitem" className="file-item" onClick={()=>{ setFileOpen(false); setSettingsOpen(true) }}>{t('documentSettings')}</button>}<button type="button" role="menuitem" className="file-item" onClick={()=>{ setFileOpen(false); goBack() }}>{t('dashboard')}</button></div>}</div><div className="qat" role="group" aria-label={t('quickAccessToolbar')}><button type="button" className="qat-btn" title={t('saveNow')} aria-label={t('saveNow')} onClick={()=>{ pendingJson.current=editor.getJSON(); flushSave() }}>💾</button><button type="button" className="qat-btn" title={t('undo')} aria-label={t('undo')} disabled={!editor.can().undo()} onClick={()=>editor.chain().focus().undo().run()}>↶</button><button type="button" className="qat-btn" title={t('redo')} aria-label={t('redo')} disabled={!editor.can().redo()} onClick={()=>editor.chain().focus().redo().run()}>↷</button></div><button className="back-btn" onClick={goBack} title={t('dashboard')} aria-label={t('dashboard')}>← <span className="back-label">{t('dashboard')}</span></button></div>
+      <input ref={titleInputRef} className="title-input" value={titleDraft ?? doc.title} dir="auto" aria-label={t('docTitleLabel')} onFocus={e=>{ setDraft(doc.title); e.currentTarget.select() }} onChange={e=>setDraft(e.target.value)} onBlur={commitTitle} onKeyDown={e=>{ if(e.key==='Enter'){ e.preventDefault(); commitTitle(); e.currentTarget.blur() } else if(e.key==='Escape'){ e.preventDefault(); setDraft(null); e.currentTarget.blur() } }}/>
       <div className="top-end">
-        <span className={saveState==='failed' ? 'saved failed' : 'saved'} role="status">{saveText}</span>
+        {saveState==='failed' ? <button type="button" className="saved failed saved-retry" onClick={retrySave} title={t('retrySave')}>{saveText} · {t('retrySave')}</button> : <span className="saved" role="status">{saveText}</span>}
+        {accountLabel && <span className="account-label" title={accountLabel}>{accountLabel}</span>}
         {isLocal && !isNarrow && <span className="local-chip title-local-chip">{t('localSaving')}</span>}
         {!isNarrow && onPaletteOpen && <button className="rbtn title-overflow-item" onClick={onPaletteOpen} title="Ctrl+K" aria-label={t('commandPalette')}>⌘K</button>}
         {!isNarrow && onLangChange && <div className="lang-toggle mini title-overflow-item" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>onLangChange('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>onLangChange('fa')}>فا</button></div>}
