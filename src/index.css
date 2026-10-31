@@ -290,7 +290,14 @@ input:focus,select:focus{border-color:var(--brand)}
 .a4-page hr.page-break::after{content:'Page break';font-size:11px;color:var(--brand)}
 
 /* status bar */
-.status-bar{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:5px 14px;background:var(--surface);color:var(--text);border-top:1px solid var(--border);font-size:12.5px;flex-wrap:wrap}
+.status-bar{display:flex;gap:0;align-items:center;justify-content:space-between;padding:5px 14px;background:var(--surface);color:var(--text);border-top:1px solid var(--border);font-size:12.5px;flex-wrap:wrap}
+/* P2-3: Word-like vertical dividers between status-bar groups. Logical
+   properties only, so RTL mirrors automatically; var(--border) so light
+   (#d5dce6) and dark (#2a3a50) both follow the theme token. The 9px
+   margin + 9px padding centres each divider in the previous 18px gap,
+   so overall spacing is unchanged. No separator elements are inserted,
+   so no stray separator can appear before the first group. */
+.status-bar>*+*{border-inline-start:1px solid var(--border);margin-inline-start:9px;padding-inline-start:9px}
 .status-bar .status-dir{font-weight:600}
 /* PC4: the footer save status is visible on desktop too (it was
    display:none above 768px). The title-bar save status uses the separate
@@ -416,9 +423,11 @@ input:focus,select:focus{border-color:var(--brand)}
   .ribbon-wrap.expanded .rgroup-items{flex-wrap:wrap}
   .ribbon-wrap.expanded .rgroup-label{display:block}
   .workspace{padding:12px 6px 32px}
-  .status-bar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:12px;font-size:12px;padding-bottom:calc(5px + env(safe-area-inset-bottom))}
+  .status-bar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:0;font-size:12px;padding-bottom:calc(5px + env(safe-area-inset-bottom))}
   .status-bar::-webkit-scrollbar{display:none}
   .status-bar>*{flex:0 0 auto}
+  /* P2-3 mobile rhythm: 6px + 6px keeps the previous 12px gap, divider centred, scroll row intact. */
+  .status-bar>*+*{margin-inline-start:6px;padding-inline-start:6px}
   .status-zoom input[type=range]{width:84px}
   .doc-grid{grid-template-columns:1fr}
   .create-row{grid-template-columns:repeat(auto-fill,minmax(128px,1fr))}
