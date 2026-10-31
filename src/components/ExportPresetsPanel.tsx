@@ -13,8 +13,9 @@ import type { Editor } from '@tiptap/react'
 // StatsPanel/SaveDiagnosticsPanel pattern: a view over the editor's current
 // JSON, with every export going back through callbacks owned by Editor.
 // The panel itself never calls window.print, never creates a Blob or a
-// download, and never bypasses premium gating — Editor wires onPrint to
-// its existing gated(()=>window.print()) path. DOCX is deliberately NOT
+// download — Editor wires onPrint straight to window.print(): basic
+// printing / Save-as-PDF is FREE for everyone (owner policy, 2026-10-31).
+// DOCX is deliberately NOT
 // a preset here: the existing File-tab DOCX button stays the only DOCX
 // path. The preview is recomputed when the panel opens, when the preset
 // changes, and on Refresh — never on every keystroke.
