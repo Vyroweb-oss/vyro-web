@@ -37,6 +37,8 @@ import { SectionCollapse } from '../lib/sections'
 import { clampZoom, zoomStep, docLanguageLabel, estimatedPagesFromWords, activeParagraphStyle } from '../lib/wordChrome'
 import { computeDocumentStats } from '../lib/stats'
 import { EDITOR_FONTS, EDITOR_FONT_SIZES, resolveAutosaveDelay, type VyroSettings } from '../lib/settings'
+import { isTitleBarOverflowWidth } from '../lib/titleBar'
+import SettingsPanel from './SettingsPanel'
 
 export interface EditorPaletteActions {
   insertTable: () => void
@@ -70,7 +72,7 @@ const TABS: { id:string; key:I18nKey }[] = [
   { id:'Design', key:'tabDesign' }, { id:'Layout', key:'tabLayout' }, { id:'References', key:'tabReferences' }, { id:'Review', key:'tabReview' }, { id:'View', key:'tabView' },
 ]
 
-export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number } }){
+export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults, settings, onSettingsChange, onSettingsReset, isLocal }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number }; settings?: VyroSettings; onSettingsChange?: (patch: Partial<VyroSettings>)=>void; onSettingsReset?: ()=>void; isLocal?: boolean }){
   const t=(k:I18nKey)=>tr(lang,k)
   const [tab,setTab]=useState('Home')
   const [zoom,setZoom]=useState(100)
@@ -118,6 +120,33 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const viewSnapshotRef=useRef<ViewSnapshot|null>(null)
   const restoreRef=useRef<ViewSnapshot|null>(null)
   const [toolsOpen,setToolsOpen]=useState(false)
+  // PC1 title-bar overflow: session-only; Esc / outside-click closes it.
+  const [overflowOpen,setOverflowOpen]=useState(false)
+  const [settingsOpen,setSettingsOpen]=useState(false)
+  // PC1 title-bar width: the lib (titleBar.ts) decides narrow vs wide
+  // (width < 720); the CSS media queries (now aligned at 719/720px) stay
+  // as a fallback. Non-browser initial state collapses (narrow-safe).
+  const [isNarrow,setIsNarrow]=useState(()=> typeof window!=='undefined' ? isTitleBarOverflowWidth(window.innerWidth) : true)
+  useEffect(()=>{
+    if(typeof window==='undefined' || typeof window.matchMedia!=='function') return
+    const mq=window.matchMedia('(max-width: 719px)')
+    const update=()=>{ const narrow=isTitleBarOverflowWidth(window.innerWidth); setIsNarrow(narrow); if(!narrow) setOverflowOpen(false) }
+    update()
+    if(typeof mq.addEventListener==='function') mq.addEventListener('change', update)
+    else (mq as any).addListener(update)
+    return ()=>{ if(typeof mq.removeEventListener==='function') mq.removeEventListener('change', update); else (mq as any).removeListener(update) }
+  },[])
+  const settingsAvailable = !!(settings && onSettingsChange && onSettingsReset)
+  const overflowRef=useRef<HTMLDivElement>(null)
+  const overflowBtnRef=useRef<HTMLButtonElement>(null)
+  useEffect(()=>{ if(!overflowOpen) return
+    const onDown=(e:MouseEvent)=>{ if(overflowRef.current && e.target instanceof globalThis.Node && !overflowRef.current.contains(e.target)) setOverflowOpen(false) }
+    // M2-15 focus return: Esc closes the menu AND returns focus to the
+    // ⋯ button; outside-click close deliberately does NOT steal focus.
+    const onKey=(e:KeyboardEvent)=>{ if(e.key==='Escape'){ setOverflowOpen(false); restoreFocus(overflowBtnRef.current) } }
+    document.addEventListener('mousedown',onDown); document.addEventListener('keydown',onKey)
+    return ()=>{ document.removeEventListener('mousedown',onDown); document.removeEventListener('keydown',onKey) }
+  },[overflowOpen])
   // M2-06 contextual menu + image alt-text dialog (transient UI only).
   const [ctxMenu,setCtxMenu]=useState<{ items:MenuItemId[]; x:number; y:number; linkHref:string|null }|null>(null)
   const [altOpen,setAltOpen]=useState(false)
@@ -646,14 +675,26 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <button type="button" className="rbtn view-mode-exit" onClick={exitMode}>{viewMode==='focus' ? t('exitFocusMode') : t('exitReadingMode')}</button>
     </div>}
     {viewMode==='edit' && <header className="editor-top">
-      <div className="top-start"><div className="logo"><span className="vmark">V</span> Vyro Web</div><div className="qat" role="group" aria-label={t('saveNow')}><button type="button" className="qat-btn" title={t('saveNow')} aria-label={t('saveNow')} onClick={()=>{ pendingJson.current=editor.getJSON(); flushSave() }}>💾</button><button type="button" className="qat-btn" title={t('undo')} aria-label={t('undo')} disabled={!editor.can().undo()} onClick={()=>editor.chain().focus().undo().run()}>↶</button><button type="button" className="qat-btn" title={t('redo')} aria-label={t('redo')} disabled={!editor.can().redo()} onClick={()=>editor.chain().focus().redo().run()}>↷</button></div><button className="back-btn" onClick={goBack}>← {t('dashboard')}</button></div>
+      <div className="top-start"><div className="logo"><span className="vmark">V</span><span className="logo-name">Vyro Web</span></div><div className="qat" role="group" aria-label={t('quickAccessToolbar')}><button type="button" className="qat-btn" title={t('saveNow')} aria-label={t('saveNow')} onClick={()=>{ pendingJson.current=editor.getJSON(); flushSave() }}>💾</button><button type="button" className="qat-btn" title={t('undo')} aria-label={t('undo')} disabled={!editor.can().undo()} onClick={()=>editor.chain().focus().undo().run()}>↶</button><button type="button" className="qat-btn" title={t('redo')} aria-label={t('redo')} disabled={!editor.can().redo()} onClick={()=>editor.chain().focus().redo().run()}>↷</button></div><button className="back-btn" onClick={goBack}>← <span className="back-label">{t('dashboard')}</span></button></div>
       <input className="title-input" value={doc.title} dir="auto" onChange={e=>onChange({title:e.target.value})} aria-label={t('docTitleLabel')}/>
       <div className="top-end">
         <span className={saveState==='failed' ? 'saved failed' : 'saved'} role="status">{saveText}</span>
         <span className="badge">{isPremium? t('premiumActive') : t('free')}</span>
-        {onPaletteOpen && <button className="rbtn" onClick={onPaletteOpen} title="Ctrl+K" aria-label={t('commandPalette')}>⌘K</button>}
-        {onLangChange && <div className="lang-toggle mini" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>onLangChange('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>onLangChange('fa')}>فا</button></div>}
-        <button className="rbtn" onClick={onToggleTheme} title={theme==='dark'? t('lightUi'):t('darkUi')} aria-label={theme==='dark'? t('lightUi'):t('darkUi')}>{theme==='dark'?'☀':'☾'}</button>
+        {isLocal && !isNarrow && <span className="local-chip title-local-chip">{t('localSaving')}</span>}
+        {!isNarrow && onPaletteOpen && <button className="rbtn title-overflow-item" onClick={onPaletteOpen} title="Ctrl+K" aria-label={t('commandPalette')}>⌘K</button>}
+        {!isNarrow && onLangChange && <div className="lang-toggle mini title-overflow-item" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>onLangChange('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>onLangChange('fa')}>فا</button></div>}
+        {!isNarrow && <button className="rbtn title-overflow-item" onClick={onToggleTheme} title={theme==='dark'? t('lightUi'):t('darkUi')} aria-label={theme==='dark'? t('lightUi'):t('darkUi')}>{theme==='dark'?'☀':'☾'}</button>}
+        {!isNarrow && settingsAvailable && <button className="rbtn title-overflow-item" onClick={()=>setSettingsOpen(true)} title={t('settings')} aria-label={t('settings')}>⚙</button>}
+        {isNarrow && <div className="title-overflow-wrap" ref={overflowRef}>
+          <button type="button" ref={overflowBtnRef} className="rbtn overflow-btn" aria-label={t('titleBarOverflow')} aria-haspopup="menu" aria-expanded={overflowOpen} onClick={()=>setOverflowOpen(o=>!o)}>⋯</button>
+          {overflowOpen && <div className="overflow-menu" role="menu" aria-label={t('titleBarOverflow')}>
+            {onPaletteOpen && <button type="button" role="menuitem" className="overflow-item" onClick={()=>{ setOverflowOpen(false); onPaletteOpen() }}>⌘K {t('commandPalette')}</button>}
+            {onLangChange && <><button type="button" role="menuitem" className={`overflow-item${lang==='en'?' active':''}`} onClick={()=>{ setOverflowOpen(false); onLangChange('en') }}>EN</button><button type="button" role="menuitem" className={`overflow-item${lang==='fa'?' active':''}`} onClick={()=>{ setOverflowOpen(false); onLangChange('fa') }}>فا</button></>}
+            <button type="button" role="menuitem" className="overflow-item" onClick={()=>{ setOverflowOpen(false); onToggleTheme() }}>{theme==='dark'? t('lightUi'):t('darkUi')}</button>
+            {settingsAvailable && <button type="button" role="menuitem" className="overflow-item" onClick={()=>{ setOverflowOpen(false); setSettingsOpen(true) }}>⚙ {t('settings')}</button>}
+            {isLocal && <div className="overflow-item overflow-info" role="note">{t('localSaving')}</div>}
+          </div>}
+        </div>}
       </div>
     </header>}
     {viewMode==='edit' && <div className={`ribbon-wrap${toolsOpen?' expanded':''}`}>
@@ -773,6 +814,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     {imgPreview && <div className="modal-backdrop" onClick={()=>setImgPreview(null)}><div className="modal" ref={imgPreviewDialogRef} onClick={e=>e.stopPropagation()}><h2>{t('imagePreview')}</h2><img src={imgPreview.src} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><p className="muted">{t('imageSizeKb')}: {imageSizeKb(imgPreview.size)}</p><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgPreview(null)}>{t('cancel')}</button><button type="button" className="primary small" onClick={insertPreviewImage}>{t('imageInsert')}</button></div></div></div>}
     {imgEditOpen && <div className="modal-backdrop" onClick={()=>setImgEditOpen(false)}><form className="modal" ref={imgEditDialogRef} onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageEdit() }}><h2>{t('imageEdit')}</h2><img src={imgSrc} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><label className="field">{t('imageWidth')}<select value={imgWidth} onChange={e=>setImgWidth(e.target.value)}>{IMAGE_WIDTH_PRESETS.map(p=><option key={p.value} value={p.value}>{p.value==='' ? t('imageWidthOriginal') : p.label}</option>)}</select></label><label className="field">{t('imageCaption')}<input value={imgCaption} dir="auto" onChange={e=>setImgCaption(e.target.value)} /></label><label className="field">{t('imageAltPrompt')}<input value={imgAlt} dir="auto" onChange={e=>setImgAlt(e.target.value)} /></label><div className="row wrap"><button type="button" className="rbtn" onClick={()=>replaceImgRef.current?.click()}>{t('imageReplace')}</button><button type="button" className="danger-btn" onClick={deleteImageEdit}>{t('delete')}</button></div><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgEditOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
     {shortcutsOpen && <KeyboardShortcutsDialog open={shortcutsOpen} onClose={()=>setShortcutsOpen(false)} lang={lang} />}
+    {settingsOpen && settingsAvailable && settings && onSettingsChange && onSettingsReset && <SettingsPanel settings={settings} lang={lang} onChange={onSettingsChange} onReset={onSettingsReset} onClose={()=>setSettingsOpen(false)} />}
     {toast && <div className="toast" role="alert">{toast}</div>}
     <input ref={fileImgRef} type="file" accept="image/*" hidden onChange={onImage}/>
     <input ref={replaceImgRef} type="file" accept="image/*" hidden onChange={onReplaceImage}/>

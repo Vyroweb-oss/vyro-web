@@ -205,6 +205,9 @@ const en = {
   close: 'Close',
   zoom: 'Zoom',
   commandPalette: 'Command palette',
+  // PC1 Title bar exact: overflow menu for low-use title-bar items
+  titleBarOverflow: 'More title bar options',
+  quickAccessToolbar: 'Quick Access Toolbar',
   commandPalettePlaceholder: 'Type a command…',
   commandPaletteNoResults: 'No matching commands.',
   commandPaletteRecent: 'Recent',
@@ -686,6 +689,9 @@ const fa: Record<I18nKey, string> = {
   close: 'بستن',
   zoom: 'بزرگ‌نمایی',
   commandPalette: 'پالت فرمان',
+  // PC1 Title bar exact: overflow menu for low-use title-bar items
+  titleBarOverflow: 'گزینه‌های بیشتر نوار عنوان',
+  quickAccessToolbar: 'نوار دسترسی سریع',
   commandPalettePlaceholder: 'فرمانی بنویسید…',
   commandPaletteNoResults: 'فرمانی همخوانی ندارد.',
   commandPaletteRecent: 'اخیر',
