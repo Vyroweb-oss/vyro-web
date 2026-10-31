@@ -34,8 +34,8 @@ describe('recovery', () => {
     expect(info!.draftExcerpt).toContain('brave')
     expect(info!.savedExcerpt).toContain('world')
   })
-  it('title-only difference = recovery offered', () => {
-    expect(detectRecovery(savedDoc('same', 'Old'), draft('same', 'New'))).not.toBeNull()
+  it('title-only difference = NO recovery (release-hardening policy, 2026-10-31: a title is not lost content — the false banner users hit)', () => {
+    expect(detectRecovery(savedDoc('same', 'Old'), draft('same', 'New'))).toBeNull()
   })
   it('corrupt draft = rejected, never offered', () => {
     expect(detectRecovery(savedDoc('hello'), { docId: 'd1', content: { type: 'paragraph' }, title: 'Doc', savedAt: '2026-01-02T00:00:00.000Z' } as any)).toBeNull()
@@ -105,5 +105,49 @@ describe('recovery', () => {
     expect(res.versions.some((v) => v.trigger === 'pre-restore')).toBe(true)
     expect(clearDraft(store as any, 'd1')).toBe(true)
     expect(loadDraft(store as any, 'd1')).toBeNull()
+  })
+})
+
+
+describe('detectRecovery freshness + canonical policy (release hardening, 2026-10-31)', () => {
+  const T = (h: number) => `2026-01-02T0${h}:00:00.000Z`
+  const savedAt = (text: string, updatedAt: string, title = 'Doc') => ({ id: 'd1', title, content: docA(text), updatedAt })
+  const draftAt = (text: string, savedAt: string, title = 'Doc'): DraftRecord => ({ docId: 'd1', content: docA(text), title, savedAt })
+
+  it('identical draft (same content, saved after the doc) = no banner', () => {
+    expect(detectRecovery(savedAt('hello', T(1)), draftAt('hello', T(3)))).toBeNull()
+  })
+  it('identical content with different JSON key order = no banner (canonical compare)', () => {
+    const a = { type: 'doc', content: [{ type: 'paragraph', attrs: { textAlign: 'left', x: 1 }, content: [{ type: 'text', text: 'hi' }] }] }
+    const b = { content: [{ content: [{ text: 'hi', type: 'text' }], attrs: { x: 1, textAlign: 'left' }, type: 'paragraph' }], type: 'doc' }
+    expect(detectRecovery({ id: 'd1', title: 'Doc', content: a, updatedAt: T(1) }, { docId: 'd1', content: b, title: 'Doc', savedAt: T(3) })).toBeNull()
+  })
+  it('genuinely newer draft with different content = recovery offered', () => {
+    const info = detectRecovery(savedAt('old text', T(1)), draftAt('old text plus unsaved work', T(3)))
+    expect(info).not.toBeNull()
+    expect(info!.draftLength).toBeGreaterThan(info!.savedLength)
+  })
+  it('stale draft (saved before the last confirmed save, different content) = no banner', () => {
+    expect(detectRecovery(savedAt('newer saved text', T(5)), draftAt('older draft text', T(2)))).toBeNull()
+  })
+  it('tie timestamp with different content = recovery offered (never silently dropped)', () => {
+    expect(detectRecovery(savedAt('saved text', T(3)), draftAt('saved text!', T(3)))).not.toBeNull()
+  })
+  it('refresh/reopen simulation: the live false-banner scenario (renamed doc, flushed save) stays silent', () => {
+    // Worker flow that produced the false banner live: edits autosaved
+    // (draft written at T3 with the pre-rename title), the flush landed at
+    // T4 under the new title; on reopen the draft must NOT raise a banner.
+    const store = fakeStorage()
+    saveDraft(store as any, { docId: 'd1', content: docA('verify text'), title: 'Untitled document', savedAt: T(3) })
+    const loaded = loadDraft(store as any, 'd1')
+    const savedDocNow = { id: 'd1', title: 'LIVE VERIFY TEST', content: docA('verify text'), updatedAt: T(4) }
+    expect(detectRecovery(savedDocNow, loaded)).toBeNull()
+  })
+  it('refresh/reopen simulation: a genuinely unsaved newer draft still raises recovery', () => {
+    const store = fakeStorage()
+    saveDraft(store as any, { docId: 'd1', content: docA('work not yet saved'), title: 'Doc', savedAt: T(6) })
+    const loaded = loadDraft(store as any, 'd1')
+    const savedDocNow = { id: 'd1', title: 'Doc', content: docA('older saved'), updatedAt: T(4) }
+    expect(detectRecovery(savedDocNow, loaded)).not.toBeNull()
   })
 })

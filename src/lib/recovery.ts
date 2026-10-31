@@ -111,23 +111,42 @@ function excerptAround(text: string, at: number): string {
   return `${start > 0 ? '…' : ''}${piece}${end < text.length ? '…' : ''}`
 }
 
+/** Canonical JSON: object keys sorted recursively, so two structurally
+ * equal documents compare equal even when their keys were inserted in a
+ * different order (import / paste / sanitize round-trips do that). */
+export function stableStringify(v: any): string {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null'
+  if (Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']'
+  const keys = Object.keys(v).sort()
+  return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(v[k])).join(',') + '}'
+}
+
 /**
  * Compare a draft against the saved document. Returns null (no recovery)
- * when there is no draft, the draft is corrupt, it belongs to another doc,
- * or its content AND title are identical to the saved doc. Otherwise
- * returns the comparison for the user to decide — never an instruction to
- * overwrite.
+ * when there is no draft, the draft is corrupt, or it belongs to another
+ * doc — and, per the release-hardening policy (owner, 2026-10-31), also
+ * when there is nothing genuinely recoverable:
+ * - IDENTICAL content (canonical compare): nothing was lost. A title-only
+ *   difference is NOT lost content — the saved title already won, and
+ *   showing a "recovery" banner for it was the false-positive users hit.
+ * - STALE draft: the draft's savedAt is strictly older than the saved
+ *   document's updatedAt, i.e. a confirmed save landed AFTER the draft's
+ *   last keystroke, so the draft is provably superseded. (A tie is NOT
+ *   stale: with different content the banner still shows — a potentially
+ *   recoverable draft is never silently dropped on ambiguous evidence.)
+ * Otherwise returns the comparison for the user to decide — never an
+ * instruction to overwrite.
  */
 export function detectRecovery(
-  saved: { id: string; title: string; content: any },
+  saved: { id: string; title: string; content: any; updatedAt?: string },
   draft: DraftRecord | null,
 ): RecoveryInfo | null {
   if (!draft || validateDraft(draft) === null) return null
   if (draft.docId !== saved.id) return null
   if (!isValidDocContent(saved.content)) return null
-  const sameContent = JSON.stringify(draft.content) === JSON.stringify(saved.content)
-  const sameTitle = draft.title === saved.title
-  if (sameContent && sameTitle) return null
+  const sameContent = stableStringify(draft.content) === stableStringify(saved.content)
+  if (sameContent) return null
+  if (saved.updatedAt && draft.savedAt < saved.updatedAt) return null
   const savedText = snapshotToPlainText(saved.content)
   const draftText = snapshotToPlainText(draft.content)
   let at = 0

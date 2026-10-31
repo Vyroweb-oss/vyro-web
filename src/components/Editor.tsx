@@ -373,7 +373,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   useEffect(()=>{
     const d = loadDraft(localStorage, doc.id)
     if (!d) return
-    const info = detectRecovery({ id: doc.id, title: doc.title, content: doc.content }, d)
+    const info = detectRecovery({ id: doc.id, title: doc.title, content: doc.content, updatedAt: doc.updatedAt }, d)
     if (info) setRecovery(info)
     else clearDraft(localStorage, doc.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
