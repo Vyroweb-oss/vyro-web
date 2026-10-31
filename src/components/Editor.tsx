@@ -10,7 +10,11 @@ import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
 import Placeholder from '@tiptap/extension-placeholder'
 import CharacterCount from '@tiptap/extension-character-count'
-import { Node, mergeAttributes } from '@tiptap/core'
+import { Node, Extension, mergeAttributes } from '@tiptap/core'
+import { TextSelection } from '@tiptap/pm/state'
+import { resolvePageSetup, usableHeightMm, cssPageSize, marginsPaddingCss, pageSizeLabel, toMm, fromMm, validateCustomSizeMm, validateMarginsMm, PAGE_SIZE_IDS, FOOTER_RESERVE_MM, type LengthUnit, type PageSizeId } from '../lib/pageSetup'
+import { computePagination, type PageSegment } from '../lib/pagination'
+import { PaginationExtension, getPaginationSpacers, setPaginationSpacers, type SpacerSpec } from './paginationPlugin'
 import type { VyroDoc } from '../lib/types'
 import { exportDocx, jsonToPlainText, escapeHtml, isSafeLinkUrl } from '../lib/docx'
 import { formatDocDate } from '../lib/date'
@@ -35,14 +39,13 @@ import { createSnapshot, addVersion, loadVersions, saveVersions, restoreVersion,
 import { saveDraft, loadDraft, clearDraft, detectRecovery, acceptDraft, type RecoveryInfo } from '../lib/recovery'
 import { FocusDim, createViewSnapshot, focusWidthClass, viewModeClass, type FocusWidth, type ViewMode, type ViewSnapshot } from '../lib/viewModes'
 import { SectionCollapse } from '../lib/sections'
-import { clampZoom, zoomStep, documentLanguageLabel, documentDirectionLabel, estimatedPagesFromWords, activeParagraphStyle } from '../lib/wordChrome'
+import { clampZoom, zoomStep, documentLanguageLabel, documentDirectionLabel, activeParagraphStyle } from '../lib/wordChrome'
 import { computeDocumentStats } from '../lib/stats'
 import { EDITOR_FONTS, EDITOR_FONT_SIZES, resolveAutosaveDelay, type VyroSettings } from '../lib/settings'
 import { isTitleBarOverflowWidth } from '../lib/titleBar'
 import { resolveTitleCommit } from '../lib/titleEdit'
 import SettingsPanel from './SettingsPanel'
 import { HorizontalRuler, VerticalRuler, RULER_SIZE } from './Rulers'
-import { marginMmFor } from '../lib/ruler'
 
 export interface EditorPaletteActions {
   insertTable: () => void
@@ -59,12 +62,40 @@ const PageBreak = Node.create({
   name:'pageBreak', group:'block', atom:true,
   parseHTML(){ return [{tag:'hr[data-page-break]'}] },
   renderHTML({HTMLAttributes}){ return ['hr', mergeAttributes(HTMLAttributes, {'data-page-break':'', class:'page-break'})] },
-  addCommands(){ return { insertPageBreak: () => ({commands}:any) => commands.insertContent({type:'pageBreak'}) } as any },
+  // Pagination mission fix (found by interactive test, 2026-10-31): the
+  // old insertContent left the atom NODE-SELECTED, so the very next
+  // keystroke replaced (deleted) the break. The command now moves the
+  // caret into the text block that follows the break — typing continues
+  // on the new page and the break survives.
+  addCommands(){ return { insertPageBreak: () => ({ state, dispatch }:any) => {
+    const node = state.schema.nodes.pageBreak.create()
+    const tr = state.tr.replaceSelectionWith(node)
+    const atomStart = tr.selection.from
+    const atomEnd = atomStart + node.nodeSize
+    const next = tr.doc.resolve(atomEnd).nodeAfter
+    if(next && next.isTextblock){
+      tr.setSelection(TextSelection.create(tr.doc, atomEnd + 1))
+    } else {
+      tr.insert(atomEnd, state.schema.nodes.paragraph.create())
+      tr.setSelection(TextSelection.create(tr.doc, atomEnd + 1))
+    }
+    if(dispatch) dispatch(tr.scrollIntoView())
+    return true
+  } } as any },
 })
 
 declare module '@tiptap/core' { interface Commands<ReturnType> { pageBreak: { insertPageBreak: () => ReturnType } } }
 
-const MARGINS = { narrow:'12.7mm', normal:'25.4mm', wide:'38.1mm' } as const
+// Pagination mission: Ctrl/Cmd+Enter inserts a manual page break, as in Word.
+const PageBreakShortcut = Extension.create({
+  name: 'pageBreakShortcut',
+  addKeyboardShortcuts() {
+    return { 'Mod-Enter': () => this.editor.chain().focus().insertPageBreak().run() }
+  },
+})
+
+/** Vertical whitespace between two sheets on screen, in CSS pixels. */
+const PAGE_GAP_PX = 24
 const MM_PX = 96 / 25.4
 // M2-08: the font/size lists live in lib/settings.ts so the Settings panel
 // and the editor can never offer different fonts.
@@ -302,7 +333,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       TextStyleKit, Highlight.configure({multicolor:true}),
       TableKit.configure({ table:{ resizable:true } }),
       Image, Placeholder.configure({ placeholder: t('startTyping') }),
-      CharacterCount, PageBreak, FocusDim, SectionCollapse,
+      CharacterCount, PageBreak, PageBreakShortcut, PaginationExtension, FocusDim, SectionCollapse,
     ],
     content: doc.content,
     editorProps:{ attributes:{ dir: doc.dir, spellcheck: String(spell) } as any },
@@ -437,16 +468,123 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     },
   })
 
-  // Page scaling: the sheet keeps its true A4 layout size; a wrapper with
+  // Page scaling: the sheet keeps its true layout size; a wrapper with
   // compensated dimensions scales it (fit-to-width on narrow screens × user
   // zoom) so zooming never breaks the surrounding layout or scrolls the app.
-  const pageMmW = doc.orientation==='landscape' ? 297 : 210
-  const pageMmH = doc.orientation==='landscape' ? 210 : 297
+  // Pagination mission: the size comes from the document's page setup
+  // (A3/A4/A5/Letter/Legal/Tabloid/Custom) instead of hardcoded A4.
+  const setup = resolvePageSetup(doc)
+  const pageMmW = setup.widthMm
+  const pageMmH = setup.heightMm
   const [fitScale,setFitScale]=useState(1)
   const [pagePxH,setPagePxH]=useState(()=>Math.round(pageMmH*MM_PX))
   useEffect(()=>{ const ws=workspaceRef.current; if(!ws) return; const upd=()=>{ const avail=Math.max(160, ws.clientWidth-20); setFitScale(Math.min(1, avail/(pageMmW*MM_PX))) }; upd(); const ro=new ResizeObserver(upd); ro.observe(ws); return ()=>ro.disconnect() },[pageMmW])
-  useEffect(()=>{ const el=pageRef.current; if(!el) return; const upd=()=>setPagePxH(el.offsetHeight); upd(); const ro=new ResizeObserver(upd); ro.observe(el); return ()=>ro.disconnect() },[editor, doc.orientation, doc.margins])
+  useEffect(()=>{ const el=pageRef.current; if(!el) return; const upd=()=>setPagePxH(el.offsetHeight); upd(); const ro=new ResizeObserver(upd); ro.observe(el); return ()=>ro.disconnect() },[editor, setup.widthMm, setup.heightMm, setup.margins.top, setup.margins.bottom])
   const effScale=Math.max(0.1, fitScale*(zoom/100))
+  const effScaleRef=useRef(1); effScaleRef.current=effScale
+
+  // ---- Pagination (mission 2026-10-31): measured sheets over ONE editor --
+  // The document is never split; spacers (decorations) push each page's
+  // first block to the top of its sheet. Measurement reads rendered block
+  // geometry, subtracts the spacers already in place, runs the pure
+  // engine, and writes back only real changes (no render loops).
+  const [pageCount,setPageCount]=useState(1)
+  const pageHPx = setup.heightMm * MM_PX
+  useEffect(()=>{
+    if(!editor) return
+    let raf=0; let timer: ReturnType<typeof setTimeout> | undefined
+    let disposed=false
+    const measure=()=>{
+      if(disposed) return
+      if(viewMode!=='edit'){ setPaginationSpacers(editor, []); setPageCount(p=>p===1?p:1); return }
+      const dom=editor.view.dom as HTMLElement
+      const scale=effScaleRef.current || 1
+      const domRect=dom.getBoundingClientRect()
+      const kids=(Array.from(dom.children) as HTMLElement[]).filter(el=>!el.classList.contains('page-gap-spacer'))
+      const blocks:{pos:number;type:string}[]=[]
+      editor.state.doc.forEach((node, offset)=>{ blocks.push({ pos: offset+1, type: node.type.name }) })
+      if(kids.length!==blocks.length || blocks.length===0) return
+      const old=getPaginationSpacers(editor)
+      const oldBefore=(pos:number)=>old.filter(s=>s.pos<=pos).reduce((a,s)=>a+s.height,0)
+      const tops:number[]=[]; const heights:number[]=[]
+      kids.forEach((el,i)=>{ const r=el.getBoundingClientRect(); tops.push((r.top-domRect.top)/scale - oldBefore(blocks[i].pos)); heights.push(r.height/scale) })
+      const segs: PageSegment[]=blocks.map((_b,i)=>({
+        height: i<blocks.length-1 ? Math.max(0, tops[i+1]-tops[i]) : heights[i],
+        breakBefore: i>0 && blocks[i-1].type==='pageBreak',
+      }))
+      if(blocks[blocks.length-1].type==='pageBreak') segs.push({ height:0, breakBefore:true })
+      const res=computePagination(segs, usableHeightMm(setup)*MM_PX)
+      const spacers: SpacerSpec[]=[]
+      let acc=0
+      for(const st of res.starts){
+        if(st.index>=blocks.length) break
+        const target=st.page*(pageHPx+PAGE_GAP_PX)
+        const h=target-(tops[st.index]+acc)
+        if(h>0.5){ spacers.push({ pos: blocks[st.index].pos, height: h }); acc+=h }
+      }
+      setPaginationSpacers(editor, spacers)
+      setPageCount(p=>p===res.pageCount?p:res.pageCount)
+    }
+    const schedule=()=>{ cancelAnimationFrame(raf); raf=requestAnimationFrame(()=>{ if(timer) clearTimeout(timer); timer=setTimeout(measure, 60) }) }
+    editor.on('update', schedule)
+    schedule()
+    if(typeof document!=='undefined' && document.fonts?.ready) document.fonts.ready.then(()=>schedule()).catch(()=>{})
+    return ()=>{ disposed=true; editor.off('update', schedule); cancelAnimationFrame(raf); if(timer) clearTimeout(timer) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[editor, viewMode, doc.id, setup.sizeId, setup.widthMm, setup.heightMm, setup.margins.top, setup.margins.bottom, setup.margins.left, setup.margins.right])
+
+  // Print fidelity: the printer gets the document's real paper size and
+  // margins via a dynamic @page rule (the static A4 rules were removed).
+  // The bottom margin carries the same 12mm page-number reserve the
+  // on-screen pagination subtracts, so screen and print page counts agree.
+  useEffect(()=>{
+    const el=document.createElement('style')
+    el.setAttribute('data-vyro-print','')
+    el.textContent=`@page{size:${cssPageSize(setup)};margin:${setup.margins.top}mm ${setup.margins.right}mm ${setup.margins.bottom + FOOTER_RESERVE_MM}mm ${setup.margins.left}mm;@bottom-center{content:counter(page);font-size:10pt;font-family:Arial,sans-serif;color:#666}}`
+    document.head.appendChild(el)
+    return ()=>{ el.remove() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[setup.widthMm, setup.heightMm, setup.margins.top, setup.margins.right, setup.margins.bottom, setup.margins.left])
+
+  // Page-setup dialog (custom size / custom margins).
+  const [setupDialog,setSetupDialog]=useState<null|'size'|'margins'>(null)
+  const setupDialogRef=useRef<HTMLFormElement>(null)
+  useDialogFocus(setupDialog!==null, { containerRef: setupDialogRef, onClose: ()=>setSetupDialog(null), autofocus: false, trap: true, opener: dialogOpenerRef.current })
+  const [psUnit,setPsUnit]=useState<LengthUnit>('mm')
+  const [psW,setPsW]=useState(''); const [psH,setPsH]=useState('')
+  const [pmT,setPmT]=useState(''); const [pmR,setPmR]=useState(''); const [pmB,setPmB]=useState(''); const [pmL,setPmL]=useState('')
+  const [psError,setPsError]=useState('')
+  const openSetupDialog=(mode:'size'|'margins')=>{
+    setPsError('')
+    if(mode==='size'){
+      const base = doc.orientation==='landscape' ? { w: setup.heightMm, h: setup.widthMm } : { w: setup.widthMm, h: setup.heightMm }
+      setPsW(String(fromMm(base.w, psUnit))); setPsH(String(fromMm(base.h, psUnit)))
+    } else {
+      setPmT(String(fromMm(setup.margins.top, psUnit))); setPmR(String(fromMm(setup.margins.right, psUnit)))
+      setPmB(String(fromMm(setup.margins.bottom, psUnit))); setPmL(String(fromMm(setup.margins.left, psUnit)))
+    }
+    setSetupDialog(mode)
+  }
+  const changePsUnit=(u:LengthUnit)=>{
+    if(u===psUnit) return
+    const conv=(v:string)=>{ const n=parseFloat(v); return Number.isFinite(n) ? String(fromMm(toMm(n, psUnit), u)) : v }
+    setPsW(conv(psW)); setPsH(conv(psH)); setPmT(conv(pmT)); setPmR(conv(pmR)); setPmB(conv(pmB)); setPmL(conv(pmL))
+    setPsUnit(u)
+  }
+  const applySetupDialog=()=>{
+    if(setupDialog==='size'){
+      const wMm=toMm(parseFloat(psW), psUnit); const hMm=toMm(parseFloat(psH), psUnit)
+      if(validateCustomSizeMm(wMm, hMm)){ setPsError(t('pageSetupRangeError')); return }
+      onChange({ pageSize:'Custom', pageW: Math.round(wMm*10)/10, pageH: Math.round(hMm*10)/10 })
+    } else if(setupDialog==='margins'){
+      const m={ top: toMm(parseFloat(pmT), psUnit), right: toMm(parseFloat(pmR), psUnit), bottom: toMm(parseFloat(pmB), psUnit), left: toMm(parseFloat(pmL), psUnit) }
+      const err=validateMarginsMm(m, setup.widthMm, setup.heightMm)
+      if(err){ setPsError(t(err==='range' ? 'pageSetupRangeError' : 'pageSetupUsableError')); return }
+      const rounded={ top: Math.round(m.top*10)/10, right: Math.round(m.right*10)/10, bottom: Math.round(m.bottom*10)/10, left: Math.round(m.left*10)/10 }
+      onChange({ margins:'custom', customMargins: rounded })
+    }
+    setSetupDialog(null)
+  }
 
   // M2-06: the menu closes on scroll, on selection change, on Esc (the
   // menu component handles Esc/backdrop), and on outside click (backdrop).
@@ -539,7 +677,6 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   if(!editor) return <div className="loading">{t('loadingEditor')}</div>
   const words = editor.getText().trim()? editor.getText().trim().split(/\s+/).length:0
   const statusStats = computeDocumentStats(editor.getJSON())
-  const statusPages = estimatedPagesFromWords(statusStats.words)
   const chars = (editor.storage as any).characterCount?.characters?.() ?? editor.getText().length
 
   const gated=(fn:()=>void)=> isPremium? fn() : onRequirePremium()
@@ -725,8 +862,10 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const adjustFontSize=(delta:number)=>{ const base = Number.isNaN(curSizeNum) ? (settings?.defaultFontSize ?? 16) : curSizeNum; const next = Math.min(FONT_SIZES[FONT_SIZES.length-1], Math.max(FONT_SIZES[0], base+delta)); editor.chain().focus().setFontSize(next+'px').run() }
   const applyTitleStyle = () => { editor.chain().focus().setParagraph().setFontSize('28px').run(); if(!editor.isActive('bold')) editor.chain().focus().toggleBold().run() }
 
-  const pageW = doc.orientation==='landscape' ? '297mm':'210mm'
-  const pageMinH = doc.orientation==='landscape' ? '210mm':'297mm'
+  const pageW = `${setup.widthMm}mm`
+  const pageMinH = viewMode==='edit'
+    ? `${Math.round(pageCount*pageHPx + (pageCount-1)*PAGE_GAP_PX)}px`
+    : `${setup.heightMm}mm`
   // M2-13: 'Saved HH:MM' appears only after the confirmation effect set
   // savedAt; 'failed' and 'pending' (autosave off) have their own strings
   // and are never folded into the saved label.
@@ -791,7 +930,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('groupText')}><Btn onClick={insertDate}>{t('insertDate')}</Btn></Group>
       </>}
       {tab==='Layout' && <>
-        <Group label={t('groupMargins')}><Btn active={(doc.margins||'normal')==='narrow'} onClick={()=>onChange({margins:'narrow'})}>{t('narrow')}</Btn><Btn active={(doc.margins||'normal')==='normal'} onClick={()=>onChange({margins:'normal'})}>{t('normal')}</Btn><Btn active={(doc.margins||'normal')==='wide'} onClick={()=>onChange({margins:'wide'})}>{t('wide')}</Btn></Group>
+        <Group label={t('groupPageSize')}><select className="ps-select" aria-label={t('pageSize')} value={setup.sizeId} onChange={e=>{ const v=e.target.value as PageSizeId; if(v==='Custom'){ openSetupDialog('size') } else { onChange({ pageSize: v }) } }}>{PAGE_SIZE_IDS.map(id=><option key={id} value={id}>{id==='Custom' ? t('pageSizeCustom') : id}</option>)}</select><span className="ps-label" title={pageSizeLabel(setup)}>{pageSizeLabel(setup)}</span>{setup.sizeId==='Custom' && <Btn onClick={()=>openSetupDialog('size')}>{t('pageSizeCustom')}</Btn>}</Group>
+        <Group label={t('groupMargins')}><Btn active={(doc.margins||'normal')==='narrow'} onClick={()=>onChange({margins:'narrow'})}>{t('narrow')}</Btn><Btn active={(doc.margins||'normal')==='normal'} onClick={()=>onChange({margins:'normal'})}>{t('normal')}</Btn><Btn active={(doc.margins||'normal')==='moderate'} onClick={()=>onChange({margins:'moderate'})}>{t('moderate')}</Btn><Btn active={(doc.margins||'normal')==='wide'} onClick={()=>onChange({margins:'wide'})}>{t('wide')}</Btn><Btn active={doc.margins==='custom'} onClick={()=>openSetupDialog('margins')}>{t('customMargins')}</Btn></Group>
         <Group label={t('groupOrientation')}><Btn active={(doc.orientation||'portrait')==='portrait'} onClick={()=>onChange({orientation:'portrait'})}>{t('portrait')}</Btn><Btn active={doc.orientation==='landscape'} onClick={()=>onChange({orientation:'landscape'})}>{t('landscape')}</Btn></Group>
         <Group label={t('groupDirection')}><Btn active={doc.dir==='ltr'} onClick={()=>onChange({dir:'ltr'})}>LTR</Btn><Btn active={doc.dir==='rtl'} onClick={()=>onChange({dir:'rtl'})}>RTL (Dari/Persian)</Btn></Group>
       </>}
@@ -863,15 +1003,16 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
          ResizeObserver are reused as-is; the rulers only read them. */}
       <div className={`page-frame${viewMode==='edit' && showRuler ? ' with-rulers' : ''}`} style={{ width:`${Math.round(pageMmW*MM_PX*effScale) + (viewMode==='edit' && showRuler ? RULER_SIZE : 0)}px` }}>
       {viewMode==='edit' && showRuler && <div className="ruler-corner" aria-hidden="true" />}
-      {viewMode==='edit' && showRuler && <HorizontalRuler pageMm={pageMmW} marginPreset={doc.margins} marginMm={marginMmFor(doc.margins)} scale={effScale} />}
-      {viewMode==='edit' && showRuler && <VerticalRuler pageMm={pageMmH} marginPreset={doc.margins} marginMm={marginMmFor(doc.margins)} scale={effScale} pagePxH={pagePxH} />}
+      {viewMode==='edit' && showRuler && <HorizontalRuler pageMm={pageMmW} marginPreset={doc.margins} marginMm={setup.margins.left} scale={effScale} />}
+      {viewMode==='edit' && showRuler && <VerticalRuler pageMm={pageMmH} marginPreset={doc.margins} marginMm={setup.margins.top} scale={effScale} pagePxH={pagePxH} />}
       <div className="page-scaler" style={{ width:`${Math.round(pageMmW*MM_PX*effScale)}px`, height:`${Math.round(pagePxH*effScale)}px` }}>
         <div className="page-scale-inner" style={{ transform:`scale(${effScale})`, width:`${Math.round(pageMmW*MM_PX)}px` }}>
-          <div ref={pageRef} className={`a4-page ${doc.orientation==='landscape'?'landscape':'portrait'}${viewMode==='focus' || viewMode==='reading' ? ` ${focusWidthClass(focusWidth)}` : ''}`} style={{ width:pageW, minHeight:pageMinH, padding:MARGINS[doc.margins||'normal'] }}
+          <div ref={pageRef} className={`a4-page ${doc.orientation==='landscape'?'landscape':'portrait'}${viewMode==='edit' ? ' paged' : ''}${viewMode==='focus' || viewMode==='reading' ? ` ${focusWidthClass(focusWidth)}` : ''}`} style={{ width:pageW, minHeight:pageMinH, padding:marginsPaddingCss(setup.margins) }}
             onPaste={handlePaste}
             onContextMenu={(e)=>{ if(Date.now()-longPressMenuRef.current < 1000 && ctxMenu){ e.preventDefault(); return } e.preventDefault(); openContextMenu(e.clientX, e.clientY) }}
             onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={clearLongPress} onTouchCancel={clearLongPress}
           >
+            {viewMode==='edit' && <div className="sheet-layer" aria-hidden="true">{Array.from({length: pageCount},(_,i)=>(<div key={i} className="sheet" style={{ top:`${Math.round(i*(pageHPx+PAGE_GAP_PX))}px`, height:`${Math.round(pageHPx)}px` }}><span className="sheet-num">{i+1}</span></div>))}</div>}
             <EditorContent editor={editor}/>
           </div>
         </div>
@@ -880,13 +1021,13 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     </div>
     </div>
     {viewMode==='edit' && <footer className="status-bar">
-      {/* PC4: no true "Page X of Y" here — the editor is a single continuous
-         growing page, not paginated sheets, so a true page count is not
-         computable in this architecture. statusPages stays the honest
-         estimated-pages figure from estimatedPagesFromWords (250 words/page),
-         labelled as estimated (statsEstimatedPages) — never as a real count. */}
+      {/* Pagination mission (2026-10-31) supersedes the PC4 note: in edit
+         mode the document IS paginated into measured sheets, so the count
+         shown is the REAL page count from the pagination engine. The word-
+         word-based estimate remains only inside the statistics
+         dialog's separate figure. */}
       <span className={saveState==='failed' ? 'status-save failed' : 'status-save'}>{saveText}</span>
-      <button type="button" className="status-stats-btn" onClick={()=>setStatsOpen(true)} aria-label={t('documentStatistics')} title={t('documentStatistics')}>{statusStats.words} {t('words')} · {statusStats.charsWithSpaces} {t('chars')} · {statusPages} {t('statsEstimatedPages')}</button>
+      <button type="button" className="status-stats-btn" onClick={()=>setStatsOpen(true)} aria-label={t('documentStatistics')} title={t('documentStatistics')}>{statusStats.words} {t('words')} · {statusStats.charsWithSpaces} {t('chars')} · {pageCount} {t('pagesLabel')}</button>
       <span className="status-dir" aria-label={t('language')} title={t('language')}>{documentLanguageLabel(doc.dir)}</span>
       <span className="status-dir" aria-label={t('direction')} title={t('direction')}>{documentDirectionLabel(doc.dir)}</span>
       <div className="status-views"><button type="button" className="status-view-btn" onClick={enterFocus}>{t('focusMode')}</button><button type="button" className="status-view-btn" onClick={enterReading}>{t('readingMode')}</button></div>
@@ -898,6 +1039,20 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     {imgEditOpen && <div className="modal-backdrop" onClick={()=>setImgEditOpen(false)}><form className="modal" ref={imgEditDialogRef} onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageEdit() }}><h2>{t('imageEdit')}</h2><img src={imgSrc} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><label className="field">{t('imageWidth')}<select value={imgWidth} onChange={e=>setImgWidth(e.target.value)}>{IMAGE_WIDTH_PRESETS.map(p=><option key={p.value} value={p.value}>{p.value==='' ? t('imageWidthOriginal') : p.label}</option>)}</select></label><label className="field">{t('imageCaption')}<input value={imgCaption} dir="auto" onChange={e=>setImgCaption(e.target.value)} /></label><label className="field">{t('imageAltPrompt')}<input value={imgAlt} dir="auto" onChange={e=>setImgAlt(e.target.value)} /></label><div className="row wrap"><button type="button" className="rbtn" onClick={()=>replaceImgRef.current?.click()}>{t('imageReplace')}</button><button type="button" className="danger-btn" onClick={deleteImageEdit}>{t('delete')}</button></div><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgEditOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
     {shortcutsOpen && <KeyboardShortcutsDialog open={shortcutsOpen} onClose={()=>setShortcutsOpen(false)} lang={lang} />}
     {settingsOpen && settingsAvailable && settings && onSettingsChange && onSettingsReset && <SettingsPanel settings={settings} lang={lang} onChange={onSettingsChange} onReset={onSettingsReset} onClose={()=>setSettingsOpen(false)} />}
+    {setupDialog && <div className="modal-backdrop" onClick={()=>setSetupDialog(null)}><form className="modal" ref={setupDialogRef} onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applySetupDialog() }}><h2>{t('pageSetup')} — {setupDialog==='size' ? t('pageSize') : t('customMargins')}</h2>
+      <label className="field">{t('unit')}<select value={psUnit} onChange={e=>changePsUnit(e.target.value as LengthUnit)}><option value="mm">{t('unitMm')}</option><option value="cm">{t('unitCm')}</option><option value="in">{t('unitIn')}</option></select></label>
+      {setupDialog==='size' ? <>
+        <label className="field">{t('pageWidth')}<input type="number" step="any" min="0" autoFocus value={psW} onChange={e=>setPsW(e.target.value)} /></label>
+        <label className="field">{t('pageHeight')}<input type="number" step="any" min="0" value={psH} onChange={e=>setPsH(e.target.value)} /></label>
+      </> : <>
+        <label className="field">{t('marginTop')}<input type="number" step="any" min="0" autoFocus value={pmT} onChange={e=>setPmT(e.target.value)} /></label>
+        <label className="field">{t('marginBottom')}<input type="number" step="any" min="0" value={pmB} onChange={e=>setPmB(e.target.value)} /></label>
+        <label className="field">{t('marginLeft')}<input type="number" step="any" min="0" value={pmL} onChange={e=>setPmL(e.target.value)} /></label>
+        <label className="field">{t('marginRight')}<input type="number" step="any" min="0" value={pmR} onChange={e=>setPmR(e.target.value)} /></label>
+      </>}
+      {psError && <p className="form-error" role="alert">{psError}</p>}
+      <div className="row end"><button type="button" className="rbtn" onClick={()=>setSetupDialog(null)}>{t('cancel')}</button><button type="submit" className="primary small">{t('apply')}</button></div>
+    </form></div>}
     {toast && <div className="toast" role="alert">{toast}</div>}
     <input ref={fileImgRef} type="file" accept="image/*" hidden onChange={onImage}/>
     <input ref={replaceImgRef} type="file" accept="image/*" hidden onChange={onReplaceImage}/>

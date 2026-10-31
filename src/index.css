@@ -434,11 +434,25 @@ input:focus,select:focus{border-color:var(--brand)}
   .side-nav-item{min-height:44px}
 }
 
+/* ---------- pagination (mission 2026-10-31): sheets + spacers ----------
+   In edit mode the page element becomes transparent and a layer of real
+   paper sheets (white, shadowed, gapped) sits behind the single editor
+   flow; measured spacer decorations push each page's content to the top
+   of its sheet. The sheets and spacers never print. */
+.a4-page.paged{position:relative;background:transparent;box-shadow:none}
+.sheet-layer{position:absolute;inset:0;pointer-events:none;z-index:0}
+.sheet{position:absolute;left:0;width:100%;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.18),0 10px 28px rgba(15,23,42,.13);border-radius:2px}
+.sheet-num{position:absolute;left:0;right:0;bottom:10px;text-align:center;font-size:10pt;color:#8a8a8a}
+.a4-page.paged .tiptap{position:relative;z-index:1}
+.page-gap-spacer{width:100%}
+.ps-select{padding:6px 8px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);color:var(--text);font:inherit;font-size:13px;align-self:center}
+.ps-label{font-size:12px;color:var(--text-2);white-space:nowrap;align-self:center;padding:0 2px}
+.form-error{color:var(--danger,#b3261e);font-size:13px;margin:4px 0}
+
 /* ---------- print ---------- */
-.a4-page.landscape{page:vyro-landscape}
-.a4-page.portrait{page:vyro-portrait}
-@page vyro-portrait{size:A4 portrait;margin:0 0 12mm;@bottom-center{content:counter(page);font-size:10pt;font-family:Arial,sans-serif;color:#666}}
-@page vyro-landscape{size:A4 landscape;margin:0 0 12mm;@bottom-center{content:counter(page);font-size:10pt;font-family:Arial,sans-serif;color:#666}}
+/* The @page size + margins are injected per document by the Editor
+   (data-vyro-print style): real paper size, real margins on every sheet,
+   page counter in the bottom margin box. */
 @media print{
   body{background:#fff}
   .editor-top,.ribbon-wrap,.status-bar,.toast,.banner,.appbar{display:none!important}
@@ -449,15 +463,27 @@ input:focus,select:focus{border-color:var(--brand)}
   .editor-shell{height:auto}
   .workspace{background:#fff;padding:0;overflow:visible}
   .page-scaler{width:auto!important;height:auto!important}
-  .page-scale-inner{position:static!important;transform:none!important}
+  /* Pagination mission fix: the scaler keeps its SCREEN layout width as an
+     inline style (794px for A4); without this reset the printed page laid
+     out at full paper width inside the @page margin box — wrong line
+     breaks, wrong page count, text overflowing the right margin. */
+  .page-scale-inner{position:static!important;transform:none!important;width:auto!important}
   .a4-page{box-shadow:none;margin:0}
-  /* the 12mm bottom @page margin (page-number strip) is reserved on every sheet,
-     so shrink the page element by the same amount or a one-page doc spills over */
-  .a4-page.portrait{min-height:calc(297mm - 12mm)!important}
-  .a4-page.landscape{min-height:calc(210mm - 12mm)!important}
+  /* Pagination mission: sheets/spacers are screen-only. The @page margins
+     carry the document margins, so the page element itself prints with no
+     padding and auto width — the flow then breaks across real sheets at
+     exactly the usable height the on-screen pagination used. */
+  .sheet-layer{display:none!important}
+  .page-gap-spacer{display:none!important}
+  .a4-page.paged{background:#fff}
+  .a4-page{padding:0!important;width:auto!important;min-height:0!important}
+  /* Same rule as the on-screen engine: blocks move whole to the next
+     sheet instead of splitting, so the printed page count matches the
+     screen pagination. Blocks taller than a sheet still split — the
+     browser cannot honor avoid there, exactly as on screen. */
+  .a4-page p,.a4-page h1,.a4-page h2,.a4-page h3,.a4-page h4,.a4-page h5,.a4-page h6,.a4-page li,.a4-page blockquote,.a4-page table,.a4-page img{break-inside:avoid}
   .a4-page hr.page-break{border:0!important;margin:0;break-after:page}
   .a4-page hr.page-break::after{content:''}
-  @page{size:A4;margin:0 0 12mm;@bottom-center{content:counter(page);font-size:10pt;font-family:Arial,sans-serif;color:#666}}
 }
 
 /* ---------- command palette (M2-1) ---------- */

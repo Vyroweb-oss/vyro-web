@@ -70,3 +70,33 @@ describe('store trash (R3)',()=>{
    expect(back).toHaveLength(1); expect(back[0].deletedAt).toBeUndefined(); expect(filterDocs(back,{})).toHaveLength(1); expect(listTrashed(back)).toHaveLength(0)
  })
 })
+
+describe('sanitizeDoc pagination fields (regression: reload dropped them)', () => {
+  it('keeps pageSize, custom dims, moderate and custom margins through a save/load round-trip', () => {
+    const m = new Map<string, string>()
+    const fake = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v) } }
+    const doc = { id: 'pg1', title: 'Sized', content: { type: 'doc', content: [] }, folder: '', favorite: false, dir: 'ltr', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', pageSize: 'Custom', pageW: 100, pageH: 150, margins: 'custom', customMargins: { top: 10, right: 15, bottom: 10, left: 15 }, orientation: 'landscape' }
+    saveDocs(fake as any, [doc as any])
+    const back = loadDocs(fake as any)
+    expect(back).toHaveLength(1)
+    expect(back[0].pageSize).toBe('Custom')
+    expect(back[0].pageW).toBe(100)
+    expect(back[0].pageH).toBe(150)
+    expect(back[0].margins).toBe('custom')
+    expect(back[0].customMargins).toEqual({ top: 10, right: 15, bottom: 10, left: 15 })
+    const mod = { ...doc, id: 'pg2', pageSize: 'A5', margins: 'moderate' as const, customMargins: undefined }
+    saveDocs(fake as any, [mod as any])
+    expect(loadDocs(fake as any)[0].margins).toBe('moderate')
+    expect(loadDocs(fake as any)[0].pageSize).toBe('A5')
+  })
+  it('drops malformed pagination fields instead of crashing', () => {
+    const m = new Map<string, string>()
+    const fake = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v) } }
+    m.set(STORAGE_KEY, JSON.stringify([{ id: 'bad1', title: 'Bad', content: { type: 'doc', content: [] }, pageSize: 42, pageW: 'wide', customMargins: { top: 'x' } }]))
+    const back = loadDocs(fake as any)
+    expect(back).toHaveLength(1)
+    expect(back[0].pageSize).toBeUndefined()
+    expect(back[0].pageW).toBeUndefined()
+    expect(back[0].customMargins).toBeUndefined()
+  })
+})

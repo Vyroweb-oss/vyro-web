@@ -89,10 +89,24 @@ export function sanitizeDoc(raw: any): VyroDoc | null {
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : now,
     templateId: typeof raw.templateId === 'string' ? raw.templateId : undefined,
-    margins: ['narrow','normal','wide'].includes(raw.margins) ? raw.margins : 'normal',
+    margins: ['narrow','normal','moderate','wide','custom'].includes(raw.margins) ? raw.margins : 'normal',
     orientation: raw.orientation === 'landscape' ? 'landscape' : 'portrait',
+    // Pagination mission fields — MUST be carried here or every reload
+    // silently drops the document's paper size and custom geometry
+    // (found by interactive test, 2026-10-31).
+    pageSize: typeof raw.pageSize === 'string' && raw.pageSize ? raw.pageSize : undefined,
+    pageW: typeof raw.pageW === 'number' && Number.isFinite(raw.pageW) ? raw.pageW : undefined,
+    pageH: typeof raw.pageH === 'number' && Number.isFinite(raw.pageH) ? raw.pageH : undefined,
+    customMargins: isMarginsShape(raw.customMargins) ? raw.customMargins : undefined,
     deletedAt: typeof raw.deletedAt === 'string' && raw.deletedAt ? raw.deletedAt : undefined,
   }
+}
+
+/** Structural check for a stored custom-margins object (range validation
+ * lives in lib/pageSetup; here we only keep well-formed data). */
+function isMarginsShape(m: any): m is { top: number; right: number; bottom: number; left: number } {
+  return !!m && typeof m === 'object'
+    && ['top', 'right', 'bottom', 'left'].every(k => typeof m[k] === 'number' && Number.isFinite(m[k]))
 }
 
 type StorageLike = Pick<Storage,'getItem'> & Partial<Pick<Storage,'setItem'>>
