@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   VERSIONS_KEY, DEFAULT_MAX_COUNT, createSnapshot, listVersions, pruneVersions,
   addVersion, validateSnapshot, saveVersions, loadVersions, restoreVersion,
-  snapshotToPlainText, snapshotByteSize, type VersionSnapshot,
+  snapshotToPlainText, snapshotByteSize, hasSnapshotWorthyContent, type VersionSnapshot,
 } from './versions'
 
 function fakeStorage(initial?: Record<string, string>) {
@@ -134,5 +134,56 @@ describe('versions', () => {
       store = addVersion(store, s)
     }
     expect(store.length).toBe(DEFAULT_MAX_COUNT)
+  })
+})
+
+
+describe('Tier-1 S1: before-import snapshots', () => {
+  it('the before-import trigger validates and round-trips through storage', () => {
+    const store = fakeStorage()
+    const s1 = createSnapshot(doc('d1', 'T', 'original words'), 'before-import', 'letter.docx')
+    expect(s1).not.toBeNull()
+    expect(s1!.trigger).toBe('before-import')
+    expect(validateSnapshot(JSON.parse(JSON.stringify(s1)))).not.toBeNull()
+    const next = addVersion(loadVersions(store as any), s1!)
+    expect(saveVersions(store as any, next)).toBe(true)
+    const loaded = loadVersions(store as any)
+    expect(listVersions(loaded, 'd1')[0].trigger).toBe('before-import')
+    expect(snapshotToPlainText(listVersions(loaded, 'd1')[0].content)).toContain('original words')
+  })
+  it('hasSnapshotWorthyContent: empty and whitespace-only docs are not worthy', () => {
+    expect(hasSnapshotWorthyContent({ type: 'doc', content: [{ type: 'paragraph' }] })).toBe(false)
+    expect(hasSnapshotWorthyContent(docA('   \n  '))).toBe(false)
+    expect(hasSnapshotWorthyContent(null)).toBe(false)
+    expect(hasSnapshotWorthyContent({})).toBe(false)
+  })
+  it('hasSnapshotWorthyContent: real text or structural blocks are worthy', () => {
+    expect(hasSnapshotWorthyContent(docA('سلام'))).toBe(true)
+    expect(hasSnapshotWorthyContent({ type: 'doc', content: [{ type: 'image', attrs: { src: 'x' } }] })).toBe(true)
+    expect(hasSnapshotWorthyContent({ type: 'doc', content: [{ type: 'table', content: [{ type: 'tableRow', content: [] }] }] })).toBe(true)
+    expect(hasSnapshotWorthyContent({ type: 'doc', content: [{ type: 'paragraph' }, { type: 'pageBreak' }] })).toBe(true)
+  })
+})
+
+
+describe('Tier-1 S1: snapshot failure aborts the import (storage layer)', () => {
+  it('saveVersions returns false when storage throws (quota) and when a snapshot is invalid', () => {
+    const throwing = { getItem: () => null, setItem: () => { throw new Error('QuotaExceededError') } }
+    const s1 = createSnapshot(doc('d1', 'T', 'precious'), 'before-import', 'x.docx')!
+    expect(saveVersions(throwing as any, [s1])).toBe(false)
+    const good = fakeStorage()
+    expect(saveVersions(good as any, [{ ...s1, trigger: 'bogus' } as any])).toBe(false)
+    expect(saveVersions(good as any, [s1])).toBe(true)
+  })
+  it('the snapshot pipeline a failed save feeds leaves stored versions untouched', () => {
+    const store = fakeStorage()
+    const s0 = createSnapshot(doc('d1', 'T', 'v0'), 'manual')!
+    expect(saveVersions(store as any, addVersion(loadVersions(store as any), s0))).toBe(true)
+    const before = store.map.get(VERSIONS_KEY)
+    const throwing = { getItem: (k: string) => store.map.get(k) ?? null, setItem: () => { throw new Error('QuotaExceededError') } }
+    const s1 = createSnapshot(doc('d1', 'T', 'v1'), 'before-import', 'x.docx')!
+    // snapshotCurrent returns this boolean; onImport aborts when it is false.
+    expect(saveVersions(throwing as any, addVersion(loadVersions(store as any), s1))).toBe(false)
+    expect(store.map.get(VERSIONS_KEY)).toBe(before)
   })
 })
