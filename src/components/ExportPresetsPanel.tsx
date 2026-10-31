@@ -4,7 +4,7 @@ import {
   EXPORT_PRESETS, EXPORT_PRESET_IDS, buildExportFilename, buildExportPreview,
   buildArchivePayload, type ExportPresetId, type ExportPreview,
 } from '../lib/exportPresets'
-import { jsonToPlainText } from '../lib/docx'
+import { jsonToPlainText } from '../lib/docText'
 import { usePanelFocusReturn } from './useDialogFocus'
 import type { VyroDoc } from '../lib/types'
 import type { Editor } from '@tiptap/react'

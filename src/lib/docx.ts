@@ -1,5 +1,10 @@
 import { Document, Packer, Paragraph, TextRun, ExternalHyperlink, AlignmentType, HeadingLevel } from 'docx'
 import { saveAs } from 'file-saver'
+import { isSafeLinkUrl } from './docText'
+// P2-4: the pure helpers (escapeHtml, isSafeLinkUrl, jsonToPlainText) moved
+// to docText.ts so hot paths no longer pull `docx`/`file-saver` into the
+// initial bundle. They are re-exported here so existing imports keep working.
+export { escapeHtml, isSafeLinkUrl, jsonToPlainText } from './docText'
 function align(a?:string){ switch(a){case 'center': return AlignmentType.CENTER; case 'right': return AlignmentType.RIGHT; case 'justify': return AlignmentType.JUSTIFIED; default: return AlignmentType.LEFT} }
 /** Paragraph children for one block node. Safe link marks become ExternalHyperlink
  *  (M2-07 §14: allowed links survive DOCX export); unsafe links degrade to plain
@@ -13,9 +18,4 @@ function walk(node:any, out:Paragraph[]){ if(!node) return
   else if(node.type==='horizontalRule'){ out.push(new Paragraph({children:[new TextRun({text:'— — —'})]})) }
   else if(node.content){ for(const c of node.content) walk(c,out) }
 }
-/** Escape text for safe interpolation into generated HTML (titles, imported plain text). */
-export function escapeHtml(s: string): string { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
-/** Validate a user-supplied link URL — only web/mail protocols may be stored or exported. */
-export function isSafeLinkUrl(url: string): boolean { const u=(url||'').trim(); if(!u) return false; try{ const p=new URL(u, 'https://example.invalid'); return p.protocol==='http:'||p.protocol==='https:'||p.protocol==='mailto:' }catch{ return false } }
 export async function exportDocx(json:any, title:string){ const paras:Paragraph[]=[]; walk(json,paras); if(!paras.length) paras.push(new Paragraph('')); const doc=new Document({sections:[{children:paras}]}); const blob=await Packer.toBlob(doc); saveAs(blob, `${title||'document'}.docx`) }
-export function jsonToPlainText(node:any): string { let out=''; const rec=(n:any)=>{ if(!n) return; if(n.type==='text') out+=n.text||''; if(n.content) n.content.forEach(rec); if(['paragraph','heading','listItem'].includes(n.type)) out+='\n' }; rec(node); return out.replace(/\n{3,}/g,'\n\n').trim() }

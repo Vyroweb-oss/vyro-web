@@ -1,4 +1,4 @@
-import { jsonToPlainText } from './docx'
+import { jsonToPlainText } from './docText'
 import type { I18nKey } from './i18n'
 
 // Export Presets (Mission 2, M2-14 = owner spec §16). Pure, unit-testable,

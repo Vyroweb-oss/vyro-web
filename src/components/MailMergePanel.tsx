@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import { tr, type UiLang } from '../lib/i18n'
-import { jsonToPlainText } from '../lib/docx'
+import { jsonToPlainText } from '../lib/docText'
 import {
   parseCsv,
   missingFields,

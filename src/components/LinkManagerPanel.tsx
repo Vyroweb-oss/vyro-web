@@ -1,5 +1,5 @@
 import { useEditorState, type Editor } from '@tiptap/react'
-import { isSafeLinkUrl } from '../lib/docx'
+import { isSafeLinkUrl } from '../lib/docText'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import { usePanelFocusReturn } from './useDialogFocus'
 

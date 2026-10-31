@@ -13,7 +13,7 @@ import { SMART_TEMPLATES, smartName, smartDesc, createSmartDocument, duplicateSm
 import SmartTemplateForm from './components/SmartTemplateForm'
 import { useDialogFocus } from './components/useDialogFocus'
 import { uid } from './lib/types'
-import { supabase, isSupabaseConfigured } from './lib/supabase'
+import { isSupabaseConfigured } from './lib/supabaseEnv'
 import { computeEntitlement } from './lib/entitlement'
 import { saveUiLang, tr, uiDir, type UiLang, type I18nKey } from './lib/i18n'
 import SettingsPanel from './components/SettingsPanel'
@@ -116,7 +116,10 @@ export default function App(){
   // Follow-system theme: live-update when the OS preference changes.
   useEffect(()=>{ if(typeof window.matchMedia!=='function') return; const mq=window.matchMedia('(prefers-color-scheme: dark)'); const h=(e:MediaQueryListEvent)=>setSystemDark(e.matches); setSystemDark(mq.matches); mq.addEventListener('change', h); return ()=>mq.removeEventListener('change', h) },[])
   useEffect(()=>{ try{ localStorage.setItem(SORT_KEY, sort) }catch{ /* best-effort */ } },[sort])
-  useEffect(()=>{ if(!supabase) return; (async()=>{ const {data}=await supabase.auth.getUser(); setUser(data.user??null) })(); const {data:sub}=supabase.auth.onAuthStateChange(async()=>{ if(!supabase) return; const {data}=await supabase.auth.getUser(); setUser(data.user??null) }); return ()=>sub.subscription.unsubscribe() },[])
+  // P2-4: the Supabase client loads only when auth is configured (Local
+  // Mode never fetches it). A failed chunk load leaves the app in Local
+  // Mode instead of breaking the dashboard.
+  useEffect(()=>{ if(!isSupabaseConfigured) return; let cancelled=false; let sub:{unsubscribe:()=>void}|null=null; (async()=>{ try{ const { supabase }=await import('./lib/supabase'); if(cancelled || !supabase) return; const {data}=await supabase.auth.getUser(); if(!cancelled) setUser(data.user??null); const res=supabase.auth.onAuthStateChange(async()=>{ const {data}=await supabase.auth.getUser(); if(!cancelled) setUser(data.user??null) }); sub=res.data.subscription }catch{ /* Local Mode fallback */ } })(); return ()=>{ cancelled=true; sub?.unsubscribe() } },[])
   const liveDocs=useMemo(()=>docs.filter(d=>!d.deletedAt),[docs])
   const filtered=useMemo(()=>sortDocs(filterDocs(docs,{query,folder: folder||undefined, favoritesOnly:favOnly}), sort),[docs,query,folder,favOnly,sort])
   // M2-16: which empty message the Recent list needs (trash has its own).
@@ -148,7 +151,7 @@ export default function App(){
   // createDoc path (same folder + direction as the source doc). The source
   // document stays open and untouched; the merged docs appear on the dashboard.
   const createMergedDocs=(items:{title:string;content:any}[])=>{ if(!openDoc) return; const src=openDoc; setDocs(prev=>{ let nd=prev; for(const item of [...items].reverse()){ const res=createDoc(nd,{title:item.title, content:item.content, dir:src.dir, folder:src.folder}); nd=res.docs } return nd }) }
-  const authAction=async(kind:'in'|'up'|'out')=>{ if(!supabase) return; setAuthMsg(''); try{ if(kind==='out'){ await supabase.auth.signOut(); setUser(null) } else if(kind==='in'){ const {error}=await supabase.auth.signInWithPassword({email,password}); if(error) throw error; const {data}=await supabase.auth.getUser(); setUser(data.user) } else { const {error}=await supabase.auth.signUp({email,password}); if(error) throw error; const {data}=await supabase.auth.getUser(); setUser(data.user); setAuthMsg(t('accountCreated')) } }catch(e:any){ setAuthMsg(e.message||t('authFailed')) } }
+  const authAction=async(kind:'in'|'up'|'out')=>{ if(!isSupabaseConfigured) return; setAuthMsg(''); try{ const { supabase }=await import('./lib/supabase'); if(!supabase) return; if(kind==='out'){ await supabase.auth.signOut(); setUser(null) } else if(kind==='in'){ const {error}=await supabase.auth.signInWithPassword({email,password}); if(error) throw error; const {data}=await supabase.auth.getUser(); setUser(data.user) } else { const {error}=await supabase.auth.signUp({email,password}); if(error) throw error; const {data}=await supabase.auth.getUser(); setUser(data.user); setAuthMsg(t('accountCreated')) } }catch(e:any){ setAuthMsg(e.message||t('authFailed')) } }
   const startCardEdit=(d:VyroDoc, kind:'rename'|'folder')=>{ setMenuId(null); setDeleteId(null); setCardEdit({id:d.id, kind}) }
   const commitCardEdit=(id:string, kind:'rename'|'folder', value:string)=>{ if(kind==='rename'){ if(value.trim()) setDocs(prev=>renameDoc(prev,id,value)) } else { setDocs(prev=>updateDoc(prev,id,{folder:value.trim()})) } setCardEdit(null) }
   const askDelete=(id:string)=>{ setMenuId(null); setCardEdit(null); setDeleteId(id) }

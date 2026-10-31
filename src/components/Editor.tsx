@@ -16,7 +16,7 @@ import { resolvePageSetup, usableHeightMm, cssPageSize, marginsPaddingCss, pageS
 import { computePagination, type PageSegment } from '../lib/pagination'
 import { PaginationExtension, getPaginationSpacers, setPaginationSpacers, type SpacerSpec } from './paginationPlugin'
 import type { VyroDoc } from '../lib/types'
-import { exportDocx, jsonToPlainText, escapeHtml, isSafeLinkUrl } from '../lib/docx'
+import { jsonToPlainText, escapeHtml, isSafeLinkUrl } from '../lib/docText'
 import { formatDocDate } from '../lib/date'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import NavigationPane from './NavigationPane'
@@ -35,7 +35,7 @@ import { validateImageFile, imageSizeKb, IMAGE_WIDTH_PRESETS } from '../lib/imag
 import FindReplacePanel from './FindReplacePanel'
 import ContextMenu from './ContextMenu'
 import { sanitizePastedHtml, htmlToPlainText, getContextMenuItems, type MenuItemId } from '../lib/paste'
-import { createSnapshot, addVersion, loadVersions, saveVersions, restoreVersion, listVersions, type VersionSnapshot, type VersionTrigger } from '../lib/versions'
+import { createSnapshot, addVersion, loadVersions, saveVersions, restoreVersion, listVersions, hasSnapshotWorthyContent, type VersionSnapshot, type VersionTrigger } from '../lib/versions'
 import { saveDraft, loadDraft, clearDraft, detectRecovery, acceptDraft, type RecoveryInfo } from '../lib/recovery'
 import { FocusDim, createViewSnapshot, focusWidthClass, viewModeClass, type FocusWidth, type ViewMode, type ViewSnapshot } from '../lib/viewModes'
 import { SectionCollapse } from '../lib/sections'
@@ -698,7 +698,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // ---- M2-04 version history + crash recovery helpers ----
   const triggerLabel=(trg:VersionTrigger)=> t(({
     manual:'versionTriggerManual', auto:'versionTriggerAuto', 'before-replace':'versionTriggerBeforeReplace',
-    'before-risky':'versionTriggerBeforeRisky', 'pre-restore':'versionTriggerPreRestore', recovery:'versionTriggerRecovery',
+    'before-risky':'versionTriggerBeforeRisky', 'pre-restore':'versionTriggerPreRestore', recovery:'versionTriggerRecovery', 'before-import':'versionTriggerBeforeImport',
   } as const)[trg])
   /** Snapshot the editor's current JSON (incl. unsaved edits). Returns false only when the version could not be stored. */
   const snapshotCurrent=(trigger:VersionTrigger, label?:string):boolean=>{
@@ -772,6 +772,12 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const downloadBackup=()=>{ if(!backup || backup.docId!==docRef.current.id) return; download(`${docRef.current.title}-backup.json`, JSON.stringify(backup, null, 2), 'application/json') }
   const exportTxt=()=> download(`${doc.title}.txt`, jsonToPlainText(editor.getJSON()), 'text/plain')
   const exportHtml=()=> download(`${doc.title}.html`, `<!doctype html><html dir="${doc.dir}"><head><meta charset="utf-8"><title>${escapeHtml(doc.title)}</title></head><body>${editor.getHTML()}</body></html>`, 'text/html')
+  // P2-4: DOCX export (the `docx` + `file-saver` packages) is loaded on
+  // first use only, so it stays out of the initial bundle. Same signature
+  // and same call sites as before, so the Premium gate (gated(...)) and
+  // its lock mark are unchanged; a failed chunk load shows the existing
+  // export-failed toast instead of an unhandled rejection.
+  const exportDocx=async(json:any, title:string)=>{ try{ const m=await import('../lib/docx'); await m.exportDocx(json, title) }catch(err:any){ setToast(`${t('exportFailed')}: ${err?.message||err}`) } }
   const insertDate=()=>{ editor.chain().focus().insertContent({ type:'text', text: formatDocDate(doc.dir) }).run() }
   // Release mission: format painter (Word's paintbrush). Click once to
   // capture the formatting at the current selection (inline marks of its
@@ -844,8 +850,17 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const onImport=async(e:React.ChangeEvent<HTMLInputElement>)=>{ const f=e.target.files?.[0]; if(!f) return; try{
     const isDocx=/\.docx$/i.test(f.name); const isTxt=/\.txt$/i.test(f.name)
     if(!isDocx && !isTxt) throw new Error(t('importUnsupported'))
-    if(isDocx){ const mammoth=(await import('mammoth')).default ?? (await import('mammoth')); const buf=await f.arrayBuffer(); const res=await (mammoth as any).convertToHtml({arrayBuffer:buf}); editor.commands.setContent(res.value||'<p></p>'); onChange({title:f.name.replace(/\.docx$/i,'')}, editor.getJSON()) }
-    else { const txt=await f.text(); editor.commands.setContent(txt.split(/\n{2,}/).map((para:string)=>`<p>${escapeHtml(para).replace(/\n/g,'<br>')}</p>`).join('')); onChange({title:f.name.replace(/\.txt$/i,'')}, editor.getJSON()) }
+    // Tier-1 S1: convert/read FIRST; then, before the destructive
+    // setContent, snapshot the current content (trigger 'before-import').
+    // If the snapshot cannot be stored, the import ABORTS — user content
+    // is never overwritten without a restorable backup. Empty documents
+    // are not snapshotted (nothing to protect, no version noise).
+    let html=''; let txt=''
+    if(isDocx){ const mammoth=(await import('mammoth')).default ?? (await import('mammoth')); const buf=await f.arrayBuffer(); const res=await (mammoth as any).convertToHtml({arrayBuffer:buf}); html=res.value||'<p></p>' }
+    else { txt=await f.text() }
+    if(hasSnapshotWorthyContent(editor.getJSON()) && !snapshotCurrent('before-import', f.name)){ setToast(t('versionSaveFailed')); return }
+    if(isDocx){ editor.commands.setContent(html); onChange({title:f.name.replace(/\.docx$/i,'')}, editor.getJSON()) }
+    else { editor.commands.setContent(txt.split(/\n{2,}/).map((para:string)=>`<p>${escapeHtml(para).replace(/\n/g,'<br>')}</p>`).join('')); onChange({title:f.name.replace(/\.txt$/i,'')}, editor.getJSON()) }
   }catch(err:any){ setToast(`${t('importFailed')}: ${err?.message||err}`) } finally{ e.target.value='' } }
 
   // M2-07: picking a file now only OPENS a preview — insertion happens

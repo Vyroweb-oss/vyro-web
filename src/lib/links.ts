@@ -2,7 +2,7 @@
 //
 // Pure and local: no network, no storage-format change. collectLinks walks
 // a TipTap doc JSON in document order and reports every link mark it finds.
-// Validity reuses the editor's single rule (docx.ts isSafeLinkUrl): only
+// Validity reuses the editor's single rule (docText.ts isSafeLinkUrl): only
 // http/https/mailto are safe; anything else (javascript:, data:, …) is
 // flagged invalid so the panel can show it instead of silently dropping it.
 //
@@ -13,7 +13,7 @@
 // The panel therefore reports what is actually in the document, including
 // links an export would lose — it never claims otherwise.
 
-import { isSafeLinkUrl } from './docx'
+import { isSafeLinkUrl } from './docText'
 
 export interface DocLink {
   /** Visible text of the link (may be empty for an image-only link). */
