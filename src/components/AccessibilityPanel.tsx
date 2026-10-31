@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useEditorState, type Editor } from '@tiptap/react'
 import { analyzeDoc, type A11yIssue, type A11yIssueKind } from '../lib/a11y'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
@@ -39,8 +39,17 @@ export default function AccessibilityPanel({ editor, lang, onClose }: {
   onClose: () => void
 }) {
   const t = (k: I18nKey) => tr(lang, k)
-  // Esc closes (root handler below), focus returns to the opener.
+  // Esc closes from ANY focus (window listener, IntelligencePanel pattern):
+  // the panel's only focusable control is its × button, so a root-div
+  // onKeyDown never fires when focus sits on the ribbon button or on
+  // non-focusable panel text — the live check proved exactly that.
+  // Focus returns to the opener on unmount (usePanelFocusReturn).
   usePanelFocusReturn()
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
   const state = useEditorState({
     editor,
     selector: ({ editor: ed }) => ({ json: ed ? ed.getJSON() : null }),
@@ -48,8 +57,7 @@ export default function AccessibilityPanel({ editor, lang, onClose }: {
   const result = useMemo(() => analyzeDoc(state?.json), [state?.json])
 
   return (
-    <div className="a11y-panel" role="region" aria-label={t('accessibilityChecker')}
-      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
+    <div className="a11y-panel" role="region" aria-label={t('accessibilityChecker')}>
       <div className="find-row">
         <span className="find-preview-label">{t('accessibilityChecker')}</span>
         <button type="button" className="rbtn" onClick={onClose} aria-label={t('close')}>×</button>
