@@ -151,15 +151,26 @@ input:focus,select:focus{border-color:var(--brand)}
    Editor
    ============================================================ */
 .editor-shell{display:flex;flex-direction:column;height:100vh;height:100dvh;background:var(--bg)}
-.editor-top{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:var(--sp-3);padding:7px 14px;background:var(--surface);border-bottom:1px solid var(--border)}
+/* PC1: Word-style title bar — Vyro accent blue (same tokens in both
+   themes, so text stays white-on-blue and never white-on-white). */
+.editor-top{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:var(--sp-3);padding:7px 14px;background:linear-gradient(90deg,var(--brand-deep),var(--brand));color:#fff;border-bottom:1px solid var(--brand-deep)}
 .top-start{display:flex;gap:10px;align-items:center;justify-self:start;min-width:0}
 .top-end{display:flex;gap:9px;align-items:center;justify-self:end}
-.back-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid var(--border);border-radius:var(--r-sm);padding:7px 12px;color:var(--text);min-height:38px;white-space:nowrap}
-.back-btn:hover{background:var(--surface-2)}
-.title-input{max-width:430px;width:36vw;text-align:center;justify-self:center;font-weight:700;font-size:16px;border:1px solid transparent;background:transparent;border-radius:var(--r-sm);padding:7px 10px}
-.title-input:hover{border-color:var(--border)}
-.title-input:focus{border-color:var(--brand);background:var(--surface)}
-.saved{color:var(--text-2);font-size:12.5px;white-space:nowrap}
+.editor-top .logo{color:#fff}
+.editor-top .vmark{background:#fff;color:var(--brand-deep);box-shadow:none}
+.editor-top .qat-btn{color:#fff}
+.editor-top .qat-btn:hover{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.35)}
+.editor-top .rbtn{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.35);color:#fff}
+.editor-top .rbtn:hover{background:rgba(255,255,255,.28)}
+.editor-top .rbtn.active{background:#fff;border-color:#fff;color:var(--brand-deep)}
+.editor-top .badge{background:rgba(255,255,255,.22);color:#fff}
+.back-btn{display:inline-flex;align-items:center;gap:6px;background:none;border:1px solid rgba(255,255,255,.45);border-radius:var(--r-sm);padding:7px 12px;color:#fff;min-height:38px;white-space:nowrap}
+.back-btn:hover{background:rgba(255,255,255,.18)}
+.title-input{max-width:430px;width:36vw;text-align:center;justify-self:center;font-weight:700;font-size:16px;border:1px solid transparent;background:transparent;border-radius:var(--r-sm);padding:7px 10px;color:#fff;min-width:0}
+.title-input:hover{border-color:rgba(255,255,255,.5)}
+.title-input:focus{border-color:#fff;background:rgba(255,255,255,.18);color:#fff}
+.saved{color:rgba(255,255,255,.88);font-size:12.5px;white-space:nowrap}
+.editor-top .saved.failed{color:#ffc9c2}
 
 /* ribbon */
 .ribbon-wrap{position:relative}
@@ -243,6 +254,37 @@ input:focus,select:focus{border-color:var(--brand)}
 .status-view-btn{background:rgba(255,255,255,.16);color:#fff;border:0;border-radius:6px;padding:4px 10px;font-size:12.5px;min-height:26px}
 .status-view-btn:hover{background:rgba(255,255,255,.28)}
 
+/* ---------- PC1: title-bar overflow menu (<720px) ---------- */
+.title-overflow-wrap{position:relative;display:flex;align-items:center}
+.overflow-btn{display:none}
+/* The ⋯ button only exists below 720px (see the media query below,
+   mirroring titleBar.ts: 719 overflows, 720 does not), so the menu must
+   never render at 720px or above either — otherwise a menu opened narrow
+   stays floating after widening. */
+@media (min-width:720px){ .overflow-menu{display:none} }
+.overflow-menu{position:absolute;top:calc(100% + 6px);inset-inline-end:0;z-index:60;display:flex;flex-direction:column;gap:2px;min-width:200px;padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);box-shadow:var(--shadow-lg)}
+.overflow-item{display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;min-height:40px;background:transparent;border:1px solid transparent;border-radius:var(--r-sm);color:var(--text);text-align:start}
+.overflow-item:hover{background:var(--surface-2)}
+.overflow-item.active{background:var(--brand-soft);color:var(--brand-ink);font-weight:700}
+.overflow-info{color:var(--text-2);cursor:default}
+.overflow-info:hover{background:transparent}
+@media (max-width:719px){
+  /* Mirrors titleBar.ts (width < 720): palette/language/theme/settings
+     move into ⋯; back, QAT, title and save status stay in the bar. Logo
+     name and back label shrink to their marks, and the wide local-status
+     chip hides (its overflow-menu row carries it instead), so the
+     protected set can never be overlapped. */
+  .title-overflow-item{display:none}
+  .title-local-chip{display:none}
+  .overflow-btn{display:inline-flex}
+  .editor-top .logo-name{display:none}
+  .editor-top .back-label{display:none}
+  .back-btn{padding:7px 10px}
+  .top-end{gap:7px}
+  .saved{font-size:12px}
+  .title-input{font-size:15px}
+}
+
 /* ---------- responsive: tablets & phones ---------- */
 @media (max-width:900px){
   .dash-layout{grid-template-columns:minmax(0,1fr);grid-template-areas:'nav' 'main' 'sub';gap:var(--sp-4);padding:var(--sp-4)}
@@ -260,10 +302,9 @@ input:focus,select:focus{border-color:var(--brand)}
   .appbar-search{order:5;flex-basis:100%;max-width:none;margin:0}
   .chip-btn{display:none}
   .editor-top{grid-template-columns:auto minmax(0,1fr) auto;padding:6px 8px;gap:7px}
-  .editor-top .logo{display:none}
-  .title-input{width:100%;max-width:none;text-align:start;font-size:15px}
-  .top-end .badge{display:none}
-  .top-end .saved{display:none}
+  /* PC1: protected title-bar items (title, QAT, back, save status) are
+     never hidden at narrow widths — only low-use items collapse into ⋯. */
+  .title-input{width:100%;max-width:none;text-align:center;font-size:15px}
   .status-save{display:inline}
   .ribbon{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding:6px 8px;scrollbar-width:thin}
   .ribbon .rgroup{flex:0 0 auto;padding:2px 9px}
