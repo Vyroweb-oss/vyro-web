@@ -502,7 +502,13 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       const domRect=dom.getBoundingClientRect()
       const kids=(Array.from(dom.children) as HTMLElement[]).filter(el=>!el.classList.contains('page-gap-spacer'))
       const blocks:{pos:number;type:string}[]=[]
-      editor.state.doc.forEach((node, offset)=>{ blocks.push({ pos: offset+1, type: node.type.name }) })
+      // The spacer position is the block's OWN doc position (before the
+      // node), so the widget renders BETWEEN blocks as a direct child of
+      // the editor DOM. offset+1 would land INSIDE the paragraph — the
+      // spacer then inflates that paragraph's measured height and the
+      // pagination feeds back on itself (found by live verification,
+      // 2026-10-31: break text stayed on the old sheet, counts drifted).
+      editor.state.doc.forEach((node, offset)=>{ blocks.push({ pos: offset, type: node.type.name }) })
       if(kids.length!==blocks.length || blocks.length===0) return
       const old=getPaginationSpacers(editor)
       const oldBefore=(pos:number)=>old.filter(s=>s.pos<=pos).reduce((a,s)=>a+s.height,0)
