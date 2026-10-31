@@ -13,7 +13,6 @@ export type TitleBarItemId =
   | 'qat'
   | 'title'
   | 'saveStatus'
-  | 'badge'
   | 'palette'
   | 'language'
   | 'theme'
@@ -45,12 +44,14 @@ export function isTitleBarOverflowWidth(width: number): boolean {
 /**
  * Split the title-bar items into visible vs overflowed at a given width.
  * The protected set is always in `visible`, at every width — the function
- * never overflows back, QAT, title or save status, and the logo/badge
- * (branding + honest Free/Premium status) also stay in the bar.
+ * never overflows back, QAT, title or save status, and the logo (branding)
+ * also stays in the bar. The Free/Premium badge left the title bar in the
+ * 2026-10-31 desktop-tidy round (owner order, Word-like bar); plan status
+ * lives on the dashboard header and in the premium dialog instead.
  */
 export function titleBarLayout(width: number): TitleBarLayout {
   const overflow = isTitleBarOverflowWidth(width)
-  const visible: TitleBarItemId[] = ['back', 'logo', 'qat', 'title', 'saveStatus', 'badge']
+  const visible: TitleBarItemId[] = ['back', 'logo', 'qat', 'title', 'saveStatus']
   const overflowed: TitleBarItemId[] = []
   for (const item of TITLE_BAR_OVERFLOWABLE) {
     if (overflow) overflowed.push(item)

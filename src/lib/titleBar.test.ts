@@ -6,13 +6,13 @@ describe('titleBarLayout', () => {
     const layout = titleBarLayout(1280)
     expect(layout.isOverflow).toBe(false)
     expect(layout.overflow).toEqual([])
-    expect(layout.visible).toEqual(['back', 'logo', 'qat', 'title', 'saveStatus', 'badge', 'palette', 'language', 'theme', 'settings'])
+    expect(layout.visible).toEqual(['back', 'logo', 'qat', 'title', 'saveStatus', 'palette', 'language', 'theme', 'settings'])
   })
   it('moves only the low-use items into overflow at a narrow width', () => {
     const layout = titleBarLayout(360)
     expect(layout.isOverflow).toBe(true)
     expect(layout.overflow).toEqual(['palette', 'language', 'theme', 'settings'])
-    expect(layout.visible).toEqual(['back', 'logo', 'qat', 'title', 'saveStatus', 'badge'])
+    expect(layout.visible).toEqual(['back', 'logo', 'qat', 'title', 'saveStatus'])
   })
   it('keeps the protected set visible at every width', () => {
     for (const width of [320, 719, 720, 1920]) {
@@ -41,7 +41,7 @@ describe('titleBarLayout', () => {
       const layout = titleBarLayout(width)
       const all = [...layout.visible, ...layout.overflow]
       expect(new Set(all).size).toBe(all.length)
-      expect(all.sort()).toEqual(['back', 'badge', 'language', 'logo', 'palette', 'qat', 'saveStatus', 'settings', 'theme', 'title'].sort())
+      expect(all.sort()).toEqual(['back', 'language', 'logo', 'palette', 'qat', 'saveStatus', 'settings', 'theme', 'title'].sort())
     }
   })
 })
