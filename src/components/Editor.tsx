@@ -696,10 +696,14 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   },[editor, doc.title, doc.dir])
 
   // ---- M2-04 version history + crash recovery helpers ----
+  // P2-4 repair: the mapping is explicitly typed Record<VersionTrigger, I18nKey>
+  // (not inferred from `as const`) so a missing i18n key fails here with a
+  // clear message instead of surfacing as a cryptic t() argument error in a
+  // fresh (non-incremental) build, as Render's be0c0f90 build showed.
   const triggerLabel=(trg:VersionTrigger)=> t(({
     manual:'versionTriggerManual', auto:'versionTriggerAuto', 'before-replace':'versionTriggerBeforeReplace',
     'before-risky':'versionTriggerBeforeRisky', 'pre-restore':'versionTriggerPreRestore', recovery:'versionTriggerRecovery', 'before-import':'versionTriggerBeforeImport',
-  } as const)[trg])
+  } satisfies Record<VersionTrigger, I18nKey>)[trg])
   /** Snapshot the editor's current JSON (incl. unsaved edits). Returns false only when the version could not be stored. */
   const snapshotCurrent=(trigger:VersionTrigger, label?:string):boolean=>{
     if(!editor) return false
