@@ -10,9 +10,12 @@ import { usePanelFocusReturn } from './useDialogFocus'
 // the selection column appears only for a non-collapsed, non-blank
 // selection (computeSelectionStats returns null otherwise). The selection
 // text uses '\n' block separators, matching the document stats' joining.
-export default function StatsPanel({ editor, lang, onClose }: {
+export default function StatsPanel({ editor, lang, pages, onClose }: {
   editor: Editor
   lang: UiLang
+  /** Tier-1 S2: the editor's REAL paginated page count (from the measure
+   *  pass state), never the words-per-page heuristic. */
+  pages: number
   onClose: () => void
 }) {
   const t = (k: I18nKey) => tr(lang, k)
@@ -43,6 +46,7 @@ export default function StatsPanel({ editor, lang, onClose }: {
 
   const rows: [I18nKey, string][] = [
     ['statsWords', String(stats.words)],
+    ['statsPages', String(pages)],
     ['statsCharsWithSpaces', String(stats.charsWithSpaces)],
     ['statsCharsWithoutSpaces', String(stats.charsWithoutSpaces)],
     ['statsParagraphs', String(stats.paragraphs)],
@@ -51,10 +55,10 @@ export default function StatsPanel({ editor, lang, onClose }: {
     ['statsImages', String(stats.images)],
     ['statsSentences', String(stats.sentences)],
     ['statsAvgSentenceLength', avg],
-    // Both estimate rows carry the word in their LABEL (see i18n keys),
-    // not just in a footnote, so the estimate is visible at a glance.
+    // The reading-time row is an estimate and says so in its LABEL.
+    // Pages are NOT estimated: the statsPages row above shows the real
+    // paginated count passed in from the editor's measure pass.
     ['statsReadingTimeEstimate', `${stats.readingTimeMinutes} ${readUnit}`],
-    ['statsEstimatedPages', String(stats.estimatedPages)],
   ]
   const selRows: [I18nKey, string][] = sel ? [
     ['statsWords', String(sel.words)],

@@ -149,11 +149,15 @@ describe('reading time and estimated pages rounding', () => {
     expect(computeDocumentStats(wordsDoc(251)).estimatedPages).toBe(2)
     expect(computeDocumentStats(wordsDoc(500)).estimatedPages).toBe(2)
   })
-  it('estimated-pages and reading-time UI labels carry the estimate word in both languages', () => {
-    expect(STRINGS.en.statsEstimatedPages).toMatch(/estimate/i)
+  it('reading-time UI labels carry the estimate word in both languages', () => {
     expect(STRINGS.en.statsReadingTimeEstimate).toMatch(/estimate/i)
-    expect(STRINGS.fa.statsEstimatedPages).toContain('تخمینی')
     expect(STRINGS.fa.statsReadingTimeEstimate).toContain('تخمینی')
+  })
+  it('Tier-1 S2: the panel page label is the plain real-count label, not an estimate', () => {
+    expect(STRINGS.en.statsPages).toBe('Pages')
+    expect(STRINGS.fa.statsPages).toBe('صفحه‌ها')
+    expect((STRINGS.en as any).statsEstimatedPages).toBeUndefined()
+    expect((STRINGS.fa as any).statsEstimatedPages).toBeUndefined()
   })
 })
 

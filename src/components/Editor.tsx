@@ -754,9 +754,10 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const selectedVersion=docVersions.find(v=>v.id===selectedVersionId) ?? null
 
   if(!editor) return <div className="loading">{t('loadingEditor')}</div>
-  const words = editor.getText().trim()? editor.getText().trim().split(/\s+/).length:0
+  // Tier-1 S2: ONE authoritative counter — stats.ts (Dari-aware). The
+  // status bar, the Review ribbon and the Statistics panel all read
+  // statusStats, so their numbers can never diverge.
   const statusStats = computeDocumentStats(editor.getJSON())
-  const chars = (editor.storage as any).characterCount?.characters?.() ?? editor.getText().length
 
   const gated=(fn:()=>void)=> isPremium? fn() : onRequirePremium()
   const download=(name:string, text:string, type:string)=>{ const b=new Blob([text],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000) }
@@ -1108,7 +1109,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       {tab==='Mailings' && <Group label={t('mailMerge')}><Btn active={mailMergeOpen} onClick={()=>setMailMergeOpen(o=>!o)}>{t('mailMerge')}</Btn><span className="static-stat mailings-note">{t('mailMergeLocal')}</span></Group>}
       {tab==='Review' && <>
         <Group label={t('groupProofing')}><Btn active={spell} onClick={()=>setSpell(s=>!s)}>{t('spellcheck')} {spell? t('on'):t('off')}</Btn></Group>
-        <Group label={t('groupCount')}><span className="static-stat">{words} {t('words')} · {chars} {t('characters')} · {editor.getText().split(/\n/).filter(Boolean).length} {t('paragraphsApprox')}</span><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
+        <Group label={t('groupCount')}><span className="static-stat">{statusStats.words} {t('words')} · {statusStats.charsWithSpaces} {t('characters')} · {statusStats.paragraphs} {t('statsParagraphs')}</span><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
         <Group label={t('compare')}><Btn active={compareOpen} onClick={()=>setCompareOpen(o=>!o)}>{t('compare')}</Btn></Group>
         <Group label={t('intelligence')}><Btn active={intelligenceOpen} onClick={()=>setIntelligenceOpen(o=>!o)}>{t('intelligence')}</Btn></Group>
       </>}
@@ -1134,7 +1135,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <div className="recovery-excerpt" dir="auto"><span>{t('saved')}: “{recovery.savedExcerpt}”</span><span>{t('versionTriggerRecovery')}: “{recovery.draftExcerpt}”</span></div>
       <div className="row"><button type="button" className="primary small" onClick={acceptRecovery}>{t('recoveryAccept')}</button><button type="button" className="rbtn" onClick={discardRecovery}>{t('recoveryDiscard')}</button></div>
     </div>}
-    {viewMode==='edit' && statsOpen && <StatsPanel editor={editor} lang={lang} onClose={()=>setStatsOpen(false)} />}
+    {viewMode==='edit' && statsOpen && <StatsPanel editor={editor} lang={lang} pages={pageCount} onClose={()=>setStatsOpen(false)} />}
     {viewMode==='edit' && saveDiagOpen && <SaveDiagnosticsPanel editor={editor} doc={doc} lang={lang} diag={diag} backup={backup} autosaveEnabled={autosaveEnabled ?? true} autosaveIntervalMs={autosaveIntervalMs ?? 500} hasPendingEdits={saveState==='pending' || saveState==='failed'} onRetry={retrySave} onCreateBackup={createBackupNow} onDownloadBackup={downloadBackup} onClose={()=>setSaveDiagOpen(false)} />}
     {viewMode==='edit' && exportPresetsOpen && <ExportPresetsPanel editor={editor} doc={doc} lang={lang} onClose={()=>setExportPresetsOpen(false)} onExportText={(name,text,mime)=>download(name,text,mime)} onExportHtml={(name,html)=>download(name, `<!doctype html><html dir="${doc.dir}"><head><meta charset="utf-8"><title>${escapeHtml(doc.title)}</title></head><body>${html}</body></html>`, 'text/html')} onExportArchive={(name,payload)=>download(name,payload,'application/json')} onPrint={()=>window.print()} />}
     {viewMode==='edit' && compareOpen && <ComparePanel editor={editor} doc={doc} versions={versions} lang={lang} onClose={()=>setCompareOpen(false)} onVersionsSaved={(next)=>setVersions(next)} />}
