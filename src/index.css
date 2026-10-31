@@ -332,17 +332,29 @@ input:focus,select:focus{border-color:var(--brand)}
      never hidden at narrow widths — only low-use items collapse into ⋯. */
   .title-input{width:100%;max-width:none;text-align:center;font-size:15px}
   .status-save{display:inline}
-  .ribbon{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding:6px 8px;scrollbar-width:thin}
-  .ribbon .rgroup{flex:0 0 auto;padding:2px 9px}
-  .ribbon .rgroup-items{flex-wrap:nowrap}
+  /* PC5: dedicated touch layout — NOT a shrunk desktop ribbon. The tab
+     strip is a snap-scrolling touch bar (48px targets, active tab kept in
+     view by an Editor effect); the "More tools" toggle is sticky at the
+     strip's end so it is always reachable; the command row snap-scrolls
+     group by group; expanding opens a labelled sheet over the page. */
+  .ribbon-tabs{padding:4px 8px 0;scroll-snap-type:x proximity}
+  .ribbon-tabs .tab{min-height:48px;padding:10px 18px;font-size:15px;scroll-snap-align:start}
+  .tools-toggle{display:inline-flex;align-items:center;min-height:48px;padding:10px 14px;font-size:14px;position:sticky;inset-inline-end:0;background:var(--surface-2);z-index:2}
+  .ribbon{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;padding:6px 8px;scrollbar-width:none;scroll-snap-type:x proximity}
+  .ribbon::-webkit-scrollbar{display:none}
+  .ribbon .rgroup{flex:0 0 auto;padding:2px 9px;scroll-snap-align:start}
+  .ribbon .rgroup-items{flex-wrap:nowrap;align-items:center}
+  .ribbon .rbtn{min-height:44px}
+  .ribbon .rgroup-items select{min-height:44px}
   .rgroup-label{display:none}
-  .tools-toggle{display:inline-flex;align-items:center}
-  .ribbon-wrap.expanded .ribbon{flex-wrap:wrap;overflow-x:visible;overflow-y:auto;max-height:46vh}
-  .ribbon-wrap.expanded .rgroup{flex:0 1 auto}
+  .ribbon-wrap.expanded .ribbon{flex-wrap:wrap;overflow-x:visible;overflow-y:auto;max-height:52vh;scroll-snap-type:none;box-shadow:0 10px 24px rgba(15,23,42,.18)}
+  .ribbon-wrap.expanded .rgroup{flex:0 1 auto;scroll-snap-align:none}
   .ribbon-wrap.expanded .rgroup-items{flex-wrap:wrap}
   .ribbon-wrap.expanded .rgroup-label{display:block}
-  .workspace{padding:16px 8px 44px}
-  .status-bar{gap:10px;font-size:12px}
+  .workspace{padding:12px 6px 32px}
+  .status-bar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:12px;font-size:12px;padding-bottom:calc(5px + env(safe-area-inset-bottom))}
+  .status-bar::-webkit-scrollbar{display:none}
+  .status-bar>*{flex:0 0 auto}
   .status-zoom input[type=range]{width:84px}
   .doc-grid{grid-template-columns:1fr}
   .create-row{grid-template-columns:repeat(auto-fill,minmax(128px,1fr))}

@@ -120,6 +120,9 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // remains a session override until settings change again).
   const [focusWidth,setFocusWidth]=useState<FocusWidth>((writingWidth ?? 'normal') as FocusWidth)
   useEffect(()=>{ if(writingWidth) setFocusWidth(writingWidth as FocusWidth) },[writingWidth])
+  // PC5: on narrow screens the ribbon tab strip scrolls horizontally —
+  // keep the active tab in view when it changes (no-op when all tabs fit).
+  useEffect(()=>{ const el=document.querySelector('.ribbon-tabs .tab.active'); if(el && typeof el.scrollIntoView==='function') el.scrollIntoView({block:'nearest',inline:'center'}) },[tab])
   const compactToolbar = toolbarMode==='compact'
   // M2-08 autosave settings, read through a ref so the debounced onUpdate
   // (bound once per document) always sees the current values.
