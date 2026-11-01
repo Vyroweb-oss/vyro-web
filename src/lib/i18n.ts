@@ -364,6 +364,9 @@ const en = {
   statsReadingTimeEstimate: 'Reading time (estimate)',
   statsPages: 'Pages',
   statsLive: 'Updates live as you edit and select.',
+  statsReadabilityEase: 'Readability — Flesch ease (estimate, English only)',
+  statsReadabilityGrade: 'Reading grade — Flesch–Kincaid (estimate, English only)',
+  statsReadabilityNeedsEnglish: 'Readability scores need English sentences (10+ English words); they are not computed for Persian/Dari text.',
   // P2-5 Accessibility Checker (local rules only; diagnostic display only).
   accessibilityChecker: 'Accessibility checker',
   a11yIssues: 'Issues',
@@ -934,6 +937,9 @@ const fa: Record<I18nKey, string> = {
   statsReadingTimeEstimate: 'زمان خواندن (تخمینی)',
   statsPages: 'صفحه‌ها',
   statsLive: 'با ویرایش و انتخاب شما زنده به‌روز می‌شود.',
+  statsReadabilityEase: 'خوانایی — امتیاز فلش (تخمینی، فقط انگلیسی)',
+  statsReadabilityGrade: 'سطح خواندن — فلش–کینکید (تخمینی، فقط انگلیسی)',
+  statsReadabilityNeedsEnglish: 'امتیازهای خوانایی به جمله‌های انگلیسی نیاز دارند (۱۰+ واژهٔ انگلیسی) و برای متن فارسی/دری محاسبه نمی‌شوند.',
   // P2-5 Accessibility Checker (local rules only; diagnostic display only).
   accessibilityChecker: 'بررسی دسترسی‌پذیری',
   a11yIssues: 'موارد',

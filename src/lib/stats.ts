@@ -160,15 +160,73 @@ function blockTexts(node: any, out: string[]): void {
   if (Array.isArray(node.content)) node.content.forEach((child: any) => blockTexts(child, out))
 }
 
+/** Joined block text of a doc (one string per block, "\n"-joined). */
+function documentBlockText(docJson: any): string {
+  const blocks: string[] = []
+  if (docJson && typeof docJson === 'object') blockTexts(docJson, blocks)
+  return blocks.join('\n')
+}
+
+// READABILITY (P2-7, Word-gap statistics; estimate, English only):
+// - Latin words only: runs of [A-Za-z] plus common accented Latin letters
+//   (Latin-1 Supplement + Latin Extended-A). Persian/Arabic-script words
+//   are never syllable-counted — no fake Dari syllable counts.
+// - Syllables: vowel groups [aeiouy]+ per word (case-insensitive), minus
+//   1 for a silent trailing 'e' when the word has >1 group, minimum 1.
+//   A known heuristic limit: it undercounts words like "syllable" (2
+//   counted vs 3 spoken), and abbreviations over-count like sentences do.
+// - Returns null when there are fewer than 10 Latin words or 0 sentences
+//   (sentence count uses countSentences over the same full text).
+// - Flesch ease is NOT clamped: very simple text may exceed 100, and the
+//   UI label says the scores are estimates, English only.
+export interface Readability {
+  latinWords: number
+  syllables: number
+  fleschEase: number
+  fleschKincaidGrade: number
+}
+
+const LATIN_WORD = /[A-Za-z\u00C0-\u024F]+/g
+
+/** Syllable estimate for one Latin word under the heuristic above. */
+export function countSyllables(word: string): number {
+  const groups = word.toLowerCase().match(/[aeiouy]+/g)
+  let n = groups ? groups.length : 0
+  if (n > 1 && /e$/i.test(word)) n--
+  return Math.max(1, n)
+}
+
+const round1 = (v: number): number => {
+  const r = Math.round(v * 10) / 10
+  return r === 0 ? 0 : r
+}
+
+/** Readability estimate for a TipTap doc JSON, or null when not computable. */
+export function computeReadability(docJson: any): Readability | null {
+  const fullText = documentBlockText(docJson)
+  const sentences = countSentences(fullText)
+  if (sentences === 0) return null
+  const latinWordsList = fullText.match(LATIN_WORD) ?? []
+  if (latinWordsList.length < 10) return null
+  const latinWords = latinWordsList.length
+  const syllables = latinWordsList.reduce((sum, w) => sum + countSyllables(w), 0)
+  const wordsPerSentence = latinWords / sentences
+  const syllablesPerWord = syllables / latinWords
+  return {
+    latinWords,
+    syllables,
+    fleschEase: round1(206.835 - 1.015 * wordsPerSentence - 84.6 * syllablesPerWord),
+    fleschKincaidGrade: round1(0.39 * wordsPerSentence + 11.8 * syllablesPerWord - 15.59),
+  }
+}
+
 function emptyBreakdown(): HeadingBreakdown {
   return { h1: 0, h2: 0, h3: 0, h4: 0, h5: 0, h6: 0 }
 }
 
 /** Full document statistics from stored TipTap JSON. Null/odd input = empty doc. */
 export function computeDocumentStats(docJson: any): DocumentStats {
-  const blocks: string[] = []
-  if (docJson && typeof docJson === 'object') blockTexts(docJson, blocks)
-  const fullText = blocks.join('\n')
+  const fullText = documentBlockText(docJson)
   const words = countWords(fullText)
   const sentences = countSentences(fullText)
 

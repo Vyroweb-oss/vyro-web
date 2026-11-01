@@ -9,7 +9,13 @@ function deepCopy<T>(v: T): T { return v === undefined ? v : JSON.parse(JSON.str
 
 export function createDoc(docs: VyroDoc[], partial: Partial<VyroDoc> & { title: string }): { docs: VyroDoc[]; doc: VyroDoc } {
   const now = new Date().toISOString()
-  const doc: VyroDoc = { id: uid(), content: deepCopy(partial.content) ?? { type:'doc', content:[{type:'paragraph'}] }, folder: partial.folder ?? '', favorite: !!partial.favorite, dir: partial.dir ?? 'ltr', createdAt: now, updatedAt: now, margins: partial.margins ?? 'normal', orientation: partial.orientation ?? 'portrait', templateId: partial.templateId, html: partial.html, title: partial.title }
+  const doc: VyroDoc = { id: uid(), content: deepCopy(partial.content) ?? { type:'doc', content:[{type:'paragraph'}] }, folder: partial.folder ?? '', favorite: !!partial.favorite, dir: partial.dir ?? 'ltr', createdAt: now, updatedAt: now, margins: partial.margins ?? 'normal', orientation: partial.orientation ?? 'portrait', templateId: partial.templateId, html: partial.html, title: partial.title,
+    // Tier-1 S4a: page-layout fields propagate from the partial when the
+    // caller supplies them (Mail Merge passes the source document's), so a
+    // created document keeps its intended page size / custom geometry /
+    // custom margins / header / footer instead of silently reverting to
+    // A4 defaults. Absent = undefined = the layout resolvers' defaults.
+    pageSize: partial.pageSize, pageW: partial.pageW, pageH: partial.pageH, customMargins: partial.customMargins, headerText: partial.headerText, footerText: partial.footerText }
   return { docs: [doc, ...docs], doc }
 }
 export function updateDoc(docs: VyroDoc[], id: string, patch: Partial<VyroDoc>): VyroDoc[] {

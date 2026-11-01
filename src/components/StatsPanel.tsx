@@ -1,5 +1,5 @@
 import { useEditorState, type Editor } from '@tiptap/react'
-import { computeDocumentStats, computeSelectionStats } from '../lib/stats'
+import { computeDocumentStats, computeReadability, computeSelectionStats } from '../lib/stats'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import { usePanelFocusReturn } from './useDialogFocus'
 
@@ -34,6 +34,7 @@ export default function StatsPanel({ editor, lang, pages, onClose }: {
     },
   })
   const stats = computeDocumentStats(state?.json)
+  const readability = computeReadability(state?.json)
   const sel = state?.hasSelection ? computeSelectionStats(state?.selText) : null
 
   const headingParts = (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const)
@@ -59,6 +60,11 @@ export default function StatsPanel({ editor, lang, pages, onClose }: {
     // Pages are NOT estimated: the statsPages row above shows the real
     // paginated count passed in from the editor's measure pass.
     ['statsReadingTimeEstimate', `${stats.readingTimeMinutes} ${readUnit}`],
+    // P2-7 readability: English-only estimate, shown only when computable.
+    ...(readability ? [
+      ['statsReadabilityEase', readability.fleschEase.toFixed(1)],
+      ['statsReadabilityGrade', readability.fleschKincaidGrade.toFixed(1)],
+    ] as [I18nKey, string][] : []),
   ]
   const selRows: [I18nKey, string][] = sel ? [
     ['statsWords', String(sel.words)],
@@ -91,6 +97,7 @@ export default function StatsPanel({ editor, lang, pages, onClose }: {
         {sel && column(t('statsSelection'), selRows)}
       </div>
       <p className="muted">{t('statsLive')}</p>
+      {!readability && <p className="muted">{t('statsReadabilityNeedsEnglish')}</p>}
     </div>
   )
 }
