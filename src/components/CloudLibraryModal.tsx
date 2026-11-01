@@ -231,6 +231,14 @@ export default function CloudLibraryModal({ lang, docs, cloud, onRestore, onClos
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docs])
 
+  // Documents sent during THIS session, with their outcome. They leave the
+  // checkbox list the moment they link — but their verification result
+  // must stay visible here until the dialog closes: a mismatch that
+  // quietly vanished would look exactly like a success.
+  const sentRows = Object.entries(rows)
+    .map(([id, state]) => ({ doc: docs.find((d) => d.id === id), state }))
+    .filter((x): x is { doc: VyroDoc; state: RowState } => !!x.doc && !sendable.some((s) => s.id === x.doc.id))
+
   const canSend = cloud.active && !!cloud.consentAt && gate === 'verified'
 
   return (
@@ -340,6 +348,21 @@ export default function CloudLibraryModal({ lang, docs, cloud, onRestore, onClos
                   {t('sendSelected')}
                 </button>
               </>
+            )}
+            {sentRows.length > 0 && (
+              <ul className="cloud-lib-list">
+                {sentRows.map(({ doc: d, state }) => (
+                  <li key={d.id} className="cloud-lib-row">
+                    <span>{d.title}</span>
+                    <span className={`cloud-lib-status st-${state}`}>
+                      {t(ROW_KEY[state])}
+                      {(state === 'failed' || state === 'missing') && (
+                        <button className="rbtn" onClick={() => sendOne(d.id)}>{t('retrySend')}</button>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             )}
           </>
         )}

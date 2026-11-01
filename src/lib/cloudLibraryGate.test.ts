@@ -39,6 +39,15 @@ describe('CloudLibraryModal safety wiring', () => {
     expect(restoreAt).toBeGreaterThan(downloadAt)
   })
 
+  it('send outcomes stay visible after the document leaves the send list', () => {
+    // A sent document becomes linked and exits the checkbox list at once;
+    // its verification outcome must still render (from sentRows) or a
+    // hash mismatch would be indistinguishable from success.
+    expect(modalSource).toContain('sentRows')
+    expect(modalSource).toContain('sendStatusVerified')
+    expect(modalSource).toContain('sendStatusMismatch')
+  })
+
   it('consent is recorded only through the hook (per-account store)', () => {
     expect(modalSource).toContain('cloud.recordConsent()')
     expect(modalSource).not.toContain('cloudConsent')
