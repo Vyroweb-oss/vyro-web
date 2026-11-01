@@ -182,3 +182,27 @@ export function substituteDoc(
   })
   return { doc: copy, unsubstituted }
 }
+
+/**
+ * Tier-1 S4b: record-navigation helpers (pure, so the panel's boundary
+ * behaviour is unit-testable). Indices are always clamped into the valid
+ * range; an empty record set always yields 0 and navigation is a no-op.
+ */
+export function clampRecordIndex(index: number, count: number): number {
+  if (count <= 0) return 0
+  if (!Number.isFinite(index) || index < 0) return 0
+  return Math.min(Math.floor(index), count - 1)
+}
+
+export type RecordNav = 'first' | 'prev' | 'next' | 'last'
+
+export function navRecordIndex(index: number, count: number, nav: RecordNav): number {
+  const cur = clampRecordIndex(index, count)
+  if (count <= 0) return 0
+  switch (nav) {
+    case 'first': return 0
+    case 'prev': return Math.max(0, cur - 1)
+    case 'next': return Math.min(count - 1, cur + 1)
+    case 'last': return count - 1
+  }
+}

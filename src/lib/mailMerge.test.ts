@@ -4,6 +4,8 @@ import {
   extractPlaceholders,
   missingFields,
   substituteDoc,
+  clampRecordIndex,
+  navRecordIndex,
   MAIL_MERGE_MAX_RECORDS,
 } from './mailMerge'
 
@@ -117,5 +119,31 @@ describe('mailMerge substitution', () => {
     expect(extractPlaceholders(d)).toEqual(['Name'])
     const { doc: out } = substituteDoc(d, { Name: 'Ahmad' })
     expect(out.content[0].content[0].text).toBe('Ahmad and {{}}')
+  })
+})
+
+describe('Tier-1 S4b: record navigation helpers', () => {
+  it('clampRecordIndex bounds and empty-set behaviour', () => {
+    expect(clampRecordIndex(0, 0)).toBe(0)
+    expect(clampRecordIndex(5, 0)).toBe(0)
+    expect(clampRecordIndex(-3, 4)).toBe(0)
+    expect(clampRecordIndex(99, 4)).toBe(3)
+    expect(clampRecordIndex(2, 4)).toBe(2)
+    expect(clampRecordIndex(1.9, 4)).toBe(1)
+  })
+  it('navRecordIndex walks and stops at both boundaries', () => {
+    expect(navRecordIndex(0, 3, 'prev')).toBe(0)
+    expect(navRecordIndex(0, 3, 'next')).toBe(1)
+    expect(navRecordIndex(1, 3, 'next')).toBe(2)
+    expect(navRecordIndex(2, 3, 'next')).toBe(2)
+    expect(navRecordIndex(2, 3, 'prev')).toBe(1)
+    expect(navRecordIndex(2, 3, 'first')).toBe(0)
+    expect(navRecordIndex(0, 3, 'last')).toBe(2)
+    expect(navRecordIndex(0, 1, 'next')).toBe(0)
+    expect(navRecordIndex(0, 0, 'next')).toBe(0)
+    expect(navRecordIndex(0, 0, 'last')).toBe(0)
+    // a stale index (record set shrank) is clamped before navigating
+    expect(navRecordIndex(9, 3, 'prev')).toBe(1)
+    expect(navRecordIndex(9, 3, 'next')).toBe(2)
   })
 })

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import { tr, type UiLang } from '../lib/i18n'
 import { jsonToPlainText } from '../lib/docText'
@@ -6,6 +6,8 @@ import {
   parseCsv,
   missingFields,
   substituteDoc,
+  clampRecordIndex,
+  navRecordIndex,
   type ParseCsvResult,
 } from '../lib/mailMerge'
 
@@ -29,13 +31,25 @@ export default function MailMergePanel({ editor, doc, lang, onCreateMergedDocs, 
     () => (csvText.trim() === '' ? null : parseCsv(csvText)),
     [csvText],
   )
-  const docJson = useMemo(() => editor.getJSON(), [editor])
+  // Tier-1 S4b: the document snapshot must stay FRESH while the panel is
+  // open. The old mount-time useMemo([editor]) meant edits made with the
+  // panel open were invisible to the preview, the missing-field analysis
+  // and even generation. We subscribe to editor updates and re-read the
+  // JSON; the selected record is deliberately NOT reset by doc updates —
+  // only by loading different CSV data (the existing handlers below).
+  const [docVersion, setDocVersion] = useState(0)
+  useEffect(() => {
+    const bump = () => setDocVersion((v) => v + 1)
+    editor.on('update', bump)
+    return () => { editor.off('update', bump) }
+  }, [editor])
+  const docJson = useMemo(() => editor.getJSON(), [editor, docVersion])
   const missing = useMemo(
     () => (parsed && parsed.ok ? missingFields(docJson, parsed.fields) : []),
     [parsed, docJson],
   )
   const records = parsed && parsed.ok ? parsed.records : []
-  const safeIdx = records.length === 0 ? 0 : Math.min(recordIdx, records.length - 1)
+  const safeIdx = clampRecordIndex(recordIdx, records.length)
   const merged = useMemo(() => {
     if (records.length === 0) return null
     const { doc: mergedDoc, unsubstituted } = substituteDoc(docJson, records[safeIdx])
@@ -119,19 +133,26 @@ export default function MailMergePanel({ editor, doc, lang, onCreateMergedDocs, 
           {records.length === 0 && <p className="muted">{t('mailNoRecords')}</p>}
           {records.length > 0 && (
             <>
-              <label className="find-row">{t('mailRecord')}
-                <select
-                  aria-label={t('mailRecord')}
-                  value={safeIdx}
-                  onChange={(e) => setRecordIdx(Number(e.target.value))}
-                >
-                  {records.map((rec, i) => (
-                    <option key={i} value={i}>
-                      {i + 1}: {rec[parsed.fields[0]] !== '' ? rec[parsed.fields[0]] : `${t('mailRecord')} ${i + 1}`}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="find-row">
+                <label>{t('mailRecord')}
+                  <select
+                    aria-label={t('mailRecord')}
+                    value={safeIdx}
+                    onChange={(e) => setRecordIdx(Number(e.target.value))}
+                  >
+                    {records.map((rec, i) => (
+                      <option key={i} value={i}>
+                        {i + 1}: {rec[parsed.fields[0]] !== '' ? rec[parsed.fields[0]] : `${t('mailRecord')} ${i + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" className="rbtn" disabled={safeIdx <= 0} onClick={() => setRecordIdx(navRecordIndex(safeIdx, records.length, 'first'))}>{t('mailFirst')}</button>
+                <button type="button" className="rbtn" disabled={safeIdx <= 0} onClick={() => setRecordIdx(navRecordIndex(safeIdx, records.length, 'prev'))}>{t('mailPrev')}</button>
+                <span className="muted" aria-live="polite">{safeIdx + 1} / {records.length}</span>
+                <button type="button" className="rbtn" disabled={safeIdx >= records.length - 1} onClick={() => setRecordIdx(navRecordIndex(safeIdx, records.length, 'next'))}>{t('mailNext')}</button>
+                <button type="button" className="rbtn" disabled={safeIdx >= records.length - 1} onClick={() => setRecordIdx(navRecordIndex(safeIdx, records.length, 'last'))}>{t('mailLast')}</button>
+              </div>
               {merged && merged.unsubstituted.length > 0 && (
                 <div className="versions-error" role="alert">
                   {t('mailUnsubstituted')}: {merged.unsubstituted.join(', ')}
