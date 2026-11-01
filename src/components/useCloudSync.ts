@@ -242,6 +242,11 @@ export function useCloudSync({ user, isPremium, docs, setDocs }: UseCloudSyncOpt
       setDocs((prev) => prev.map((d) => (d.id === docId
         ? { ...d, cloudConflict: undefined, cloudRevision: row.revision, cloudHash: serverHash, cloudSyncedAt: row.server_updated_at }
         : d)))
+      // Mirror the 'Server copy' snapshot taken above right away (the
+      // adopt branch already does this; without it the snapshot waited
+      // for the next throttled wake — observed live in the 2C 'mine'
+      // rehearsal, 2026-11-01).
+      void syncVersionsForDoc(live.client, localStorage, docId).catch(() => {})
       return true
     }
     if (plan.reinsertLocal) {

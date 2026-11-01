@@ -41,6 +41,14 @@ describe('hashing', () => {
     expect(payloadHashOf(doc({ favorite: true }))).not.toBe(payloadHashOf(d1))
     expect(payloadHashOf(doc({ deletedAt: '2026-01-03T00:00:00.000Z' }))).not.toBe(payloadHashOf(d1))
   })
+  it('payloadHashOf ignores updatedAt — a save-clock stamp, not a change (Stage 2C live regression)', () => {
+    const a = doc({ updatedAt: '2026-01-01T00:00:00.000Z' })
+    const b = doc({ updatedAt: '2026-06-01T12:34:56.000Z' })
+    expect(payloadHashOf(a)).toBe(payloadHashOf(b))
+    // …while a real change alongside the stamp still registers.
+    expect(payloadHashOf(doc({ updatedAt: '2026-06-01T12:34:56.000Z', title: 'Changed' }))).not.toBe(payloadHashOf(a))
+    expect(payloadHashOf(doc({ updatedAt: '2026-06-01T12:34:56.000Z', content: content('changed') }))).not.toBe(payloadHashOf(a))
+  })
 })
 
 describe('row mapping', () => {

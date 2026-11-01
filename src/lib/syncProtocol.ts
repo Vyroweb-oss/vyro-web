@@ -141,9 +141,17 @@ export function docToPayload(doc: VyroDoc): CloudDocPayload {
  * Hash of the FULL sync payload (content + every synced metadata field).
  * This is the dirty-check hash stored on the local doc as cloudHash at ack
  * time: any later change to content OR synced metadata changes it.
+ *
+ * updated_at is EXCLUDED: it is a local save-clock stamp (App.patchDoc
+ * bumps it on every editor onChange, including load-time normalization
+ * that changes nothing), so hashing it made "dirty" mean "touched" —
+ * same-content re-pushes after editor opens and phantom pull conflicts
+ * (observed live in the Stage 2C rehearsals, 2026-11-01). The wire
+ * payload still carries updated_at; only the hash ignores it.
  */
 export function payloadHashOf(doc: VyroDoc): string {
-  return hashCanonicalString(stableStringify(docToPayload(doc)))
+  const payload = docToPayload(doc)
+  return hashCanonicalString(stableStringify({ ...payload, updated_at: '' }))
 }
 
 /**
