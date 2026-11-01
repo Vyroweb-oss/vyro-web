@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { clampZoom, zoomStep, docLanguageLabel, documentLanguageLabel, documentDirectionLabel, estimatedPagesFromWords, activeParagraphStyle, type ParagraphStyleState } from './wordChrome'
+import { clampZoom, zoomStep, docLanguageLabel, documentLanguageLabel, documentDirectionLabel, estimatedPagesFromWords, activeParagraphStyle, countNoun, type ParagraphStyleState } from './wordChrome'
 
 describe('clampZoom', () => {
   it('keeps in-range values and clamps both ends', () => {
@@ -85,5 +85,26 @@ describe('activeParagraphStyle', () => {
   })
   it('returns null when neither a heading nor a paragraph is active', () => {
     expect(activeParagraphStyle({ ...base, isParagraph: false })).toBeNull()
+  })
+})
+
+describe('countNoun', () => {
+  it('returns the singular only at exactly 1', () => {
+    expect(countNoun(1, 'word', 'words')).toBe('word')
+    expect(countNoun(1, 'char', 'chars')).toBe('char')
+    expect(countNoun(1, 'character', 'characters')).toBe('character')
+    expect(countNoun(1, 'page', 'pages')).toBe('page')
+    expect(countNoun(1, 'paragraph', 'Paragraphs')).toBe('paragraph')
+  })
+  it('returns the plural at 0, 2 and 100', () => {
+    for (const n of [0, 2, 100]) {
+      expect(countNoun(n, 'word', 'words')).toBe('words')
+      expect(countNoun(n, 'page', 'pages')).toBe('pages')
+    }
+  })
+  it('returns the plural for negative and non-finite counts', () => {
+    expect(countNoun(-1, 'word', 'words')).toBe('words')
+    expect(countNoun(NaN, 'word', 'words')).toBe('words')
+    expect(countNoun(Infinity, 'word', 'words')).toBe('words')
   })
 })

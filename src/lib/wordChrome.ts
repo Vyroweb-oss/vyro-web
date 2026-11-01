@@ -43,6 +43,12 @@ export function estimatedPagesFromWords(words: number): number {
   return Math.max(1, Math.ceil(words / 250))
 }
 
+/** Singular/plural noun for a count: singular only at exactly 1.
+ * Non-finite and negative counts take the plural (they are never "1 item"). */
+export function countNoun(count: number, singular: string, plural: string): string {
+  return count === 1 ? singular : plural
+}
+
 export type ParagraphStyleId = 'normal' | 'heading1' | 'heading2' | 'heading3' | 'title'
 
 export interface ParagraphStyleState {

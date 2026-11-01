@@ -42,7 +42,7 @@ import { languageTagForDir } from '../lib/dir'
 import { saveDraft, loadDraft, clearDraft, detectRecovery, acceptDraft, type RecoveryInfo } from '../lib/recovery'
 import { FocusDim, createViewSnapshot, focusWidthClass, viewModeClass, type FocusWidth, type ViewMode, type ViewSnapshot } from '../lib/viewModes'
 import { SectionCollapse } from '../lib/sections'
-import { clampZoom, zoomStep, documentLanguageLabel, documentDirectionLabel, activeParagraphStyle } from '../lib/wordChrome'
+import { clampZoom, zoomStep, documentLanguageLabel, documentDirectionLabel, activeParagraphStyle, countNoun } from '../lib/wordChrome'
 import { computeDocumentStats } from '../lib/stats'
 import { EDITOR_FONTS, EDITOR_FONT_SIZES, resolveAutosaveDelay, type VyroSettings } from '../lib/settings'
 import { isTitleBarOverflowWidth } from '../lib/titleBar'
@@ -1143,7 +1143,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       {tab==='Mailings' && <Group label={t('mailMerge')}><Btn active={mailMergeOpen} onClick={()=>setMailMergeOpen(o=>!o)}>{t('mailMerge')}</Btn><span className="static-stat mailings-note">{t('mailMergeLocal')}</span></Group>}
       {tab==='Review' && <>
         <Group label={t('groupProofing')}><Btn active={spell} onClick={toggleSpell}>{t('spellcheck')} {spell? t('on'):t('off')}</Btn></Group>
-        <Group label={t('groupCount')}><span className="static-stat">{statusStats.words} {t('words')} · {statusStats.charsWithSpaces} {t('characters')} · {statusStats.paragraphs} {t('statsParagraphs')}</span><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
+        <Group label={t('groupCount')}><span className="static-stat">{statusStats.words} {countNoun(statusStats.words, t('wordSingular'), t('words'))} · {statusStats.charsWithSpaces} {countNoun(statusStats.charsWithSpaces, t('characterSingular'), t('characters'))} · {statusStats.paragraphs} {countNoun(statusStats.paragraphs, t('paragraphSingular'), t('statsParagraphs'))}</span><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
         <Group label={t('compare')}><Btn active={compareOpen} onClick={()=>setCompareOpen(o=>!o)}>{t('compare')}</Btn></Group>
         <Group label={t('intelligence')}><Btn active={intelligenceOpen} onClick={()=>setIntelligenceOpen(o=>!o)}>{t('intelligence')}</Btn></Group>
       </>}
@@ -1166,7 +1166,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     {viewMode==='edit' && findOpen && <FindReplacePanel editor={editor} lang={lang} onClose={()=>setFindOpen(false)} onBeforeReplaceAll={beforeReplaceAll} opener={findOpenerRef.current} />}
     {viewMode==='edit' && recovery && <div className="recovery-banner" role="alert">
       <div><b>{t('recoveryNotice')}</b> — {t('recoveryDiff')}</div>
-      <div className="recovery-compare" dir="auto">{t('saved')}: {recovery.savedLength} {t('chars')} · {t('versionTriggerRecovery')}: {recovery.draftLength} {t('chars')}</div>
+      <div className="recovery-compare" dir="auto">{t('saved')}: {recovery.savedLength} {countNoun(recovery.savedLength, t('charSingular'), t('chars'))} · {t('versionTriggerRecovery')}: {recovery.draftLength} {countNoun(recovery.draftLength, t('charSingular'), t('chars'))}</div>
       <div className="recovery-excerpt" dir="auto"><span>{t('saved')}: “{recovery.savedExcerpt}”</span><span>{t('versionTriggerRecovery')}: “{recovery.draftExcerpt}”</span></div>
       <div className="row"><button type="button" className="primary small" onClick={acceptRecovery}>{t('recoveryAccept')}</button><button type="button" className="rbtn" onClick={discardRecovery}>{t('recoveryDiscard')}</button></div>
     </div>}
@@ -1233,7 +1233,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
          word-based estimate remains only inside the statistics
          dialog's separate figure. */}
       <span className={saveState==='failed' ? 'status-save failed' : 'status-save'}>{saveText}</span>
-      <button type="button" className="status-stats-btn" onClick={()=>setStatsOpen(true)} aria-label={t('documentStatistics')} title={t('documentStatistics')}>{statusStats.words} {t('words')} · {statusStats.charsWithSpaces} {t('chars')} · {pageCount} {t('pagesLabel')}</button>
+      <button type="button" className="status-stats-btn" onClick={()=>setStatsOpen(true)} aria-label={t('documentStatistics')} title={t('documentStatistics')}>{statusStats.words} {countNoun(statusStats.words, t('wordSingular'), t('words'))} · {statusStats.charsWithSpaces} {countNoun(statusStats.charsWithSpaces, t('charSingular'), t('chars'))} · {pageCount} {countNoun(pageCount, t('pageSingular'), t('pagesLabel'))}</button>
       <span className="status-dir" aria-label={t('language')} title={t('language')}>{documentLanguageLabel(doc.dir)}</span>
       <span className="status-dir" aria-label={t('direction')} title={t('direction')}>{documentDirectionLabel(doc.dir)}</span>
       <div className="status-views"><button type="button" className="status-view-btn" onClick={enterFocus}>{t('focusMode')}</button><button type="button" className="status-view-btn" onClick={enterReading}>{t('readingMode')}</button></div>
