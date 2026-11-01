@@ -1143,7 +1143,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       {tab==='Mailings' && <Group label={t('mailMerge')}><Btn active={mailMergeOpen} onClick={()=>setMailMergeOpen(o=>!o)}>{t('mailMerge')}</Btn><span className="static-stat mailings-note">{t('mailMergeLocal')}</span></Group>}
       {tab==='Review' && <>
         <Group label={t('groupProofing')}><Btn active={spell} onClick={toggleSpell}>{t('spellcheck')} {spell? t('on'):t('off')}</Btn></Group>
-        <Group label={t('groupCount')}><span className="static-stat">{statusStats.words} {countNoun(statusStats.words, t('wordSingular'), t('words'))} · {statusStats.charsWithSpaces} {countNoun(statusStats.charsWithSpaces, t('characterSingular'), t('characters'))} · {statusStats.paragraphs} {countNoun(statusStats.paragraphs, t('paragraphSingular'), t('statsParagraphs'))}</span><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
+        <Group label={t('groupCount')}><span className="static-stat">{statusStats.words} {countNoun(statusStats.words, t('wordSingular'), t('words'))} · {statusStats.charsWithSpaces} {countNoun(statusStats.charsWithSpaces, t('characterSingular'), t('characters'))} · {statusStats.paragraphs} {countNoun(statusStats.paragraphs, t('paragraphSingular'), t('paragraphs'))}</span><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
         <Group label={t('compare')}><Btn active={compareOpen} onClick={()=>setCompareOpen(o=>!o)}>{t('compare')}</Btn></Group>
         <Group label={t('intelligence')}><Btn active={intelligenceOpen} onClick={()=>setIntelligenceOpen(o=>!o)}>{t('intelligence')}</Btn></Group>
       </>}

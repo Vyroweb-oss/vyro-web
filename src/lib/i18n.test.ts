@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { STRINGS, tr, resolveUiLang, loadUiLang, saveUiLang, uiDir, UI_LANG_KEY } from './i18n'
+import { countNoun } from './wordChrome'
 
 describe('i18n', () => {
   it('en and fa have identical key sets', () => {
@@ -22,4 +23,15 @@ describe('i18n', () => {
     expect(loadUiLang({ getItem: () => { throw new Error('blocked') } } as any)).toBe('en')
   })
   it('ui direction follows language', () => { expect(uiDir('fa')).toBe('rtl'); expect(uiDir('en')).toBe('ltr') })
+  it('P2-10: paragraph count noun is lowercase and distinct from the panel label', () => {
+    // Review ribbon count phrase: "1 paragraph" / "2 paragraphs", matching
+    // the lowercase "1 word" / "2 words" pattern — not the capitalized
+    // Statistics-panel label "Paragraphs".
+    expect(tr('en', 'paragraphs')).toBe('paragraphs')
+    expect(countNoun(1, tr('en', 'paragraphSingular'), tr('en', 'paragraphs'))).toBe('paragraph')
+    expect(countNoun(2, tr('en', 'paragraphSingular'), tr('en', 'paragraphs'))).toBe('paragraphs')
+    expect(tr('fa', 'paragraphs')).toBe('پاراگراف‌ها')
+    // The panel label key is untouched: StatsPanel still renders "Paragraphs".
+    expect(tr('en', 'statsParagraphs')).toBe('Paragraphs')
+  })
 })
