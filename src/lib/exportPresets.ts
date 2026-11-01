@@ -8,7 +8,7 @@ import type { I18nKey } from './i18n'
 //   a PDF only exists if the user chooses "Save as PDF" there.
 // - archive holds the full document JSON but is NOT re-importable through
 //   the app's import UI (import accepts TXT and DOCX only).
-export type ExportPresetId = 'print-ready' | 'editable-html' | 'plain-text' | 'archive'
+export type ExportPresetId = 'print-ready' | 'editable-html' | 'markdown' | 'plain-text' | 'archive'
 
 export type ExportAction = 'print' | 'html' | 'text' | 'archive'
 
@@ -23,7 +23,7 @@ export interface ExportPresetDef {
   drops: I18nKey[]
 }
 
-export const EXPORT_PRESET_IDS: ExportPresetId[] = ['print-ready', 'editable-html', 'plain-text', 'archive']
+export const EXPORT_PRESET_IDS: ExportPresetId[] = ['print-ready', 'editable-html', 'markdown', 'plain-text', 'archive']
 
 export const EXPORT_PRESETS: Record<ExportPresetId, ExportPresetDef> = {
   'print-ready': {
@@ -43,6 +43,15 @@ export const EXPORT_PRESETS: Record<ExportPresetId, ExportPresetDef> = {
     descKey: 'exportPresetEditableHtmlDesc',
     keeps: ['exportKeepText', 'exportKeepHeadings', 'exportKeepLists', 'exportKeepLinks', 'exportKeepTables', 'exportKeepImages'],
     drops: ['exportDropWordStyling'],
+  },
+  markdown: {
+    id: 'markdown',
+    ext: 'md',
+    action: 'text',
+    labelKey: 'exportPresetMarkdown',
+    descKey: 'exportPresetMarkdownDesc',
+    keeps: ['exportKeepText', 'exportKeepHeadings', 'exportKeepLists', 'exportKeepLinks', 'exportKeepTables'],
+    drops: ['exportDropWordStyling', 'exportDropLocalImages'],
   },
   'plain-text': {
     id: 'plain-text',

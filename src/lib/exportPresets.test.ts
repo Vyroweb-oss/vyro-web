@@ -58,8 +58,8 @@ describe('exportPresets buildExportFilename', () => {
 })
 
 describe('exportPresets definitions', () => {
-  it('has exactly the four specified presets', () => {
-    expect([...EXPORT_PRESET_IDS].sort()).toEqual(['archive', 'editable-html', 'plain-text', 'print-ready'])
+  it('has exactly the five specified presets', () => {
+    expect([...EXPORT_PRESET_IDS].sort()).toEqual(['archive', 'editable-html', 'markdown', 'plain-text', 'print-ready'])
     expect(Object.keys(EXPORT_PRESETS).sort()).toEqual([...EXPORT_PRESET_IDS].sort())
   })
   it('every preset has non-empty, distinct keeps and drops', () => {

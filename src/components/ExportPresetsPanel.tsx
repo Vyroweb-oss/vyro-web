@@ -5,6 +5,7 @@ import {
   buildArchivePayload, type ExportPresetId, type ExportPreview,
 } from '../lib/exportPresets'
 import { jsonToPlainText } from '../lib/docText'
+import { jsonToMarkdown } from '../lib/markdown'
 import { usePanelFocusReturn } from './useDialogFocus'
 import type { VyroDoc } from '../lib/types'
 import type { Editor } from '@tiptap/react'
@@ -39,7 +40,13 @@ export default function ExportPresetsPanel({ editor, doc, lang, onExportText, on
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  const refreshPreview = () => setPreview(buildExportPreview(editor.getJSON(), preset))
+  const refreshPreview = () => {
+    const base = buildExportPreview(editor.getJSON(), preset)
+    // The markdown preset previews Markdown, not plain text.
+    setPreview(preset === 'markdown'
+      ? { ...base, textPreview: jsonToMarkdown(editor.getJSON()).slice(0, 500) }
+      : base)
+  }
   useEffect(() => { refreshPreview() }, [preset]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const def = EXPORT_PRESETS[preset]
@@ -55,7 +62,11 @@ export default function ExportPresetsPanel({ editor, doc, lang, onExportText, on
         return
       }
       if (def.action === 'text') {
-        onExportText(filename, jsonToPlainText(editor.getJSON()), 'text/plain')
+        if (preset === 'markdown') {
+          onExportText(filename, jsonToMarkdown(editor.getJSON()), 'text/markdown')
+        } else {
+          onExportText(filename, jsonToPlainText(editor.getJSON()), 'text/plain')
+        }
       } else if (def.action === 'html') {
         onExportHtml(filename, editor.getHTML())
       } else {
