@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SYMBOL_CATEGORIES, searchSymbols, symbolsForCategory, type SymbolCategoryId } from '../lib/symbols'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import { useDialogFocus } from './useDialogFocus'
@@ -6,10 +6,18 @@ import { useDialogFocus } from './useDialogFocus'
 // Symbols panel (P2-13, Word parity Insert item). Presentation only:
 // clicking a symbol calls onInsert and the dialog STAYS OPEN so several
 // symbols can be inserted in a row; the Editor owns the actual insert.
-// Esc closes (via useDialogFocus), × closes, backdrop click closes,
-// Tab is trapped and focus returns to the opener captured by the
-// Editor before opening. The search input auto-focuses, so the hook
-// runs with autofocus off — same arrangement as the link dialog.
+// Esc closes, × closes, backdrop click closes, Tab is trapped and
+// focus returns to the opener captured by the Editor before opening.
+// The search input auto-focuses, so the hook runs with autofocus off
+// — same arrangement as the link dialog.
+// Esc needs a WINDOW listener (P2-15, IntelligencePanel pattern), not
+// just useDialogFocus's container listener: the Editor's insertSymbol
+// focuses the editor after every insert, so once a symbol has been
+// inserted the keypress lands on the editor, never on the dialog
+// container — and Esc from editor focus silently did nothing (P2-13
+// live observation). The container listener stays for Tab trapping
+// and for Esc from inside the dialog; calling onClose twice is
+// harmless (the parent just sets the same open flag false).
 const CATEGORY_LABEL: Record<SymbolCategoryId, I18nKey> = {
   punctuation: 'symbolsPunctuation',
   math: 'symbolsMath',
@@ -29,6 +37,12 @@ export default function SymbolDialog({ open, onClose, onInsert, lang, opener }: 
   const [category, setCategory] = useState<SymbolCategoryId>('punctuation')
   const [query, setQuery] = useState('')
   useDialogFocus(open, { containerRef, onClose, autofocus: false, trap: true, opener })
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
   if (!open) return null
   const searching = query.trim() !== ''
   const entries = searching ? searchSymbols(query) : symbolsForCategory(category)
