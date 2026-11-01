@@ -165,7 +165,7 @@ export function classifyPaste(html: string | null | undefined): 'plain' | 'forma
 
 export type MenuItemId =
   | 'cut' | 'copy' | 'pastePlain' | 'clearFormatting' | 'bold' | 'italic' | 'link'
-  | 'addRow' | 'addColumn' | 'deleteRow' | 'deleteColumn'
+  | 'addRow' | 'addColumn' | 'deleteRow' | 'deleteColumn' | 'mergeCells' | 'splitCell'
   | 'imageAlt' | 'alignLeft' | 'alignCenter' | 'alignRight' | 'deleteImage'
   | 'editLink' | 'removeLink' | 'openLink'
 
@@ -180,6 +180,9 @@ export interface MenuContext {
   inLink: boolean
   /** Safe href of the link under the cursor, if any (open only when set). */
   linkHref?: string | null
+  /** Tier-1 S6: merge/split availability for the current table selection,
+   *  computed by tableMenuAvailability from the live selection state. */
+  table?: { merge: boolean; split: boolean }
 }
 
 export function getContextMenuItems(ctx: MenuContext): MenuItemId[] {
@@ -188,7 +191,11 @@ export function getContextMenuItems(ctx: MenuContext): MenuItemId[] {
   // Paste-as-plain-text is always offered: it reads the clipboard on demand.
   items.push('pastePlain')
   if (ctx.hasSelection) items.push('clearFormatting', 'bold', 'italic', 'link')
-  if (ctx.inTable) items.push('addRow', 'addColumn', 'deleteRow', 'deleteColumn')
+  if (ctx.inTable) {
+    items.push('addRow', 'addColumn', 'deleteRow', 'deleteColumn')
+    if (ctx.table?.merge) items.push('mergeCells')
+    if (ctx.table?.split) items.push('splitCell')
+  }
   if (ctx.inImage) items.push('imageAlt', 'alignLeft', 'alignCenter', 'alignRight', 'deleteImage')
   if (ctx.inLink) {
     items.push('editLink', 'removeLink')
@@ -205,4 +212,59 @@ export function clampMenuPosition(
   const maxX = Math.max(margin, viewportWidth - menuWidth - margin)
   const maxY = Math.max(margin, viewportHeight - menuHeight - margin)
   return { x: Math.min(Math.max(margin, x), maxX), y: Math.min(Math.max(margin, y), maxY) }
+}
+
+// ---------------------------------------------------------------------------
+// Tier-1 S6: table merge/split availability (pure mirrors of the
+// prosemirror-tables engine rules, so the menu never offers an action the
+// engine would reject — and never hides one it would accept).
+// ---------------------------------------------------------------------------
+
+export interface SpanRect { top: number; left: number; bottom: number; right: number }
+
+/**
+ * Mirror of prosemirror-tables' cellsOverlapRectangle, on plain data:
+ * true when a cell from OUTSIDE the rect protrudes INTO it (the engine
+ * refuses to merge such a selection). A span lying fully inside the rect
+ * is fine and does not count as overlap.
+ */
+export function rectOverlapsSpans(map: number[], width: number, height: number, rect: SpanRect): boolean {
+  let indexTop = rect.top * width + rect.left
+  let indexLeft = indexTop
+  let indexBottom = (rect.bottom - 1) * width + rect.left
+  let indexRight = indexTop + (rect.right - rect.left - 1)
+  for (let i = rect.top; i < rect.bottom; i++) {
+    if ((rect.left > 0 && map[indexLeft] === map[indexLeft - 1]) ||
+        (rect.right < width && map[indexRight] === map[indexRight + 1])) return true
+    indexLeft += width
+    indexRight += width
+  }
+  for (let i = rect.left; i < rect.right; i++) {
+    if ((rect.top > 0 && map[indexTop] === map[indexTop - width]) ||
+        (rect.bottom < height && map[indexBottom] === map[indexBottom + width])) return true
+    indexTop++
+    indexBottom++
+  }
+  return false
+}
+
+export type TableSelectionState =
+  /** A cell selection spanning more than one cell; `overlaps` is the
+   *  engine's protrusion check above. */
+  | { kind: 'multi'; overlaps: boolean }
+  /** One targeted cell (caret inside it, or a one-cell selection). */
+  | { kind: 'single'; colspan: number; rowspan: number }
+
+/**
+ * The engine's own gates, restated:
+ * - mergeCells needs a multi-cell selection whose rectangle is not
+ *   overlapped by an outside span.
+ * - splitCell needs ONE targeted cell with colspan or rowspan > 1 — it
+ *   un-merges a spanned cell; it cannot split a plain 1x1 cell, and the
+ *   menu must not pretend otherwise.
+ */
+export function tableMenuAvailability(state: TableSelectionState | null | undefined): { merge: boolean; split: boolean } {
+  if (!state) return { merge: false, split: false }
+  if (state.kind === 'multi') return { merge: !state.overlaps, split: false }
+  return { merge: false, split: state.colspan > 1 || state.rowspan > 1 }
 }

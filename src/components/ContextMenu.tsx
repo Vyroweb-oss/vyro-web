@@ -8,6 +8,7 @@ const LABEL: Record<MenuItemId, I18nKey> = {
   cut: 'menuCut', copy: 'menuCopy', pastePlain: 'menuPastePlain',
   clearFormatting: 'clearFormatting', bold: 'menuBold', italic: 'menuItalic', link: 'link',
   addRow: 'addRow', addColumn: 'addColumn', deleteRow: 'menuDeleteRow', deleteColumn: 'menuDeleteColumn',
+  mergeCells: 'menuMergeCells', splitCell: 'menuSplitCell',
   imageAlt: 'menuImageAlt', alignLeft: 'alignLeft', alignCenter: 'alignCenter', alignRight: 'alignRight',
   deleteImage: 'menuDeleteImage', editLink: 'menuEditLink', removeLink: 'removeLink', openLink: 'menuOpenLink',
 }
@@ -15,7 +16,7 @@ const LABEL: Record<MenuItemId, I18nKey> = {
 /** Groups separated visually: text, table, image, link. */
 const GROUP_OF: Record<MenuItemId, number> = {
   cut: 0, copy: 0, pastePlain: 0, clearFormatting: 0, bold: 0, italic: 0, link: 0,
-  addRow: 1, addColumn: 1, deleteRow: 1, deleteColumn: 1,
+  addRow: 1, addColumn: 1, deleteRow: 1, deleteColumn: 1, mergeCells: 1, splitCell: 1,
   imageAlt: 2, alignLeft: 2, alignCenter: 2, alignRight: 2, deleteImage: 2,
   editLink: 3, removeLink: 3, openLink: 3,
 }

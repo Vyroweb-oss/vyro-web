@@ -35,7 +35,8 @@ import IntelligencePanel from './IntelligencePanel'
 import { validateImageFile, imageSizeKb, IMAGE_WIDTH_PRESETS } from '../lib/images'
 import FindReplacePanel from './FindReplacePanel'
 import ContextMenu from './ContextMenu'
-import { sanitizePastedHtml, htmlToPlainText, getContextMenuItems, type MenuItemId } from '../lib/paste'
+import { sanitizePastedHtml, htmlToPlainText, getContextMenuItems, rectOverlapsSpans, tableMenuAvailability, type MenuItemId, type TableSelectionState } from '../lib/paste'
+import { selectedRect, cellAround } from '@tiptap/pm/tables'
 import { createSnapshot, addVersion, loadVersions, saveVersions, restoreVersion, listVersions, hasSnapshotWorthyContent, type VersionSnapshot, type VersionTrigger } from '../lib/versions'
 import { languageTagForDir } from '../lib/dir'
 import { saveDraft, loadDraft, clearDraft, detectRecovery, acceptDraft, type RecoveryInfo } from '../lib/recovery'
@@ -957,11 +958,31 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       }
       if((editor.state.selection as any).node?.type.name==='image') inImage=true
       if(editor.isActive('tableCell') || editor.isActive('tableHeader')) inTable=true
+      // Tier-1 S6: probe the table selection so Merge/Split are offered
+      // exactly when the engine would accept them (see paste.ts mirrors).
+      let tableState: TableSelectionState | null = null
+      if(inTable) {
+        try {
+          const s: any = editor.state.selection
+          if(s.$anchorCell && s.$headCell) {
+            if(s.$anchorCell.pos !== s.$headCell.pos) {
+              const rect: any = selectedRect(editor.state)
+              tableState = { kind: 'multi', overlaps: rectOverlapsSpans(rect.map.map, rect.map.width, rect.map.height, rect) }
+            } else {
+              const cell = s.$anchorCell.nodeAfter
+              tableState = { kind: 'single', colspan: cell?.attrs?.colspan ?? 1, rowspan: cell?.attrs?.rowspan ?? 1 }
+            }
+          } else {
+            const cell = (cellAround(editor.state.selection.$from) as any)?.nodeAfter
+            if(cell) tableState = { kind: 'single', colspan: cell.attrs?.colspan ?? 1, rowspan: cell.attrs?.rowspan ?? 1 }
+          }
+        } catch { tableState = null }
+      }
       const sel=editor.state.selection
       const hasSelection=sel.from!==sel.to && (sel as any).node==null
       const inLink=editor.isActive('link')
       const linkHref=inLink ? (editor.getAttributes('link').href as string|null) ?? null : null
-      const items=getContextMenuItems({ hasSelection, inTable, inImage, inLink, linkHref })
+      const items=getContextMenuItems({ hasSelection, inTable, inImage, inLink, linkHref, table: tableMenuAvailability(tableState) })
       setCtxMenu({ items, x: clientX, y: clientY, linkHref })
     } catch { /* menu is best-effort; a failed probe must never break editing */ }
   }
@@ -985,6 +1006,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       case 'addColumn': chain().addColumnAfter().run(); break
       case 'deleteRow': chain().deleteRow().run(); break
       case 'deleteColumn': chain().deleteColumn().run(); break
+      case 'mergeCells': chain().mergeCells().run(); break
+      case 'splitCell': chain().splitCell().run(); break
       case 'imageAlt': setAltText((editor.getAttributes('image').alt as string)||''); setAltOpen(true); break
       case 'alignLeft': chain().setTextAlign('left').run(); break
       case 'alignCenter': chain().setTextAlign('center').run(); break
