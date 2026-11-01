@@ -26,7 +26,10 @@ export function duplicateDoc(docs: VyroDoc[], id: string): VyroDoc[] {
   const src = docs.find(d=>d.id===id); if(!src) return docs
   const now = new Date().toISOString()
   // Deep-copy content/html so the copy can never share mutable TipTap JSON with the original.
-  const copy: VyroDoc = { ...src, content: deepCopy(src.content), html: src.html, id: uid(), title: src.title+' (copy)', createdAt: now, updatedAt: now, deletedAt: undefined }
+  // Stage 2B: a duplicate is a NEW document — it must not inherit the
+  // original's cloud link (revision/hash/conflict belong to the original's
+  // server row, not to this fresh id).
+  const copy: VyroDoc = { ...src, content: deepCopy(src.content), html: src.html, id: uid(), title: src.title+' (copy)', createdAt: now, updatedAt: now, deletedAt: undefined, cloudRevision: undefined, cloudHash: undefined, cloudSyncedAt: undefined, cloudConflict: undefined }
   return [copy, ...docs]
 }
 export function deleteDoc(docs: VyroDoc[], id: string): VyroDoc[] { return docs.filter(d=>d.id!==id) }
@@ -109,6 +112,13 @@ export function sanitizeDoc(raw: any): VyroDoc | null {
     headerText: typeof raw.headerText === 'string' && raw.headerText.trim() ? raw.headerText.trim().slice(0, 200) : undefined,
     footerText: typeof raw.footerText === 'string' && raw.footerText.trim() ? raw.footerText.trim().slice(0, 200) : undefined,
     deletedAt: typeof raw.deletedAt === 'string' && raw.deletedAt ? raw.deletedAt : undefined,
+    // Stage 2B cloud bookkeeping — same drop-on-reload hazard as the
+    // pagination fields above; carry them explicitly or a synced doc
+    // would forget its server revision on every reload.
+    cloudRevision: typeof raw.cloudRevision === 'number' && Number.isFinite(raw.cloudRevision) && raw.cloudRevision >= 1 ? Math.floor(raw.cloudRevision) : undefined,
+    cloudHash: typeof raw.cloudHash === 'string' && raw.cloudHash ? raw.cloudHash : undefined,
+    cloudSyncedAt: typeof raw.cloudSyncedAt === 'string' && raw.cloudSyncedAt ? raw.cloudSyncedAt : undefined,
+    cloudConflict: typeof raw.cloudConflict === 'string' && raw.cloudConflict ? raw.cloudConflict : undefined,
   }
 }
 

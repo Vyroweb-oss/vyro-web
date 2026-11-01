@@ -14,5 +14,16 @@ export interface VyroDoc {
   footerText?: string;
   /** ISO timestamp when the doc was moved to trash; absent = not trashed. Additive/optional for backward compatibility. */
   deletedAt?: string;
+  /** Stage 2B cloud bookkeeping — present only on docs linked to the cloud
+   * (behind VITE_CLOUD_DOCS_ENABLED). Absent = never synced. */
+  /** Last server-acknowledged revision (documents.revision on the server). */
+  cloudRevision?: number;
+  /** Payload hash (see lib/syncProtocol) at the last server acknowledgement. */
+  cloudHash?: string;
+  /** ISO time of the last server acknowledgement. */
+  cloudSyncedAt?: string;
+  /** ISO time a sync conflict was recorded; the local content is never
+   * overwritten while this is set (resolution UI is Stage 2C). */
+  cloudConflict?: string;
 }
 export function uid(): string { const c=(globalThis as any).crypto; if(c?.randomUUID) return c.randomUUID(); return Math.random().toString(36).slice(2,10)+Date.now().toString(36)+Math.random().toString(36).slice(2,8) }

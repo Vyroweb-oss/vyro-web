@@ -6,3 +6,7 @@
 const url = import.meta.env.VITE_SUPABASE_URL as string|undefined
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string|undefined
 export const isSupabaseConfigured = !!(url && key)
+// Stage 2 kill switch (Stage 0/2 plan): the whole cloud-documents layer is
+// inert unless this flag is EXACTLY 'true' AND Supabase is configured.
+// Off/absent = today's Local Mode behaviour, byte for byte.
+export const isCloudDocsEnabled = (import.meta.env.VITE_CLOUD_DOCS_ENABLED as string|undefined) === 'true'

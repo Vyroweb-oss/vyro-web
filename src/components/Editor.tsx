@@ -177,7 +177,7 @@ const TABS: { id:string; key:I18nKey }[] = [
   { id:'Layout', key:'tabLayout' }, { id:'References', key:'tabReferences' }, { id:'Mailings', key:'tabMailings' }, { id:'Review', key:'tabReview' }, { id:'View', key:'tabView' },
 ]
 
-export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults, settings, onSettingsChange, onSettingsReset, isLocal, onCreateMergedDocs, onNewDoc, onOpenDoc, onMakeCopy, docsList, accountLabel }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number }; settings?: VyroSettings; onSettingsChange?: (patch: Partial<VyroSettings>)=>void; onSettingsReset?: ()=>void; isLocal?: boolean; onCreateMergedDocs?: (items:{title:string;content:any}[])=>void; onNewDoc?: ()=>void; onOpenDoc?: (id:string)=>void; onMakeCopy?: (id:string)=>void; docsList?: { id:string; title:string; updatedAt:string }[]; accountLabel?: string }){
+export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed, syncStatusText, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults, settings, onSettingsChange, onSettingsReset, isLocal, onCreateMergedDocs, onNewDoc, onOpenDoc, onMakeCopy, docsList, accountLabel }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; syncStatusText?:string; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number }; settings?: VyroSettings; onSettingsChange?: (patch: Partial<VyroSettings>)=>void; onSettingsReset?: ()=>void; isLocal?: boolean; onCreateMergedDocs?: (items:{title:string;content:any}[])=>void; onNewDoc?: ()=>void; onOpenDoc?: (id:string)=>void; onMakeCopy?: (id:string)=>void; docsList?: { id:string; title:string; updatedAt:string }[]; accountLabel?: string }){
   const t=(k:I18nKey)=>tr(lang,k)
   const [tab,setTab]=useState('Home')
   const [zoom,setZoom]=useState(100)
@@ -1251,6 +1251,12 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
          word-based estimate remains only inside the statistics
          dialog's separate figure. */}
       <span className={saveState==='failed' ? 'status-save failed' : 'status-save'}>{saveText}</span>
+      {/* Stage 2B: cloud sync status for this document — rendered only when
+          App passes a label (cloud sync active); absent = exactly the
+          pre-2B status bar. The local save text above stays authoritative
+          for local saving; this never claims a cloud save before the
+          server ack (the label comes from the sync engine's state). */}
+      {syncStatusText && <span className="status-sync">{syncStatusText}</span>}
       <button type="button" className="status-stats-btn" onClick={()=>setStatsOpen(true)} aria-label={t('documentStatistics')} title={t('documentStatistics')}>{statusStats.words} {countNoun(statusStats.words, t('wordSingular'), t('words'))} · {statusStats.charsWithSpaces} {countNoun(statusStats.charsWithSpaces, t('charSingular'), t('chars'))} · {pageCount} {countNoun(pageCount, t('pageSingular'), t('pagesLabel'))}</button>
       <span className="status-dir" aria-label={t('language')} title={t('language')}>{documentLanguageLabel(doc.dir)}</span>
       <span className="status-dir" aria-label={t('direction')} title={t('direction')}>{documentDirectionLabel(doc.dir)}</span>

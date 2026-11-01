@@ -600,6 +600,13 @@ const en = {
   exportFailed: 'Export failed.',
   exportNoPreview: 'No text to preview.',
   exportArchiveNote: 'Archive preview shows structure only; the file holds the full document JSON.',
+  // Stage 2B: per-document cloud sync status (shown only when cloud sync is active).
+  syncLocalOnly: 'Local only',
+  syncQueued: 'Sync queued',
+  syncSyncing: 'Syncing…',
+  syncSynced: 'Synced',
+  syncConflict: 'Sync conflict',
+  syncFailed: 'Sync failed — will retry',
 } as const
 
 export type I18nKey = keyof typeof en
@@ -1202,6 +1209,13 @@ const fa: Record<I18nKey, string> = {
   exportFailed: 'گرفتن خروجی ناموفق بود.',
   exportNoPreview: 'متنی برای پیش‌نمایش نیست.',
   exportArchiveNote: 'پیش‌نمایش بایگانی فقط ساختار را نشان می‌دهد؛ فایل، JSON کامل سند را دارد.',
+  // Stage 2B: per-document cloud sync status (shown only when cloud sync is active).
+  syncLocalOnly: 'محلی فقط',
+  syncQueued: 'در صف همگام‌سازی',
+  syncSyncing: 'در حال همگام‌سازی…',
+  syncSynced: 'همگام شد',
+  syncConflict: 'تعارض',
+  syncFailed: 'خطا — تلاش دوباره',
 }
 
 export const STRINGS: Record<UiLang, Record<I18nKey, string>> = { en, fa }

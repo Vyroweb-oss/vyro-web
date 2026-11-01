@@ -17,9 +17,24 @@ import { isSupabaseConfigured } from './lib/supabaseEnv'
 import { computeEntitlement } from './lib/entitlement'
 import { saveUiLang, tr, uiDir, type UiLang, type I18nKey } from './lib/i18n'
 import SettingsPanel from './components/SettingsPanel'
+import { useCloudSync } from './components/useCloudSync'
+import type { DocSyncStatus } from './lib/syncProtocol'
 import { loadSettings, saveSettings, resolveTheme, defaultSettings, uiSizeClass, newDocDir, applyNewDocDefaults, type VyroSettings } from './lib/settings'
 
 type CardEdit = { id: string; kind: 'rename' | 'folder' }
+
+// Stage 2B: per-document cloud sync status → i18n key + badge. Rendered
+// ONLY while cloud sync is active (flag on + configured + premium); with
+// the flag off nothing in the dashboard or editor changes at all.
+const SYNC_KEY: Record<DocSyncStatus, I18nKey> = { 'local-only': 'syncLocalOnly', queued: 'syncQueued', syncing: 'syncSyncing', synced: 'syncSynced', conflict: 'syncConflict', failed: 'syncFailed' }
+function syncStatusText(status: DocSyncStatus, syncedAt: string | undefined, lang: UiLang): string {
+  if (status === 'synced' && syncedAt) return `${tr(lang, 'syncSynced')} · ${new Date(syncedAt).toLocaleTimeString()}`
+  return tr(lang, SYNC_KEY[status])
+}
+function SyncBadge({ status, syncedAt, lang }: { status: DocSyncStatus | null; syncedAt?: string; lang: UiLang }) {
+  if (!status) return null
+  return <span className="bdg sync">{syncStatusText(status, syncedAt, lang)}</span>
+}
 
 // Inline rename/folder editor for a document card. Local state is initialised
 // ONCE per edit session (mount), so parent re-renders can't churn the input;
@@ -109,6 +124,9 @@ export default function App(){
   const t=(k:I18nKey)=>tr(lang,k)
   const entitlement=useMemo(()=> computeEntitlement(user, new Date()),[user])
   const isPremium = isSupabaseConfigured && !!user && entitlement.isPremium
+  // Stage 2B: cloud sync engine lifecycle (inert unless the kill-switch
+  // flag is on AND a premium user is signed in — see useCloudSync).
+  const cloud=useCloudSync({ user, isPremium, docs, setDocs })
   useEffect(()=>{ const ok=saveDocs(localStorage, docs); if(!ok && !saveErrorShown.current){ saveErrorShown.current=true; setSaveError(true) } if(ok){ saveErrorShown.current=false; setSaveError(false) } },[docs])
   useEffect(()=>{ document.documentElement.dataset.theme=theme; try{ localStorage.setItem('vyro-web-theme',theme) }catch{ /* best-effort */ } },[theme])
   useEffect(()=>{ saveUiLang(localStorage, lang); document.documentElement.lang = lang==='fa' ? 'fa' : 'en' },[lang])
@@ -163,7 +181,9 @@ export default function App(){
   const doRestore=(id:string)=>{ setDocs(prev=>restoreDoc(prev,id)); setPurgeId(null) }
   const doPurge=(id:string)=>{ setDocs(prev=>purgeDoc(prev,id)); setPurgeId(null) }
   const dir=uiDir(lang)
-  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={toggleTheme} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions} writingWidth={settings.writingWidth} toolbarMode={settings.toolbar} autosaveEnabled={settings.autosaveEnabled} autosaveIntervalMs={settings.autosaveIntervalMs} freshDefaults={freshDefaults?.id===openDoc.id? freshDefaults : undefined} settings={settings} onSettingsChange={(patch)=>setSettings(s=>({...s, ...patch}))} onSettingsReset={()=>setSettings(defaultSettings())} isLocal={!isSupabaseConfigured} onCreateMergedDocs={createMergedDocs} docsList={docs.filter(d=>!d.deletedAt).map(d=>({id:d.id,title:d.title,updatedAt:d.updatedAt}))} onOpenDoc={(id)=>setOpenId(id)} onNewDoc={()=>createFromTemplate('blank')} onMakeCopy={(id)=>{ const next=duplicateDoc(docs,id); if(next!==docs){ setDocs(next); setOpenId(next[0].id) } }} accountLabel={user?.email||undefined}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
+  const openSyncStatus=openDoc? cloud.statusFor(openDoc) : null
+  const openSyncText=openSyncStatus? syncStatusText(openSyncStatus, openDoc?.cloudSyncedAt, lang) : undefined
+  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} syncStatusText={openSyncText} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={toggleTheme} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions} writingWidth={settings.writingWidth} toolbarMode={settings.toolbar} autosaveEnabled={settings.autosaveEnabled} autosaveIntervalMs={settings.autosaveIntervalMs} freshDefaults={freshDefaults?.id===openDoc.id? freshDefaults : undefined} settings={settings} onSettingsChange={(patch)=>setSettings(s=>({...s, ...patch}))} onSettingsReset={()=>setSettings(defaultSettings())} isLocal={!isSupabaseConfigured} onCreateMergedDocs={createMergedDocs} docsList={docs.filter(d=>!d.deletedAt).map(d=>({id:d.id,title:d.title,updatedAt:d.updatedAt}))} onOpenDoc={(id)=>setOpenId(id)} onNewDoc={()=>createFromTemplate('blank')} onMakeCopy={(id)=>{ const next=duplicateDoc(docs,id); if(next!==docs){ setDocs(next); setOpenId(next[0].id) } }} accountLabel={user?.email||undefined}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
   return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}>
     <header className="appbar"><div className="appbar-inner">
       <div className="logo big"><span className="vmark">V</span><span>Vyro Web</span></div>
@@ -279,6 +299,7 @@ export default function App(){
             <div className="doc-badges">
               <span className="bdg dir">{d.dir==='rtl' ? 'RTL · دری/فارسی' : 'LTR · English'}</span>
               {d.folder && <span className="bdg" dir="auto">{d.folder}</span>}
+              {cloud.active && <SyncBadge status={cloud.statusFor(d)} syncedAt={d.cloudSyncedAt} lang={lang}/>}
             </div>
             {cardEdit && cardEdit.id===d.id && <InlineEditForm key={cardEdit.kind}
               label={cardEdit.kind==='rename'? t('rename') : t('folder')}
