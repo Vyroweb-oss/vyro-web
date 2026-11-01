@@ -237,7 +237,11 @@ export default function CloudLibraryModal({ lang, docs, cloud, onRestore, onClos
   // quietly vanished would look exactly like a success.
   const sentRows = Object.entries(rows)
     .map(([id, state]) => ({ doc: docs.find((d) => d.id === id), state }))
-    .filter((x): x is { doc: VyroDoc; state: RowState } => !!x.doc && !sendable.some((s) => s.id === x.doc.id))
+    .filter((x): x is { doc: VyroDoc; state: RowState } => {
+      if (!x.doc) return false
+      const docId = x.doc.id
+      return !sendable.some((s) => s.id === docId)
+    })
 
   const canSend = cloud.active && !!cloud.consentAt && gate === 'verified'
 
