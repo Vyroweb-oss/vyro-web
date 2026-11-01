@@ -764,3 +764,14 @@ input:focus,select:focus{border-color:var(--brand)}
 .symbol-btn{min-height:48px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:var(--r-sm);font-size:24px;line-height:1;cursor:pointer}
 .symbol-btn:hover{background:var(--brand-soft);color:var(--brand-ink);border-color:var(--brand)}
 @media print{ .symbol-modal{display:none!important} }
+
+/* Stage 2C: conflict resolution affordances. */
+.bdg-btn{cursor:pointer;font:inherit}
+.bdg-btn:hover{border-color:var(--brand);color:var(--brand-ink)}
+.status-sync-btn{background:none;border:none;padding:0;cursor:pointer;font:inherit;color:var(--brand-ink);text-decoration:underline}
+.conflict-choices{display:flex;flex-direction:column;gap:9px}
+.conflict-choice{display:flex;flex-direction:column;gap:2px;text-align:start;padding:11px 14px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface-2);color:var(--text);cursor:pointer;font:inherit}
+.conflict-choice:hover:not(:disabled){border-color:var(--brand)}
+.conflict-choice b{font-size:14.5px}
+.conflict-choice span{font-size:12.5px;color:var(--text-2)}
+.conflict-choice:disabled{opacity:.55;cursor:wait}

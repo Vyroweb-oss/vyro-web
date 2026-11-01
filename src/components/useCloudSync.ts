@@ -21,10 +21,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import type { VyroDoc } from '../lib/types'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { uid, type VyroDoc } from '../lib/types'
 import { isSupabaseConfigured, isCloudDocsEnabled } from '../lib/supabaseEnv'
-import { payloadHashOf, type DocSyncStatus, type SyncOp } from '../lib/syncProtocol'
+import { payloadHashOf, rowToDoc, type DocSyncStatus, type SyncOp } from '../lib/syncProtocol'
 import { SyncEngine, type SyncAck } from '../lib/syncEngine'
+import { fetchDocument } from '../lib/cloudDocs'
+import { planConflictResolution, type ConflictChoice } from '../lib/conflictResolve'
+import { syncVersionsForDoc } from '../lib/versionSync'
 import { loadVersions, saveVersions, createSnapshot, addVersion } from '../lib/versions'
 
 export interface CloudSyncHandle {
@@ -34,6 +38,12 @@ export interface CloudSyncHandle {
   statusFor: (doc: VyroDoc) => DocSyncStatus | null
   /** Ops still owed to the server for the current account. */
   pendingCount: number
+  /** Stage 2C: execute the user's conflict-resolution choice for a
+   * conflicted document. Resolves false when the server could not be
+   * read (the document stays conflicted and the choice can be retried);
+   * true once the resolution has been applied locally (any resulting
+   * push then flows through the normal outbox). */
+  resolveConflict: (docId: string, choice: ConflictChoice) => Promise<boolean>
 }
 
 interface UseCloudSyncOpts {
@@ -52,10 +62,30 @@ export function useCloudSync({ user, isPremium, docs, setDocs }: UseCloudSyncOpt
   docsRef.current = docs
   const prevDocsRef = useRef<VyroDoc[]>(docs)
   const activatedAtRef = useRef<string | null>(null)
+  // Stage 2C: the live engine + client pair, for imperative work the
+  // passive effects don't cover (conflict resolution, version mirroring).
+  const liveRef = useRef<{ engine: SyncEngine; client: SupabaseClient } | null>(null)
+  const versionSyncAtRef = useRef(new Map<string, number>())
+
+  // Mirror version histories of linked, non-conflicted documents
+  // (throttled per document; versions are secondary data — a failure is
+  // silent here and simply retried on a later wake).
+  const syncAllVersions = (force = false) => {
+    const live = liveRef.current
+    if (!live) return
+    const now = Date.now()
+    for (const d of docsRef.current) {
+      if (d.cloudRevision == null || d.cloudConflict) continue
+      const last = versionSyncAtRef.current.get(d.id) ?? 0
+      if (!force && now - last < 5 * 60_000) continue
+      versionSyncAtRef.current.set(d.id, now)
+      void syncVersionsForDoc(live.client, localStorage, d.id).catch(() => {})
+    }
+  }
 
   // -- engine lifecycle ------------------------------------------------------
   useEffect(() => {
-    if (!active || !accountId) { setEngine(null); activatedAtRef.current = null; return }
+    if (!active || !accountId) { setEngine(null); activatedAtRef.current = null; liveRef.current = null; return }
     activatedAtRef.current = new Date().toISOString()
     prevDocsRef.current = docsRef.current
     let cancelled = false
@@ -95,12 +125,13 @@ export function useCloudSync({ user, isPremium, docs, setDocs }: UseCloudSyncOpt
           onChange: () => setTick((t) => t + 1),
         })
         if (cancelled) { created.dispose(); return }
+        liveRef.current = { engine: created, client: supabase }
         setEngine(created)
-        void created.pull()
+        void created.pull().then(() => syncAllVersions(true))
         created.resume()
       } catch { /* chunk load failure: stay in Local Mode */ }
     })()
-    return () => { cancelled = true; created?.dispose(); setEngine(null) }
+    return () => { cancelled = true; created?.dispose(); liveRef.current = null; setEngine(null) }
     // docs/setDocs are refs/stable by construction; account + activity gate the lifecycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, accountId])
@@ -145,7 +176,7 @@ export function useCloudSync({ user, isPremium, docs, setDocs }: UseCloudSyncOpt
   // -- freshness triggers: focus / online / visibility / slow interval --------
   useEffect(() => {
     if (!engine) return
-    const wake = () => { engine.resume(); void engine.pull() }
+    const wake = () => { engine.resume(); void engine.pull(); syncAllVersions() }
     const onVisible = () => { if (document.visibilityState === 'visible') wake() }
     window.addEventListener('focus', wake)
     window.addEventListener('online', wake)
@@ -159,9 +190,77 @@ export function useCloudSync({ user, isPremium, docs, setDocs }: UseCloudSyncOpt
     }
   }, [engine])
 
+  // -- Stage 2C: conflict resolution -----------------------------------------
+  // Executes planConflictResolution for the user's chosen outcome. The
+  // local content was already snapshot-preserved when the conflict was
+  // recorded; when the server copy is about to be replaced, its content
+  // is snapshot-preserved first too. Nothing here writes to the server
+  // directly except through the normal outbox (relink/reinsert), so the
+  // revision protocol keeps governing every byte.
+  const resolveConflict = async (docId: string, choice: ConflictChoice): Promise<boolean> => {
+    const live = liveRef.current
+    const acct = accountId
+    const doc = docsRef.current.find((d) => d.id === docId)
+    if (!live || !acct || !doc || !doc.cloudConflict) return false
+    const server = await fetchDocument(live.client, docId)
+    if (!server.ok) return false
+    const row = server.value
+    const plan = planConflictResolution(choice, row)
+    if (plan.snapshotServerFirst && row) {
+      try {
+        const versions = loadVersions(localStorage)
+        const snap = createSnapshot(rowToDoc(row), 'before-risky', 'Server copy')
+        if (snap) saveVersions(localStorage, addVersion(versions, snap))
+      } catch { /* best-effort: resolution still proceeds */ }
+    }
+    const nowIso = new Date().toISOString()
+    if (plan.dropLocal) {
+      setDocs((prev) => prev.filter((d) => d.id !== docId))
+      return true
+    }
+    if (plan.adoptServer && row) {
+      const remote = rowToDoc(row)
+      const copy: VyroDoc | null = plan.keepLocalAsNewDoc
+        ? {
+            ...doc,
+            content: JSON.parse(JSON.stringify(doc.content)),
+            id: uid(),
+            title: `${doc.title} (conflict copy)`,
+            createdAt: nowIso, updatedAt: nowIso, deletedAt: undefined,
+            cloudRevision: undefined, cloudHash: undefined, cloudSyncedAt: undefined, cloudConflict: undefined,
+          }
+        : null
+      setDocs((prev) => {
+        const mapped = prev.map((d) => (d.id === docId ? remote : d))
+        return copy ? [copy, ...mapped] : mapped
+      })
+      void syncVersionsForDoc(live.client, localStorage, docId).catch(() => {})
+      return true
+    }
+    if (plan.relinkLocal && row) {
+      const serverHash = payloadHashOf(rowToDoc(row))
+      setDocs((prev) => prev.map((d) => (d.id === docId
+        ? { ...d, cloudConflict: undefined, cloudRevision: row.revision, cloudHash: serverHash, cloudSyncedAt: row.server_updated_at }
+        : d)))
+      return true
+    }
+    if (plan.reinsertLocal) {
+      setDocs((prev) => prev.map((d) => (d.id === docId
+        ? { ...d, cloudConflict: undefined, cloudRevision: undefined, cloudHash: undefined, cloudSyncedAt: undefined }
+        : d)))
+      live.engine.enqueue({
+        accountId: acct, docId, op: 'insert',
+        baseRevision: 0, payloadHash: payloadHashOf(doc), queuedAt: nowIso,
+      })
+      return true
+    }
+    return false
+  }
+
   return {
     active: !!engine,
     statusFor: (doc) => (engine ? engine.statusFor(doc) : null),
     pendingCount: engine ? engine.getPendingCount() : 0,
+    resolveConflict,
   }
 }

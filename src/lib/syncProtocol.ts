@@ -23,6 +23,7 @@
 import { stableStringify } from './recovery'
 import { sanitizeDoc } from './store'
 import type { VyroDoc } from './types'
+import { validateSnapshot, type VersionSnapshot, type VersionTrigger } from './versions'
 
 // ---------------------------------------------------------------------------
 // Content / payload hashing
@@ -418,4 +419,70 @@ export function planPullMerge(localDocs: VyroDoc[], serverMeta: CloudDocMeta[]):
     actions.push({ kind: 'conflict', docId: meta.id })
   }
   return actions
+}
+
+// ---------------------------------------------------------------------------
+// document_versions mapping (Stage 2C): local VersionSnapshot <-> cloud row.
+//
+// The cloud table is a mirror of the local snapshot shape (Stage 1 schema):
+// the same id (text PK, so a snapshot keeps its identity across devices),
+// the same 7-value trigger set (the DB CHECK enforces it), and NO owner_id
+// ever produced here — the DB default auth.uid() fills it, and the
+// composite FK ties the row to a document of the same owner.
+// ---------------------------------------------------------------------------
+
+export interface CloudVersionPayload {
+  id: string
+  doc_id: string
+  created_at: string
+  label: string | null
+  trigger: VersionTrigger
+  title: string
+  content: any
+}
+
+export interface CloudVersionRow extends CloudVersionPayload {
+  owner_id?: string
+}
+
+export function versionToPayload(snap: VersionSnapshot): CloudVersionPayload {
+  return {
+    id: snap.id,
+    doc_id: snap.docId,
+    created_at: snap.createdAt,
+    label: snap.label ?? null,
+    trigger: snap.trigger,
+    title: snap.title,
+    content: snap.content,
+  }
+}
+
+/** Rebuild a local snapshot from a cloud row. Rows pass through the same
+ * validator as locally stored snapshots, so a malformed server value is
+ * dropped exactly like a malformed local one (never throws). */
+export function rowToVersion(row: CloudVersionRow): VersionSnapshot | null {
+  return validateSnapshot({
+    id: row.id,
+    docId: row.doc_id,
+    createdAt: row.created_at,
+    label: row.label ?? undefined,
+    trigger: row.trigger,
+    title: row.title,
+    content: row.content,
+  })
+}
+
+/** Set difference for version sync: which local snapshots the server is
+ * missing (upload), and which server snapshots are missing locally
+ * (download). Pure id-set logic; the caller performs the transfers. */
+export function planVersionSync(
+  local: VersionSnapshot[],
+  remote: VersionSnapshot[],
+): { upload: VersionSnapshot[]; download: VersionSnapshot[] } {
+  const remoteIds = new Set(remote.map((v) => v.id))
+  const localIds = new Set(local.map((v) => v.id))
+  return {
+    upload: local.filter((v) => !remoteIds.has(v.id)),
+    download: remote.filter((v) => !localIds.has(v.id)),
+  }
 }

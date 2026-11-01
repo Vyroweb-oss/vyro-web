@@ -607,6 +607,18 @@ const en = {
   syncSynced: 'Synced',
   syncConflict: 'Sync conflict',
   syncFailed: 'Sync failed — will retry',
+  // Stage 2C: conflict resolution.
+  resolveConflict: 'Resolve…',
+  conflictTitle: 'Sync conflict',
+  conflictBody: 'This document changed on the server (for example, on another device) after your last sync, and this device has changes too. Your version on this device is already saved in Version History. Choose what to keep:',
+  conflictMine: 'Keep my version',
+  conflictMineDesc: 'Your text replaces the server copy. The server copy is saved to Version History first.',
+  conflictServer: 'Use the server version',
+  conflictServerDesc: 'This document becomes the server copy. Your changes stay available in Version History.',
+  conflictBoth: 'Keep both',
+  conflictBothDesc: 'The server copy stays as this document, and your version becomes a separate new document.',
+  conflictLater: 'Decide later',
+  conflictFailed: 'Could not reach the server. Check your connection, then try again.',
 } as const
 
 export type I18nKey = keyof typeof en
@@ -1216,6 +1228,18 @@ const fa: Record<I18nKey, string> = {
   syncSynced: 'همگام شد',
   syncConflict: 'تعارض',
   syncFailed: 'خطا — تلاش دوباره',
+  // Stage 2C: conflict resolution.
+  resolveConflict: 'حل تعارض…',
+  conflictTitle: 'تعارض همگام‌سازی',
+  conflictBody: 'این سند پس از آخرین همگام‌سازی، روی سرور (مثلاً از دستگاهی دیگر) تغییر کرده است و این دستگاه هم تغییراتی دارد. نسخهٔ این دستگاه از پیش در تاریخچهٔ نسخه‌ها ذخیره شده است. انتخاب کنید کدام بماند:',
+  conflictMine: 'نسخهٔ این دستگاه بماند',
+  conflictMineDesc: 'متن شما جای نسخهٔ سرور را می‌گیرد. نسخهٔ سرور اول در تاریخچهٔ نسخه‌ها ذخیره می‌شود.',
+  conflictServer: 'نسخهٔ سرور بماند',
+  conflictServerDesc: 'این سند به نسخهٔ سرور برمی‌گردد. تغییرات شما در تاریخچهٔ نسخه‌ها می‌ماند.',
+  conflictBoth: 'هر دو بماند',
+  conflictBothDesc: 'نسخهٔ سرور همین سند می‌ماند و نسخهٔ شما یک سند تازه و جدا می‌شود.',
+  conflictLater: 'بعداً تصمیم می‌گیرم',
+  conflictFailed: 'سرور پاسخ نداد. اتصال را بررسی کنید و دوباره تلاش کنید.',
 }
 
 export const STRINGS: Record<UiLang, Record<I18nKey, string>> = { en, fa }

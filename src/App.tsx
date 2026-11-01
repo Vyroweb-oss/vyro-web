@@ -18,6 +18,8 @@ import { computeEntitlement } from './lib/entitlement'
 import { saveUiLang, tr, uiDir, type UiLang, type I18nKey } from './lib/i18n'
 import SettingsPanel from './components/SettingsPanel'
 import { useCloudSync } from './components/useCloudSync'
+import ConflictResolveModal from './components/ConflictResolveModal'
+import type { ConflictChoice } from './lib/conflictResolve'
 import type { DocSyncStatus } from './lib/syncProtocol'
 import { loadSettings, saveSettings, resolveTheme, defaultSettings, uiSizeClass, newDocDir, applyNewDocDefaults, type VyroSettings } from './lib/settings'
 
@@ -31,9 +33,14 @@ function syncStatusText(status: DocSyncStatus, syncedAt: string | undefined, lan
   if (status === 'synced' && syncedAt) return `${tr(lang, 'syncSynced')} · ${new Date(syncedAt).toLocaleTimeString()}`
   return tr(lang, SYNC_KEY[status])
 }
-function SyncBadge({ status, syncedAt, lang }: { status: DocSyncStatus | null; syncedAt?: string; lang: UiLang }) {
+function SyncBadge({ status, syncedAt, lang, onResolve }: { status: DocSyncStatus | null; syncedAt?: string; lang: UiLang; onResolve?: () => void }) {
   if (!status) return null
-  return <span className="bdg sync">{syncStatusText(status, syncedAt, lang)}</span>
+  const text = syncStatusText(status, syncedAt, lang)
+  // Stage 2C: a conflict badge is the doorway to resolution.
+  if (status === 'conflict' && onResolve) {
+    return <button type="button" className="bdg sync bdg-btn" aria-label={`${text} — ${tr(lang, 'resolveConflict')}`} onClick={(e) => { e.stopPropagation(); onResolve() }}>{text}</button>
+  }
+  return <span className="bdg sync">{text}</span>
 }
 
 // Inline rename/folder editor for a document card. Local state is initialised
@@ -73,6 +80,7 @@ export default function App(){
   const [freshDefaults,setFreshDefaults]=useState<{id:string;font:string;size:number}|null>(null)
   const [user,setUser]=useState<any>(null); const [authMsg,setAuthMsg]=useState(''); const [email,setEmail]=useState(''); const [password,setPassword]=useState('')
   const [showPremium,setShowPremium]=useState(false)
+  const [conflictId,setConflictId]=useState<string|null>(null)
   const [saveError,setSaveError]=useState(false)
   const [menuId,setMenuId]=useState<string|null>(null)
   const [cardEdit,setCardEdit]=useState<CardEdit|null>(null)
@@ -183,7 +191,9 @@ export default function App(){
   const dir=uiDir(lang)
   const openSyncStatus=openDoc? cloud.statusFor(openDoc) : null
   const openSyncText=openSyncStatus? syncStatusText(openSyncStatus, openDoc?.cloudSyncedAt, lang) : undefined
-  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} syncStatusText={openSyncText} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={toggleTheme} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions} writingWidth={settings.writingWidth} toolbarMode={settings.toolbar} autosaveEnabled={settings.autosaveEnabled} autosaveIntervalMs={settings.autosaveIntervalMs} freshDefaults={freshDefaults?.id===openDoc.id? freshDefaults : undefined} settings={settings} onSettingsChange={(patch)=>setSettings(s=>({...s, ...patch}))} onSettingsReset={()=>setSettings(defaultSettings())} isLocal={!isSupabaseConfigured} onCreateMergedDocs={createMergedDocs} docsList={docs.filter(d=>!d.deletedAt).map(d=>({id:d.id,title:d.title,updatedAt:d.updatedAt}))} onOpenDoc={(id)=>setOpenId(id)} onNewDoc={()=>createFromTemplate('blank')} onMakeCopy={(id)=>{ const next=duplicateDoc(docs,id); if(next!==docs){ setDocs(next); setOpenId(next[0].id) } }} accountLabel={user?.email||undefined}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
+  const conflictDoc=conflictId? docs.find(d=>d.id===conflictId && d.cloudConflict) ?? null : null
+  const conflictModal=conflictDoc? <ConflictResolveModal doc={conflictDoc} lang={lang} onClose={()=>setConflictId(null)} onResolve={(choice: ConflictChoice)=>cloud.resolveConflict(conflictDoc.id, choice)}/> : null
+  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} syncStatusText={openSyncText} onSyncStatusClick={openDoc.cloudConflict? ()=>setConflictId(openDoc.id):undefined} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={toggleTheme} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions} writingWidth={settings.writingWidth} toolbarMode={settings.toolbar} autosaveEnabled={settings.autosaveEnabled} autosaveIntervalMs={settings.autosaveIntervalMs} freshDefaults={freshDefaults?.id===openDoc.id? freshDefaults : undefined} settings={settings} onSettingsChange={(patch)=>setSettings(s=>({...s, ...patch}))} onSettingsReset={()=>setSettings(defaultSettings())} isLocal={!isSupabaseConfigured} onCreateMergedDocs={createMergedDocs} docsList={docs.filter(d=>!d.deletedAt).map(d=>({id:d.id,title:d.title,updatedAt:d.updatedAt}))} onOpenDoc={(id)=>setOpenId(id)} onNewDoc={()=>createFromTemplate('blank')} onMakeCopy={(id)=>{ const next=duplicateDoc(docs,id); if(next!==docs){ setDocs(next); setOpenId(next[0].id) } }} accountLabel={user?.email||undefined}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{conflictModal}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
   return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}>
     <header className="appbar"><div className="appbar-inner">
       <div className="logo big"><span className="vmark">V</span><span>Vyro Web</span></div>
@@ -299,7 +309,7 @@ export default function App(){
             <div className="doc-badges">
               <span className="bdg dir">{d.dir==='rtl' ? 'RTL · دری/فارسی' : 'LTR · English'}</span>
               {d.folder && <span className="bdg" dir="auto">{d.folder}</span>}
-              {cloud.active && <SyncBadge status={cloud.statusFor(d)} syncedAt={d.cloudSyncedAt} lang={lang}/>}
+              {cloud.active && <SyncBadge status={cloud.statusFor(d)} syncedAt={d.cloudSyncedAt} lang={lang} onResolve={()=>setConflictId(d.id)}/>}
             </div>
             {cardEdit && cardEdit.id===d.id && <InlineEditForm key={cardEdit.kind}
               label={cardEdit.kind==='rename'? t('rename') : t('folder')}
@@ -323,6 +333,7 @@ export default function App(){
     {settingsOpen && <SettingsPanel settings={settings} lang={lang} onChange={(patch)=>setSettings(s=>({...s, ...patch}))} onReset={()=>setSettings(defaultSettings())} onClose={()=>setSettingsOpen(false)}/>}
     {tplModal && <div className="modal-backdrop" onClick={()=>setTplModal(false)}><form ref={tplFormRef} className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); createCustomTemplate() }}><h2>{t('customTemplate')}</h2><label className="field">{t('customTemplatePrompt')}<input autoFocus value={tplName} dir="auto" onChange={e=>setTplName(e.target.value)}/></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setTplModal(false)}>{t('cancel')}</button><button type="submit" className="primary small" disabled={!tplName.trim()}>{t('create')}</button></div></form></div>}
     {showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}
+    {conflictModal}
     {smartForm && <SmartTemplateForm tpl={smartForm} lang={lang} onClose={()=>setSmartForm(null)} onCreate={createFromSmartForm}/>}
   </div>
 }

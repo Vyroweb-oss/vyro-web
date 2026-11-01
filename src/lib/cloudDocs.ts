@@ -11,11 +11,14 @@
 //   must distinguish (0-row update, unique violation, RLS refusal) are
 //   data here, classified by syncProtocol / the engine.
 //
-// Scope note: 2B covers the `documents` table. `document_versions` access
-// (cloud version history) is Stage 2C, per the owner's sub-stage split.
+// Scope note: 2B covered the `documents` table; `document_versions`
+// access (cloud version history) arrived in Stage 2C, per the owner's
+// sub-stage split.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { rowToVersion, versionToPayload, type CloudVersionRow } from './syncProtocol'
 import type { CloudDocMeta, CloudDocPayload, CloudDocRow } from './syncProtocol'
+import type { VersionSnapshot } from './versions'
 
 export interface CloudError {
   message: string
@@ -121,6 +124,52 @@ export async function deleteDocument(client: SupabaseClient, id: string): Promis
     const { error } = await client.from('documents').delete().eq('id', id)
     if (error) return { ok: false, error: toCloudError(error) }
     return { ok: true, value: true }
+  } catch (e) {
+    return { ok: false, error: toCloudError(e) }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// document_versions (Stage 2C): the cloud mirror of the local version
+// history. Same cooperation rules as documents: owner_id is never sent,
+// results are values not exceptions, and an already-present snapshot id
+// (23505) is an idempotent success — two devices racing to mirror the
+// same snapshot is normal, not an error.
+// ---------------------------------------------------------------------------
+
+const VERSION_COLUMNS = 'id,doc_id,created_at,label,trigger,title,content'
+
+/** All cloud versions of one document, newest first (malformed rows are
+ * dropped by the protocol validator, never thrown). */
+export async function fetchVersions(
+  client: SupabaseClient,
+  docId: string,
+): Promise<CloudResult<VersionSnapshot[]>> {
+  try {
+    const { data, error } = await client
+      .from('document_versions')
+      .select(VERSION_COLUMNS)
+      .eq('doc_id', docId)
+      .order('created_at', { ascending: false })
+    if (error) return { ok: false, error: toCloudError(error) }
+    const rows = (data ?? []) as unknown as CloudVersionRow[]
+    return { ok: true, value: rows.map(rowToVersion).filter((v): v is VersionSnapshot => v !== null) }
+  } catch (e) {
+    return { ok: false, error: toCloudError(e) }
+  }
+}
+
+/** Mirror one local snapshot to the cloud. 'exists' means the snapshot id
+ * is already there — the mirror's goal state, reported as success. */
+export async function insertVersion(
+  client: SupabaseClient,
+  snap: VersionSnapshot,
+): Promise<CloudResult<'inserted' | 'exists'>> {
+  try {
+    const { error } = await client.from('document_versions').insert(versionToPayload(snap))
+    if (!error) return { ok: true, value: 'inserted' }
+    if (isUniqueViolation(error)) return { ok: true, value: 'exists' }
+    return { ok: false, error: toCloudError(error) }
   } catch (e) {
     return { ok: false, error: toCloudError(e) }
   }
