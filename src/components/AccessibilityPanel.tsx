@@ -14,6 +14,8 @@ const GROUP_ORDER: { kind: A11yIssueKind; labelKey: I18nKey }[] = [
   { kind: 'headingSkip', labelKey: 'a11yHeadingSkip' },
   { kind: 'headingEmpty', labelKey: 'a11yHeadingEmpty' },
   { kind: 'tableNoHeader', labelKey: 'a11yTableNoHeader' },
+  { kind: 'linkEmptyText', labelKey: 'a11yLinkEmptyText' },
+  { kind: 'firstHeadingNotH1', labelKey: 'a11yFirstHeadingNotH1' },
 ]
 
 function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
@@ -28,6 +30,12 @@ function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
         : `H${issue.prevLevel} → H${issue.level}`
     case 'headingEmpty':
       return `${t('a11yHeading')} ${issue.headingIndex}`
+    case 'linkEmptyText':
+      return `${t('a11yLink')} ${issue.linkIndex}`
+    case 'firstHeadingNotH1':
+      return issue.headingText
+        ? `H${issue.level}: ${issue.headingText}`
+        : `H${issue.level}`
     default:
       return ''
   }
