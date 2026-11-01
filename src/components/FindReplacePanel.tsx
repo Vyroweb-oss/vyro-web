@@ -36,6 +36,10 @@ export default function FindReplacePanel({ editor, lang, onClose, onBeforeReplac
   const [caseSensitive, setCaseSensitive] = useState(false)
   const [wholeWord, setWholeWord] = useState(false)
   const [matchIdx, setMatchIdx] = useState(0)
+  // P2-11: result of the last Replace All, shown until the query or the
+  // replacement text changes (a stale count must never sit next to a new
+  // search). Null = no Replace All has run yet (or the result was cleared).
+  const [replacedCount, setReplacedCount] = useState<number | null>(null)
   const scopeRef = useRef<{ from: number; to: number } | null>(null)
   if (scopeRef.current === null) {
     const sel = editor.state.selection
@@ -68,8 +72,14 @@ export default function FindReplacePanel({ editor, lang, onClose, onBeforeReplac
   }
   const doReplaceAll = () => {
     if (!matches.length) return
+    // P2-11: capture the count BEFORE the replacement runs — after it,
+    // matches no longer describes what was replaced (and in-scope counts
+    // are lost entirely). The M2-04 snapshot still runs before the bulk
+    // replacement, exactly as before.
+    const count = matches.length
     onBeforeReplaceAll?.()
     replaceAllMatches(editor, matches, replacement)
+    setReplacedCount(count)
     setMatchIdx(0)
   }
 
@@ -89,14 +99,14 @@ export default function FindReplacePanel({ editor, lang, onClose, onBeforeReplac
           autoFocus
           value={query}
           dir="auto"
-          onChange={(e) => { setQuery(e.target.value); setMatchIdx(0) }}
+          onChange={(e) => { setQuery(e.target.value); setMatchIdx(0); setReplacedCount(null) }}
           placeholder={t('findPlaceholder')}
           aria-label={t('findPlaceholder')}
         />
         <input
           value={replacement}
           dir="auto"
-          onChange={(e) => setReplacement(e.target.value)}
+          onChange={(e) => { setReplacement(e.target.value); setReplacedCount(null) }}
           placeholder={t('replacePlaceholder')}
           aria-label={t('replacePlaceholder')}
         />
@@ -125,6 +135,11 @@ export default function FindReplacePanel({ editor, lang, onClose, onBeforeReplac
           </span>
         )}
       </div>
+      {replacedCount !== null && (
+        <div className="find-row" role="status">
+          <span>{`${replacedCount} ${t('replacementsMade')}`}</span>
+        </div>
+      )}
       {preview !== null && (
         <div className="find-preview" role="status">
           <span className="find-preview-label">{t('replacePreview')}:</span> {preview}
