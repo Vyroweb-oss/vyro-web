@@ -603,6 +603,7 @@ input:focus,select:focus{border-color:var(--brand)}
 .versions-panel{background:var(--surface);border-bottom:1px solid var(--border);padding:10px 14px;display:flex;flex-direction:column;gap:8px}
 /* PC2 Mailings: CSV textarea reuses the panel's input treatment. */
 .mailmerge-textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical}
+.mail-warnings{margin:4px 0 0;padding-inline-start:18px}
 .mailmerge-panel select{padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text)}
 .versions-panel input{padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);min-width:160px;flex:1}
 .versions-error{background:#7f1d1d;color:#fff;border-radius:var(--r-sm);padding:8px 10px;font-size:13.5px}

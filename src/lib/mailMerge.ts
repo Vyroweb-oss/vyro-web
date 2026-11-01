@@ -5,15 +5,41 @@
 
 export const MAIL_MERGE_MAX_RECORDS = 200
 
+/**
+ * Tier-1 S4c: hard cap on CSV input size, in UTF-8 BYTES (1 MB).
+ * Rationale: the record cap is 200 rows, so a legitimate merge file is
+ * tiny — even 200 rows of 1 KB each is 200 KB. 1 MB leaves generous
+ * headroom for wide/long fields while keeping paste-and-parse fully
+ * responsive and memory-trivial; anything larger is almost certainly the
+ * wrong file. The panel enforces this on the File object BEFORE reading
+ * it, and parseCsv enforces it again at entry (the paste path), before a
+ * single row is tokenized.
+ */
+export const MAIL_MERGE_MAX_CSV_BYTES = 1_000_000
+
 export type MailMergeErrorCode =
   | 'empty'
   | 'duplicateHeader'
   | 'blankHeader'
   | 'tooManyRecords'
   | 'unterminatedQuote'
+  | 'tooLarge'
+
+/**
+ * A data row whose field count differs from the header's. `row` uses the
+ * documented convention: 1-based LOGICAL records in file order — the
+ * header is row 1, the first data row is row 2, blank lines count (they
+ * are records too, just skipped), and a quoted field containing newlines
+ * is still ONE record.
+ */
+export interface CsvRowWarning {
+  row: number
+  expected: number
+  actual: number
+}
 
 export type ParseCsvResult =
-  | { ok: true; fields: string[]; records: Record<string, string>[] }
+  | { ok: true; fields: string[]; records: Record<string, string>[]; warnings: CsvRowWarning[] }
   | { ok: false; error: MailMergeErrorCode; detail?: string }
 
 type RawField = { value: string; quoted: boolean }
@@ -23,10 +49,19 @@ type RawRow = RawField[]
  *  a header row, empty lines skipped. Header names are trimmed; a blank or
  *  duplicated header is an error. Unquoted values are trimmed (hand-typed
  *  "Name, Kabul" must not substitute " Kabul"); quoted values are kept
- *  verbatim. Rows shorter than the header are padded with ''; extra values
- *  beyond the header are ignored. */
+ *  verbatim. Rows are mapped POSITIONALLY (that mapping is unambiguous):
+ *  a short row's missing fields become '' and a long row's extra values
+ *  cannot be used — both cases are REPORTED in `warnings` with their row
+ *  numbers, never silently absorbed. Inputs over MAIL_MERGE_MAX_CSV_BYTES
+ *  are rejected before tokenizing. */
 export function parseCsv(text: string): ParseCsvResult {
+  const byteLength = new TextEncoder().encode(text).length
+  if (byteLength > MAIL_MERGE_MAX_CSV_BYTES) {
+    return { ok: false, error: 'tooLarge', detail: `${Math.round(byteLength / 1024)} KB` }
+  }
   const rows: RawRow[] = []
+  const rowNos: number[] = []
+  let recordNo = 0
   let row: RawField[] = []
   let field = ''
   let inQuotes = false
@@ -40,6 +75,8 @@ export function parseCsv(text: string): ParseCsvResult {
   const pushRow = () => {
     pushField()
     rows.push(row)
+    recordNo += 1
+    rowNos.push(recordNo)
     row = []
   }
   while (i < text.length) {
@@ -94,10 +131,13 @@ export function parseCsv(text: string): ParseCsvResult {
   // Trailing content without a final newline is still a row.
   if (field !== '' || fieldQuoted || row.length > 0) pushRow()
 
-  // Empty lines skipped: a row whose every field is blank.
-  const nonEmpty = rows.filter((r) => r.some((f) => f.value !== ''))
+  // Empty lines skipped: a row whose every field is blank. The record
+  // number travels with the row so warnings can name it exactly.
+  const nonEmpty = rows
+    .map((r, idx) => ({ fields: r, no: rowNos[idx] }))
+    .filter((r) => r.fields.some((f) => f.value !== ''))
   if (nonEmpty.length === 0) return { ok: false, error: 'empty' }
-  const headerRow = nonEmpty[0]
+  const headerRow = nonEmpty[0].fields
   const fields = headerRow.map((f) => f.value.trim())
   const seen = new Set<string>()
   for (const f of fields) {
@@ -106,17 +146,21 @@ export function parseCsv(text: string): ParseCsvResult {
     seen.add(f)
   }
   const records: Record<string, string>[] = []
+  const warnings: CsvRowWarning[] = []
   for (const r of nonEmpty.slice(1)) {
+    if (r.fields.length !== fields.length) {
+      warnings.push({ row: r.no, expected: fields.length, actual: r.fields.length })
+    }
     const rec: Record<string, string> = {}
     fields.forEach((f, idx) => {
-      rec[f] = idx < r.length ? r[idx].value : ''
+      rec[f] = idx < r.fields.length ? r.fields[idx].value : ''
     })
     records.push(rec)
   }
   if (records.length > MAIL_MERGE_MAX_RECORDS) {
     return { ok: false, error: 'tooManyRecords', detail: String(records.length) }
   }
-  return { ok: true, fields, records }
+  return { ok: true, fields, records, warnings }
 }
 
 const PLACEHOLDER_RE = /\{\{\s*([^{}]*?)\s*\}\}/g

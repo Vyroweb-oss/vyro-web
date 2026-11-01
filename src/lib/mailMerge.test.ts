@@ -7,6 +7,7 @@ import {
   clampRecordIndex,
   navRecordIndex,
   MAIL_MERGE_MAX_RECORDS,
+  MAIL_MERGE_MAX_CSV_BYTES as MAIL_MERGE_MAX_CSV_BYTES_TEST,
 } from './mailMerge'
 
 const doc = (texts: string[]) => ({
@@ -145,5 +146,75 @@ describe('Tier-1 S4b: record navigation helpers', () => {
     // a stale index (record set shrank) is clamped before navigating
     expect(navRecordIndex(9, 3, 'prev')).toBe(1)
     expect(navRecordIndex(9, 3, 'next')).toBe(2)
+  })
+})
+
+describe('Tier-1 S4c: CSV size limit', () => {
+  it('accepts input exactly at the byte limit and rejects one byte over', () => {
+    const atLimit = 'N\n' + 'x'.repeat(MAIL_MERGE_MAX_CSV_BYTES_TEST - 2)
+    expect(new TextEncoder().encode(atLimit).length).toBe(MAIL_MERGE_MAX_CSV_BYTES_TEST)
+    expect(parseCsv(atLimit).ok).toBe(true)
+    const over = atLimit + 'x'
+    const r = parseCsv(over)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toBe('tooLarge')
+  })
+  it('counts BYTES, not characters (multibyte Persian text)', () => {
+    // Each Persian letter is 2 UTF-8 bytes: ~500k chars exceed 1 MB.
+    const text = 'N\n' + 'س'.repeat(500_001)
+    expect(text.length).toBeLessThan(MAIL_MERGE_MAX_CSV_BYTES_TEST)
+    const r = parseCsv(text)
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toBe('tooLarge')
+  })
+  it('a small CSV is unaffected', () => {
+    expect(parseCsv('Name\nAhmad').ok).toBe(true)
+  })
+})
+
+describe('Tier-1 S4c: row-width warnings (row = 1-based logical record, header = row 1)', () => {
+  it('reports short and long rows with exact row numbers; records stay positional', () => {
+    const r = parseCsv('Name,City\nAhmad,Kabul\nSara\nLaila,Mazar,Extra\nOmar,Herat')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.warnings).toEqual([
+      { row: 3, expected: 2, actual: 1 },
+      { row: 4, expected: 2, actual: 3 },
+    ])
+    // positional mapping preserved: short padded, extra dropped
+    expect(r.records[1]).toEqual({ Name: 'Sara', City: '' })
+    expect(r.records[2]).toEqual({ Name: 'Laila', City: 'Mazar' })
+  })
+  it('clean files produce no warnings (incl. trailing newline and blank lines)', () => {
+    const r = parseCsv('Name,City\nAhmad,Kabul\n\nSara,Herat\n')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.warnings).toEqual([])
+  })
+  it('blank lines count toward row numbers', () => {
+    const r = parseCsv('Name,City\nAhmad,Kabul\n\nSara')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.warnings).toEqual([{ row: 4, expected: 2, actual: 1 }])
+  })
+  it('quoted commas and escaped quotes do not distort widths', () => {
+    const r = parseCsv('Name,Note\n"Ahmad, Jr","He said ""hi"""\nSara,plain')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.warnings).toEqual([])
+    expect(r.records[0].Name).toBe('Ahmad, Jr')
+  })
+  it('CRLF and LF endings both give correct widths and row numbers', () => {
+    const r = parseCsv('Name,City\r\nAhmad,Kabul\r\nSara\nLaila,Mazar')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.warnings).toEqual([{ row: 3, expected: 2, actual: 1 }])
+  })
+  it('a quoted field with an embedded newline is ONE record for numbering', () => {
+    const r = parseCsv('Name,Note\nAhmad,"line1\nline2"\nSara')
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.warnings).toEqual([{ row: 3, expected: 2, actual: 1 }])
+    expect(r.records[0].Note).toBe('line1\nline2')
   })
 })

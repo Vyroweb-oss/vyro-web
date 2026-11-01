@@ -35,3 +35,22 @@ describe('Tier-1 S4b: panel freshness + navigation wiring', () => {
     expect(panel).toContain('onChange={(e) => setRecordIdx(Number(e.target.value))}')
   })
 })
+
+describe('Tier-1 S4c: size gate + row-width warnings wiring', () => {
+  it('the file picker enforces the size cap on the File object BEFORE reading it', () => {
+    const gate = panel.indexOf('f.size > MAIL_MERGE_MAX_CSV_BYTES')
+    const read = panel.indexOf('readAsText')
+    expect(gate).toBeGreaterThan(-1)
+    expect(read).toBeGreaterThan(gate)
+  })
+  it('the tooLarge parse error is mapped to its localized message', () => {
+    expect(panel).toContain("tooLarge: 'mailCsvErrorTooLarge'")
+    expect(panel).toContain("t('mailCsvErrorTooLarge')")
+  })
+  it('row-width warnings render with row numbers and both notes', () => {
+    expect(panel).toContain('parsed.warnings.length > 0')
+    expect(panel).toContain("t('mailRowWidthWarning')")
+    expect(panel).toContain("t('mailRowShortNote')")
+    expect(panel).toContain("t('mailRowLongNote')")
+  })
+})

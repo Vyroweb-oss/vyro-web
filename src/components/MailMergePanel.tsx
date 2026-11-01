@@ -8,6 +8,7 @@ import {
   substituteDoc,
   clampRecordIndex,
   navRecordIndex,
+  MAIL_MERGE_MAX_CSV_BYTES,
   type ParseCsvResult,
 } from '../lib/mailMerge'
 
@@ -25,6 +26,8 @@ export default function MailMergePanel({ editor, doc, lang, onCreateMergedDocs, 
   const [csvText, setCsvText] = useState('')
   const [recordIdx, setRecordIdx] = useState(0)
   const [created, setCreated] = useState(0)
+  // Tier-1 S4c: an oversized FILE is rejected before it is ever read.
+  const [fileTooLargeKb, setFileTooLargeKb] = useState<number | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const parsed: ParseCsvResult | null = useMemo(
@@ -66,6 +69,7 @@ export default function MailMergePanel({ editor, doc, lang, onCreateMergedDocs, 
             blankHeader: 'mailCsvErrorBlank',
             tooManyRecords: 'mailCsvErrorTooMany',
             unterminatedQuote: 'mailCsvErrorUnterminated',
+            tooLarge: 'mailCsvErrorTooLarge',
           } as const)[parsed.error],
         ) + (parsed.detail ? `: ${parsed.detail}` : '')
       : ''
@@ -74,6 +78,15 @@ export default function MailMergePanel({ editor, doc, lang, onCreateMergedDocs, 
     const f = e.target.files?.[0]
     e.target.value = ''
     if (!f) return
+    // Tier-1 S4c: enforce the size cap on the File object BEFORE reading
+    // a single byte into memory.
+    if (f.size > MAIL_MERGE_MAX_CSV_BYTES) {
+      setFileTooLargeKb(Math.round(f.size / 1024))
+      setCsvText('')
+      setCreated(0)
+      return
+    }
+    setFileTooLargeKb(null)
     const r = new FileReader()
     r.onerror = () => setCsvText('')
     r.onload = () => {
@@ -110,13 +123,14 @@ export default function MailMergePanel({ editor, doc, lang, onCreateMergedDocs, 
           value={csvText}
           placeholder={t('mailCsvPlaceholder')}
           rows={5}
-          onChange={(e) => { setCsvText(e.target.value); setRecordIdx(0); setCreated(0) }}
+          onChange={(e) => { setCsvText(e.target.value); setRecordIdx(0); setCreated(0); setFileTooLargeKb(null) }}
         />
       </label>
       <div className="find-row">
         <button type="button" className="rbtn" onClick={() => fileRef.current?.click()}>{t('mailChooseCsv')}</button>
         <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={onPickFile} />
-        {parsed === null && <span className="muted">{t('mailNoCsv')}</span>}
+        {parsed === null && fileTooLargeKb === null && <span className="muted">{t('mailNoCsv')}</span>}
+        {fileTooLargeKb !== null && <span className="versions-error" role="alert">{t('mailCsvErrorTooLarge')}: {fileTooLargeKb} KB</span>}
         {errorText && <span className="versions-error" role="alert">{errorText}</span>}
       </div>
       {parsed && parsed.ok && (
@@ -128,6 +142,17 @@ export default function MailMergePanel({ editor, doc, lang, onCreateMergedDocs, 
           {missing.length > 0 && (
             <div className="versions-error" role="alert">
               {t('mailMissingFields')}: {missing.join(', ')}
+            </div>
+          )}
+          {parsed.warnings.length > 0 && (
+            <div className="versions-error" role="alert">
+              {t('mailRowWidthWarning')}:
+              <ul className="mail-warnings">
+                {parsed.warnings.slice(0, 10).map((w) => (
+                  <li key={w.row}>{t('mailRecord')} {w.row}: {w.actual} / {w.expected} — {w.actual < w.expected ? t('mailRowShortNote') : t('mailRowLongNote')}</li>
+                ))}
+              </ul>
+              {parsed.warnings.length > 10 && <span>+ {parsed.warnings.length - 10} {t('mailRowWidthMore')}</span>}
             </div>
           )}
           {records.length === 0 && <p className="muted">{t('mailNoRecords')}</p>}
