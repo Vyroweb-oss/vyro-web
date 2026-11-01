@@ -748,3 +748,17 @@ input:focus,select:focus{border-color:var(--brand)}
 /* Release mission: repeated header/footer text on each sheet. */
 .sheet-header{ position:absolute; top:6mm; left:0; right:0; text-align:center; font-size:10pt; color:#666; pointer-events:none; }
 .sheet-footer{ position:absolute; bottom:11mm; left:0; right:0; text-align:center; font-size:10pt; color:#666; pointer-events:none; }
+
+/* ---------- symbols panel (P2-13) ---------- */
+.symbol-modal{max-width:520px;max-height:86vh;overflow:auto}
+.symbol-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.symbol-head h2{margin:0}
+.symbol-tabs{display:flex;flex-wrap:wrap;gap:6px}
+.symbol-tab{background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:var(--r-sm);padding:7px 12px;font-size:13.5px;font-weight:600;cursor:pointer}
+.symbol-tab:hover{background:var(--brand-soft);color:var(--brand-ink)}
+.symbol-tab.active{background:var(--brand-soft);color:var(--brand-ink);border-color:var(--brand)}
+.symbol-search{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-size:14px}
+.symbol-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(48px,1fr));gap:6px}
+.symbol-btn{min-height:48px;background:var(--surface-2);color:var(--text);border:1px solid var(--border);border-radius:var(--r-sm);font-size:24px;line-height:1;cursor:pointer}
+.symbol-btn:hover{background:var(--brand-soft);color:var(--brand-ink);border-color:var(--brand)}
+@media print{ .symbol-modal{display:none!important} }

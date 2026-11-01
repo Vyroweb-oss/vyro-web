@@ -21,6 +21,7 @@ import { formatDocDate } from '../lib/date'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import NavigationPane from './NavigationPane'
 import KeyboardShortcutsDialog from './KeyboardShortcutsDialog'
+import SymbolDialog from './SymbolDialog'
 import { useDialogFocus } from './useDialogFocus'
 import { restoreFocus } from '../lib/keyboard'
 import StatsPanel from './StatsPanel'
@@ -300,6 +301,9 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   const [altOpen,setAltOpen]=useState(false)
   const [altText,setAltText]=useState('')
   const [shortcutsOpen,setShortcutsOpen]=useState(false)
+  // P2-13 Symbols panel: opener recorded before opening (link/image
+  // dialog pattern) so focus returns to the ribbon button on close.
+  const [symbolsOpen,setSymbolsOpen]=useState(false)
   // M2-15 dialog focus: the opener is captured synchronously in the open
   // handler (before any autoFocus input can steal it); the dialog refs
   // anchor the Tab trap. Find & Replace gets its own opener ref because
@@ -806,6 +810,10 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // export-failed toast instead of an unhandled rejection.
   const exportDocx=async(json:any, title:string)=>{ try{ const m=await import('../lib/docx'); await m.exportDocx(json, title) }catch(err:any){ setToast(`${t('exportFailed')}: ${err?.message||err}`) } }
   const insertDate=()=>{ editor.chain().focus().insertContent({ type:'text', text: formatDocDate(doc.dir) }).run() }
+  // P2-13: insert a symbol as plain text at the caret and KEEP the
+  // dialog open for further inserts; the dialog never closes itself.
+  const openSymbols=()=>{ dialogOpenerRef.current=document.activeElement; setSymbolsOpen(true) }
+  const insertSymbol=(s:string)=>{ editor.chain().focus().insertContent(s).run() }
   // Release mission: format painter (Word's paintbrush). Click once to
   // capture the formatting at the current selection (inline marks of its
   // first text + the block type/alignment), then select target text and
@@ -1140,7 +1148,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
         <Group label={t('cellAlign')}><Btn onClick={()=>editor.chain().focus().setTextAlign('left').run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('alignLeft')}</Btn><Btn onClick={()=>editor.chain().focus().setTextAlign('center').run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('alignCenter')}</Btn><Btn onClick={()=>editor.chain().focus().setTextAlign('right').run()} disabled={!editor.isActive('tableCell') && !editor.isActive('tableHeader')}>{t('alignRight')}</Btn></Group>
         <Group label={t('groupMedia')}><Btn onClick={()=>fileImgRef.current?.click()}>{t('imageLocal')}</Btn><Btn onClick={openImageEdit} disabled={!editor.isActive('image')}>{t('imageEdit')}</Btn></Group>
         {!compactToolbar && <Group label={t('groupLinksBreaks')}><Btn active={editor.isActive('link')} onClick={openLink}>{t('link')}</Btn><Btn active={linksOpen} onClick={()=>setLinksOpen(o=>!o)}>{t('linkManager')}</Btn><Btn onClick={()=>editor.chain().focus().setHorizontalRule().run()}>{t('horizontalLine')}</Btn><Btn onClick={()=>editor.chain().focus().insertPageBreak().run()}>{t('pageBreak')}</Btn></Group>}
-        <Group label={t('groupText')}><Btn onClick={insertDate}>{t('insertDate')}</Btn></Group>
+        <Group label={t('groupText')}><Btn onClick={insertDate}>{t('insertDate')}</Btn><Btn onClick={openSymbols}>{t('symbols')}</Btn></Group>
         <Group label={t('headerFooter')}><Btn onClick={openHfDialog}>{t('headerFooterEdit')}</Btn></Group>
       </>}
       {tab==='Layout' && <>
@@ -1254,6 +1262,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     {imgPreview && <div className="modal-backdrop" onClick={()=>setImgPreview(null)}><div className="modal" ref={imgPreviewDialogRef} onClick={e=>e.stopPropagation()}><h2>{t('imagePreview')}</h2><img src={imgPreview.src} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><p className="muted">{t('imageSizeKb')}: {imageSizeKb(imgPreview.size)}</p><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgPreview(null)}>{t('cancel')}</button><button type="button" className="primary small" onClick={insertPreviewImage}>{t('imageInsert')}</button></div></div></div>}
     {imgEditOpen && <div className="modal-backdrop" onClick={()=>setImgEditOpen(false)}><form className="modal" ref={imgEditDialogRef} onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageEdit() }}><h2>{t('imageEdit')}</h2><img src={imgSrc} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><label className="field">{t('imageWidth')}<select value={imgWidth} onChange={e=>setImgWidth(e.target.value)}>{IMAGE_WIDTH_PRESETS.map(p=><option key={p.value} value={p.value}>{p.value==='' ? t('imageWidthOriginal') : p.label}</option>)}</select></label><label className="field">{t('imageCaption')}<input value={imgCaption} dir="auto" onChange={e=>setImgCaption(e.target.value)} /></label><label className="field">{t('imageAltPrompt')}<input value={imgAlt} dir="auto" onChange={e=>setImgAlt(e.target.value)} /></label><div className="row wrap"><button type="button" className="rbtn" onClick={()=>replaceImgRef.current?.click()}>{t('imageReplace')}</button><button type="button" className="danger-btn" onClick={deleteImageEdit}>{t('delete')}</button></div><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgEditOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
     {shortcutsOpen && <KeyboardShortcutsDialog open={shortcutsOpen} onClose={()=>setShortcutsOpen(false)} lang={lang} />}
+    {symbolsOpen && <SymbolDialog open={symbolsOpen} onClose={()=>setSymbolsOpen(false)} onInsert={insertSymbol} lang={lang} opener={dialogOpenerRef.current} />}
     {settingsOpen && settingsAvailable && settings && onSettingsChange && onSettingsReset && <SettingsPanel settings={settings} lang={lang} onChange={onSettingsChange} onReset={onSettingsReset} onClose={()=>setSettingsOpen(false)} />}
     {setupDialog && <div className="modal-backdrop" onClick={()=>setSetupDialog(null)}><form className="modal" ref={setupDialogRef} onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applySetupDialog() }}><h2>{t('pageSetup')} — {setupDialog==='size' ? t('pageSize') : t('customMargins')}</h2>
       <label className="field">{t('unit')}<select value={psUnit} onChange={e=>changePsUnit(e.target.value as LengthUnit)}><option value="mm">{t('unitMm')}</option><option value="cm">{t('unitCm')}</option><option value="in">{t('unitIn')}</option></select></label>
