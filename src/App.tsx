@@ -19,6 +19,10 @@ import { saveUiLang, tr, uiDir, type UiLang, type I18nKey } from './lib/i18n'
 import SettingsPanel from './components/SettingsPanel'
 import { useCloudSync } from './components/useCloudSync'
 import ConflictResolveModal from './components/ConflictResolveModal'
+import CloudLibraryModal from './components/CloudLibraryModal'
+import { saveVersions } from './lib/versions'
+import { loadDrafts, saveDraft, clearDraft } from './lib/recovery'
+import type { RestoredLibrary } from './lib/libraryBackup'
 import type { ConflictChoice } from './lib/conflictResolve'
 import type { DocSyncStatus } from './lib/syncProtocol'
 import { loadSettings, saveSettings, resolveTheme, defaultSettings, uiSizeClass, newDocDir, applyNewDocDefaults, type VyroSettings } from './lib/settings'
@@ -80,6 +84,7 @@ export default function App(){
   const [freshDefaults,setFreshDefaults]=useState<{id:string;font:string;size:number}|null>(null)
   const [user,setUser]=useState<any>(null); const [authMsg,setAuthMsg]=useState(''); const [email,setEmail]=useState(''); const [password,setPassword]=useState('')
   const [showPremium,setShowPremium]=useState(false)
+  const [showCloudLib,setShowCloudLib]=useState(false)
   const [conflictId,setConflictId]=useState<string|null>(null)
   const [saveError,setSaveError]=useState(false)
   const [menuId,setMenuId]=useState<string|null>(null)
@@ -188,6 +193,11 @@ export default function App(){
   const doTrash=(id:string)=>{ setDocs(prev=>trashDoc(prev,id)); setDeleteId(null) }
   const doRestore=(id:string)=>{ setDocs(prev=>restoreDoc(prev,id)); setPurgeId(null) }
   const doPurge=(id:string)=>{ setDocs(prev=>purgeDoc(prev,id)); setPurgeId(null) }
+  // Stage 2D: apply a restored library backup. Documents flow through the
+  // normal docs state (persisted by the saveDocs effect); versions and
+  // drafts are replaced in their own stores. Restored documents carry no
+  // cloud fields — nothing is re-linked automatically.
+  const applyLibraryRestore=(restored:RestoredLibrary)=>{ saveVersions(localStorage, restored.versions); const current=loadDrafts(localStorage); for(const id of Object.keys(current)) clearDraft(localStorage, id); for(const d of Object.values(restored.drafts)) saveDraft(localStorage, d); setDocs(restored.documents) }
   const dir=uiDir(lang)
   const openSyncStatus=openDoc? cloud.statusFor(openDoc) : null
   const openSyncText=openSyncStatus? syncStatusText(openSyncStatus, openDoc?.cloudSyncedAt, lang) : undefined
@@ -206,6 +216,7 @@ export default function App(){
         {!isSupabaseConfigured && <span className="local-chip">{t('localSaving')}</span>}
         <button className="rbtn" onClick={openPalette} title="Ctrl+K" aria-label={t('commandPalette')}>⌘K</button>
         <button className="rbtn" onClick={()=>setShortcutsOpen(true)} aria-label={t('keyboardShortcuts')} title={t('keyboardShortcuts')}>⌨</button>
+        <button className="rbtn" onClick={()=>setShowCloudLib(true)} aria-label={t('cloudLibrary')} title={t('cloudLibrary')}>☁</button>
         <div className="lang-toggle" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>setLang('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>setLang('fa')}>فارسی</button></div>
         <button className="rbtn" onClick={()=>setSettingsOpen(true)} aria-label={t('settings')} title={t('settings')}>⚙</button>
         <button className="rbtn" onClick={toggleTheme} aria-label={theme==='dark'? t('lightUi'):t('darkUi')}>{theme==='dark'?'☀':'☾'}</button>
@@ -333,6 +344,7 @@ export default function App(){
     {settingsOpen && <SettingsPanel settings={settings} lang={lang} onChange={(patch)=>setSettings(s=>({...s, ...patch}))} onReset={()=>setSettings(defaultSettings())} onClose={()=>setSettingsOpen(false)}/>}
     {tplModal && <div className="modal-backdrop" onClick={()=>setTplModal(false)}><form ref={tplFormRef} className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); createCustomTemplate() }}><h2>{t('customTemplate')}</h2><label className="field">{t('customTemplatePrompt')}<input autoFocus value={tplName} dir="auto" onChange={e=>setTplName(e.target.value)}/></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setTplModal(false)}>{t('cancel')}</button><button type="submit" className="primary small" disabled={!tplName.trim()}>{t('create')}</button></div></form></div>}
     {showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}
+    {showCloudLib && <CloudLibraryModal lang={lang} docs={docs} cloud={cloud} onRestore={applyLibraryRestore} onClose={()=>setShowCloudLib(false)}/>}
     {conflictModal}
     {smartForm && <SmartTemplateForm tpl={smartForm} lang={lang} onClose={()=>setSmartForm(null)} onCreate={createFromSmartForm}/>}
   </div>

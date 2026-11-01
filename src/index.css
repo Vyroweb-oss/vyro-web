@@ -775,3 +775,15 @@ input:focus,select:focus{border-color:var(--brand)}
 .conflict-choice b{font-size:14.5px}
 .conflict-choice span{font-size:12.5px;color:var(--text-2)}
 .conflict-choice:disabled{opacity:.55;cursor:wait}
+/* Stage 2D: library backup & cloud transfer dialog */
+.cloud-lib{max-width:640px;width:calc(100vw - 32px);max-height:calc(100vh - 48px);overflow:auto}
+.cloud-lib-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cloud-lib-head h2{margin:0}
+.cloud-lib-confirm{border:1px solid var(--border);border-radius:var(--r-lg);padding:12px 14px;margin-top:10px;background:var(--surface-2)}
+.cloud-lib-list{list-style:none;margin:8px 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.cloud-lib-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--border);border-radius:var(--r-lg);padding:8px 12px}
+.cloud-lib-row label{display:flex;align-items:center;gap:8px;cursor:pointer;min-width:0}
+.cloud-lib-row label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cloud-lib-status{font-size:12.5px;color:var(--text-2);display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.cloud-lib-status.st-verified{color:var(--ok,#2e7d32)}
+.cloud-lib-status.st-failed,.cloud-lib-status.st-mismatch,.cloud-lib-status.st-missing{color:var(--danger,#c62828)}

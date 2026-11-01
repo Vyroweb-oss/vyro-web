@@ -26,8 +26,10 @@ import { uid, type VyroDoc } from '../lib/types'
 import { isSupabaseConfigured, isCloudDocsEnabled } from '../lib/supabaseEnv'
 import { payloadHashOf, rowToDoc, type DocSyncStatus, type SyncOp } from '../lib/syncProtocol'
 import { SyncEngine, type SyncAck } from '../lib/syncEngine'
-import { fetchDocument } from '../lib/cloudDocs'
+import { fetchDocument, fetchDocumentList } from '../lib/cloudDocs'
 import { planConflictResolution, type ConflictChoice } from '../lib/conflictResolve'
+import { loadConsent, recordConsent as persistConsent } from '../lib/cloudConsent'
+import { planSendToCloud, classifyLinkVerification, type SendPlan, type LinkVerification } from '../lib/cloudSend'
 import { syncVersionsForDoc } from '../lib/versionSync'
 import { loadVersions, saveVersions, createSnapshot, addVersion } from '../lib/versions'
 
@@ -44,6 +46,22 @@ export interface CloudSyncHandle {
    * true once the resolution has been applied locally (any resulting
    * push then flows through the normal outbox). */
   resolveConflict: (docId: string, choice: ConflictChoice) => Promise<boolean>
+  /** Stage 2D: first-upload consent timestamp for the current account
+   * (null = never given; uploads stay blocked until it exists). */
+  consentAt: string | null
+  /** Stage 2D: record the account's first-upload consent. */
+  recordConsent: () => boolean
+  /** Stage 2D: the ONLY way a document is sent to the cloud — one
+   * explicit call for one document, guarded by planSendToCloud. Returns
+   * the plan so the UI can show exactly why a send was blocked. */
+  sendToCloud: (docId: string) => SendPlan
+  /** Stage 2D: read the server's meta row back and compare its stored
+   * content_hash with the local payload hash. 'unavailable' = the read
+   * itself failed (nothing is claimed either way). */
+  verifyCloudLink: (docId: string) => Promise<LinkVerification | 'unavailable'>
+  /** True while the queue is paused because the server refused a write
+   * for a lapsed Premium (documents stay local and editable). */
+  pausedPremium: boolean
 }
 
 interface UseCloudSyncOpts {
@@ -257,10 +275,57 @@ export function useCloudSync({ user, isPremium, docs, setDocs }: UseCloudSyncOpt
     return false
   }
 
+  // -- Stage 2D: consent + per-document send + link verification -------------
+  const [consentAt, setConsentAt] = useState<string | null>(null)
+  useEffect(() => {
+    setConsentAt(accountId ? loadConsent(localStorage, accountId) : null)
+  }, [accountId])
+
+  const recordConsent = (): boolean => {
+    if (!accountId) return false
+    if (!persistConsent(localStorage, accountId)) return false
+    setConsentAt(loadConsent(localStorage, accountId))
+    return true
+  }
+
+  const sendToCloud = (docId: string): SendPlan => {
+    const live = liveRef.current
+    const doc = docsRef.current.find((d) => d.id === docId)
+    if (!live || !doc || !accountId) return { action: 'blocked', reason: 'inactive' }
+    const plan = planSendToCloud(doc, {
+      engineActive: true,
+      // Storage is the source of truth (state may lag a just-taken consent).
+      consentAt: loadConsent(localStorage, accountId),
+      accountId,
+      queue: live.engine.getQueue(),
+      nowIso: new Date().toISOString(),
+    })
+    if (plan.action === 'enqueue') {
+      live.engine.enqueue(plan.op)
+      live.engine.resume()
+    }
+    return plan
+  }
+
+  const verifyCloudLink = async (docId: string): Promise<LinkVerification | 'unavailable'> => {
+    const live = liveRef.current
+    const doc = docsRef.current.find((d) => d.id === docId)
+    if (!live || !doc) return 'unavailable'
+    const res = await fetchDocumentList(live.client)
+    if (!res.ok) return 'unavailable'
+    const meta = res.value.find((m) => m.id === docId)
+    return classifyLinkVerification(meta?.content_hash, payloadHashOf(doc))
+  }
+
   return {
     active: !!engine,
     statusFor: (doc) => (engine ? engine.statusFor(doc) : null),
     pendingCount: engine ? engine.getPendingCount() : 0,
     resolveConflict,
+    consentAt,
+    recordConsent,
+    sendToCloud,
+    verifyCloudLink,
+    pausedPremium: engine ? engine.isPausedPremium() : false,
   }
 }
