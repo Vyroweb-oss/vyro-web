@@ -49,6 +49,8 @@ import { isTitleBarOverflowWidth } from '../lib/titleBar'
 import { resolveTitleCommit } from '../lib/titleEdit'
 import SettingsPanel from './SettingsPanel'
 import { HorizontalRuler, VerticalRuler, RULER_SIZE } from './Rulers'
+import { extractLiveHeadings, type LiveHeading } from '../lib/headings'
+import { jumpToPosition } from '../lib/findReplace'
 
 export interface EditorPaletteActions {
   insertTable: () => void
@@ -60,6 +62,12 @@ export interface EditorPaletteActions {
   zoomReset: () => void
   pastePlainText: () => void
   openNavigation: () => void
+  // P2-12: live heading source for the palette's go-to-heading commands.
+  // listHeadings reads the editor's current doc at call time (no snapshot
+  // is kept), and jumpToHeading only moves the cursor + scrolls — it
+  // never mutates document content.
+  listHeadings: () => LiveHeading[]
+  jumpToHeading: (contentPos: number) => void
 }
 
 const PageBreak = Node.create({
@@ -700,6 +708,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       zoomReset: ()=>setZoom(100),
       pastePlainText: ()=>{ void pastePlainText() },
       openNavigation: ()=>{ if(viewModeRef.current!=='edit') exitMode(); setNavOpen(true) },
+      listHeadings: ()=> editor ? extractLiveHeadings(editor.state.doc) : [],
+      jumpToHeading: (pos)=>{ if(viewModeRef.current!=='edit') exitMode(); if(editor) jumpToPosition(editor, pos) },
     })
     return ()=>onEditorActions(null)
     // doc.title/dir are deps on purpose: export filenames and the inserted

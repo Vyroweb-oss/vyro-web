@@ -143,7 +143,11 @@ export default function App(){
     ...(editorActions||{}),
   // `docs` is a dep on purpose: createFromTemplate closes over it, and a
   // stale copy would overwrite documents created after the palette's last build.
-  }),[theme, lang, editorActions, docs, settings])
+  // P2-12: `paletteOpen` is a dep on purpose too — rebuilding when the
+  // palette opens re-reads the live heading list, so headings added or
+  // renamed since the last build are listed. While the palette is open the
+  // document cannot change (modal backdrop), so jump positions stay valid.
+  }),[theme, lang, editorActions, docs, settings, paletteOpen])
   const openCustomTemplate=()=>{ if(!isPremium){ setShowPremium(true); return } setTplName(''); setTplModal(true) }
   const createCustomTemplate=()=>{ const name=tplName.trim(); if(!name) return; const content=applyNewDocDefaults({type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Custom template — edit and reuse.'}]}]}, settings); const {docs:nd,doc}=createDoc(docs,{title:name, content, dir: settings.defaultDir}); setDocs(nd); setTplModal(false); setOpenId(doc.id); setFreshDefaults({id:doc.id, font:settings.defaultFont, size:settings.defaultFontSize}) }
   const patchDoc=(id:string, patch:Partial<VyroDoc>, content?:any)=>{ setDocs(prev=>prev.map(d=> d.id===id? {...d, ...patch, ...(content?{content}:{}), updatedAt:new Date().toISOString()}:d)) }

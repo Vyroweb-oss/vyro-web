@@ -10,6 +10,7 @@
 // order inside the title (subsequence fuzzy match).
 import { tr, type UiLang, type I18nKey } from './i18n'
 import { templateName, type Template } from './templates'
+import type { LiveHeading } from './headings'
 
 export const RECENT_COMMANDS_KEY = 'vyro-web-recent-commands'
 export const MAX_RECENT_COMMANDS = 5
@@ -41,6 +42,29 @@ export interface CommandActions {
   zoomReset?: () => void
   pastePlainText?: () => void
   openNavigation?: () => void
+  /** P2-12: live heading source, fed by the editor (same editor-only pattern).
+   *  Called at registry-build time so the list reflects the current document;
+   *  App rebuilds the registry when the palette opens. Absent = no document. */
+  listHeadings?: () => LiveHeading[]
+  jumpToHeading?: (contentPos: number) => void
+}
+
+/**
+ * P2-12: one palette command per heading, in document order. The title
+ * carries the level and the heading text so a query matches either the
+ * "Go to heading" prefix (EN/FA) or the heading's own text; an empty
+ * heading is shown honestly with the shared "(empty)" label, never
+ * invented text. The run only jumps (cursor + scroll) — it never edits.
+ * An empty list yields no commands: a document with no headings simply
+ * has no go-to-heading entries (the Navigation-pane opener, when present,
+ * still shows its own empty state).
+ */
+export function buildHeadingCommands(headings: LiveHeading[], jump: (contentPos: number) => void): PaletteCommand[] {
+  return headings.map((h, i) => ({
+    id: `go-to-heading:${i}`,
+    title: (lang) => `${tr(lang, 'goToHeadingItem')} H${h.level} · ${h.empty ? tr(lang, 'navigationEmptyHeading') : h.text}`,
+    run: () => jump(h.contentPos),
+  }))
 }
 
 const titleKey = (key: I18nKey): ((lang: UiLang) => string) => (lang) => tr(lang, key)
@@ -76,6 +100,10 @@ export function buildCommands(a: CommandActions): PaletteCommand[] {
   if (a.zoomReset) cmds.push({ id: 'zoom-reset', title: titleKey('zoomReset'), run: a.zoomReset })
   if (a.pastePlainText) cmds.push({ id: 'paste-plain-text', title: titleKey('menuPastePlain'), run: a.pastePlainText })
   if (a.openNavigation) cmds.push({ id: 'go-to-heading', title: titleKey('goToHeading'), run: a.openNavigation })
+  // P2-12: per-heading jump commands, only when the open document really
+  // has headings. Kept distinct from the pane opener above (different id
+  // and title), so the old "open the Navigation pane" command is unchanged.
+  if (a.listHeadings && a.jumpToHeading) cmds.push(...buildHeadingCommands(a.listHeadings(), a.jumpToHeading))
   return cmds
 }
 
