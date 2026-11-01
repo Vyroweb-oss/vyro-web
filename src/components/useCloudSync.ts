@@ -29,7 +29,7 @@ import { SyncEngine, type SyncAck } from '../lib/syncEngine'
 import { fetchDocument, fetchDocumentList } from '../lib/cloudDocs'
 import { planConflictResolution, type ConflictChoice } from '../lib/conflictResolve'
 import { loadConsent, recordConsent as persistConsent } from '../lib/cloudConsent'
-import { planSendToCloud, classifyLinkVerification, type SendPlan, type LinkVerification } from '../lib/cloudSend'
+import { planSendToCloud, verifyLinkHash, type SendPlan, type LinkVerification } from '../lib/cloudSend'
 import { syncVersionsForDoc } from '../lib/versionSync'
 import { loadVersions, saveVersions, createSnapshot, addVersion } from '../lib/versions'
 
@@ -314,7 +314,7 @@ export function useCloudSync({ user, isPremium, docs, setDocs }: UseCloudSyncOpt
     const res = await fetchDocumentList(live.client)
     if (!res.ok) return 'unavailable'
     const meta = res.value.find((m) => m.id === docId)
-    return classifyLinkVerification(meta?.content_hash, payloadHashOf(doc))
+    return verifyLinkHash(meta?.content_hash, doc)
   }
 
   return {

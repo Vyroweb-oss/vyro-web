@@ -13,7 +13,7 @@
 // for a free or expired account.
 
 import type { VyroDoc } from './types'
-import { payloadHashOf, pendingOpsFor, type SyncOp } from './syncProtocol'
+import { contentHashOf, payloadHashOf, pendingOpsFor, type SyncOp } from './syncProtocol'
 
 export type SendBlockReason =
   | 'inactive'
@@ -62,16 +62,28 @@ export function planSendToCloud(doc: VyroDoc, ctx: SendContext): SendPlan {
 // ---------------------------------------------------------------------------
 // Link verification: after the engine's insert is acknowledged, the modal
 // reads the server's meta row back and compares its stored content_hash
-// with the local document's payload hash. Only an exact match is
-// "verified"; anything else is surfaced, never smoothed over.
+// with the local document's CONTENT hash. The column holds contentHashOf
+// (the pairing the sync engine itself uses for insert-adopt); comparing
+// it against the full-payload hash payloadHashOf can never match and
+// produced a false "mismatch" for perfectly synced documents in the
+// first live 2D rehearsal. Only an exact match is "verified"; anything
+// else is surfaced, never smoothed over.
 // ---------------------------------------------------------------------------
 
 export type LinkVerification = 'verified' | 'mismatch' | 'missing'
 
 export function classifyLinkVerification(
   serverContentHash: string | null | undefined,
-  localPayloadHash: string,
+  localContentHash: string,
 ): LinkVerification {
   if (serverContentHash == null) return 'missing'
-  return serverContentHash === localPayloadHash ? 'verified' : 'mismatch'
+  return serverContentHash === localContentHash ? 'verified' : 'mismatch'
+}
+
+/** Verify a freshly linked document against its server row's hash. */
+export function verifyLinkHash(
+  serverContentHash: string | null | undefined,
+  doc: VyroDoc,
+): LinkVerification {
+  return classifyLinkVerification(serverContentHash, contentHashOf(doc.content))
 }

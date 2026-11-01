@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { planSendToCloud, classifyLinkVerification, type SendContext } from './cloudSend'
-import { payloadHashOf, type SyncOp } from './syncProtocol'
+import { planSendToCloud, classifyLinkVerification, verifyLinkHash, type SendContext } from './cloudSend'
+import { contentHashOf, payloadHashOf, type SyncOp } from './syncProtocol'
 import { sanitizeDoc } from './store'
 import type { VyroDoc } from './types'
 
@@ -108,5 +108,33 @@ describe('classifyLinkVerification — hash read-back after a send', () => {
   it('no server row is missing', () => {
     expect(classifyLinkVerification(null, 'abc123')).toBe('missing')
     expect(classifyLinkVerification(undefined, 'abc123')).toBe('missing')
+  })
+})
+
+describe('verifyLinkHash — the column holds the CONTENT hash (engine pairing)', () => {
+  it('verifies when the server stored this document’s content hash', () => {
+    const doc = mkDoc()
+    expect(verifyLinkHash(contentHashOf(doc.content), doc)).toBe('verified')
+  })
+
+  it('the full-payload hash is NOT what the column holds (false-alarm pairing, live 2D rehearsal)', () => {
+    const doc = mkDoc()
+    // payloadHashOf(doc) differs from contentHashOf(doc.content) for every
+    // real document; comparing the column against it reported synced
+    // documents as mismatched. Pin the semantics so it cannot regress.
+    expect(payloadHashOf(doc)).not.toBe(contentHashOf(doc.content))
+    expect(verifyLinkHash(payloadHashOf(doc), doc)).toBe('mismatch')
+  })
+
+  it('a genuinely different server content is a real mismatch', () => {
+    const doc = mkDoc()
+    const other = mkDoc({
+      content: { type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Changed' }] }] },
+    })
+    expect(verifyLinkHash(contentHashOf(other.content), doc)).toBe('mismatch')
+  })
+
+  it('no server row is missing', () => {
+    expect(verifyLinkHash(null, mkDoc())).toBe('missing')
   })
 })
