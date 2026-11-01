@@ -111,7 +111,9 @@ const TocBlock = Node.create({
     const items = (node.attrs.items || []) as { level: number; text: string }[]
     return ['div', { 'data-toc-block': '', class: 'toc-block' },
       ['p', { class: 'toc-block-title' }, String(node.attrs.title || 'Contents')],
-      ...items.map((i) => ['p', { class: 'toc-block-item', style: `margin-left:${(Math.max(1, i.level) - 1) * 18}px` }, i.text || ''])]
+      // Tier-1 S5: logical inline-start indent (was physical margin-left,
+      // which indented from the wrong side in RTL documents).
+      ...items.map((i) => { const lvl = Number.isFinite(i.level) ? Math.min(6, Math.max(1, i.level)) : 1; return ['p', { class: 'toc-block-item', style: `margin-inline-start:${(lvl - 1) * 18}px` }, i.text || ''] })]
   },
   addCommands() {
     return {
