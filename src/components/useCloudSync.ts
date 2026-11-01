@@ -12,11 +12,11 @@
 // - A doc that already carries a cloudRevision is linked: its changes
 //   enqueue revision-predicated updates; its disappearance enqueues a
 //   hard delete.
-// - A doc CREATED after the engine activated in this session is linked
-//   automatically (new work under an active cloud autosaves to it).
-// - A pre-existing local doc is NEVER bulk-uploaded from here: linking a
-//   library that predates activation is the opt-in migration of Stage 2D
-//   (consent + backup + hash-verified read-back).
+// - An unlinked doc is NEVER uploaded from here — not even one created
+//   while signed in (owner's per-document rule, 2026-11-01: the cloud
+//   holds ONLY the documents the user explicitly chooses to put there).
+//   Sending a doc to the cloud is an explicit per-document action
+//   (Stage 2D: consent + backup + hash-verified read-back).
 // - A conflicted doc is left entirely alone until Stage 2C resolves it.
 
 import { useEffect, useRef, useState } from 'react'
@@ -61,7 +61,6 @@ export function useCloudSync({ user, isPremium, docs, setDocs }: UseCloudSyncOpt
   const docsRef = useRef(docs)
   docsRef.current = docs
   const prevDocsRef = useRef<VyroDoc[]>(docs)
-  const activatedAtRef = useRef<string | null>(null)
   // Stage 2C: the live engine + client pair, for imperative work the
   // passive effects don't cover (conflict resolution, version mirroring).
   const liveRef = useRef<{ engine: SyncEngine; client: SupabaseClient } | null>(null)
@@ -85,8 +84,7 @@ export function useCloudSync({ user, isPremium, docs, setDocs }: UseCloudSyncOpt
 
   // -- engine lifecycle ------------------------------------------------------
   useEffect(() => {
-    if (!active || !accountId) { setEngine(null); activatedAtRef.current = null; liveRef.current = null; return }
-    activatedAtRef.current = new Date().toISOString()
+    if (!active || !accountId) { setEngine(null); liveRef.current = null; return }
     prevDocsRef.current = docsRef.current
     let cancelled = false
     let created: SyncEngine | null = null
@@ -142,7 +140,6 @@ export function useCloudSync({ user, isPremium, docs, setDocs }: UseCloudSyncOpt
     prevDocsRef.current = docs
     if (!engine || !accountId) return
     const nowIso = new Date().toISOString()
-    const activatedAt = activatedAtRef.current
     const currentIds = new Set(docs.map((d) => d.id))
     // Disappeared docs that were cloud-linked owe the server a hard delete.
     for (const old of prev) {
@@ -164,12 +161,10 @@ export function useCloudSync({ user, isPremium, docs, setDocs }: UseCloudSyncOpt
             baseRevision: doc.cloudRevision, payloadHash: hash, queuedAt: nowIso,
           })
         }
-      } else if (activatedAt && doc.createdAt >= activatedAt) {
-        engine.enqueue({
-          accountId, docId: doc.id, op: 'insert',
-          baseRevision: 0, payloadHash: payloadHashOf(doc), queuedAt: nowIso,
-        })
       }
+      // Unlinked docs fall through with NO op: per-document opt-in only
+      // (owner's rule, 2026-11-01) — this effect never uploads a document
+      // the user did not explicitly choose to send to the cloud.
     }
   }, [docs, engine, accountId])
 
