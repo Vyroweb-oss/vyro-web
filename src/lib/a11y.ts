@@ -2,10 +2,10 @@
 // extended in Phase 2, P2-16, with two further JSON-derivable rules, and
 // in Phase 2, P2-18, with two more, and in Phase 2, P2-21, with two more,
 // and in Phase 2, P2-22, with two more, and in Phase 2, P2-23, with two
-// more).
+// more, and in Phase 2, P2-24, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
-// document, never touches storage, network, or the editor. Exactly fourteen
+// document, never touches storage, network, or the editor. Exactly sixteen
 // local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
@@ -58,6 +58,22 @@
 //       trimmed text is non-empty or it is/contains an image node, and
 //       empty paragraphs neither count nor stop the scan; reaching the
 //       end of the document without content flags the heading).
+//   (15) tables containing at least one merged cell (tableMergedCells —
+//       a tableCell or tableHeader anywhere in its rows whose
+//       attrs.colspan > 1 or attrs.rowspan > 1, numeric only; one issue
+//       per table, never per cell; missing attrs, a span of 1, or a
+//       non-numeric span value never flags; this branch does not
+//       suppress tableNoHeader, and tableNoHeader does not suppress it,
+//       so a merged-cell table with no header row fires both),
+//   (16) links whose visible text repeats an earlier link's text but
+//       points to a different destination (linkSameTextDifferentTarget
+//       — per link RUN, as defined below; runs are grouped by the same
+//       normalisation as (7), and a run is flagged only when its href
+//       is new for that normalised text while an earlier run with the
+//       same text already exists, so [A, A, B] flags only B and
+//       [A, B, A] flags only B; empty runs are NOT flagged here, they
+//       are already linkEmptyText; the vague/URL-text branches neither
+//       suppress nor are suppressed by this rule).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -99,6 +115,8 @@ export type A11yIssueKind =
   | 'linkTextIsUrl'
   | 'imageAltVague'
   | 'headingNoContent'
+  | 'tableMergedCells'
+  | 'linkSameTextDifferentTarget'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -147,6 +165,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   linkTextIsUrl: 0,
   imageAltVague: 0,
   headingNoContent: 0,
+  tableMergedCells: 0,
+  linkSameTextDifferentTarget: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -335,6 +355,24 @@ export function analyzeDoc(docJson: any): A11yResult {
       if (!firstCells.some(isHeaderCell)) {
         push({ kind: 'tableNoHeader', tableIndex })
       }
+      // Merged cells (P2-24, rule 15): one issue per table, never per
+      // cell, independent of the header rule above — neither branch
+      // suppresses the other. Only a numeric span > 1 counts; missing
+      // attrs, a span of 1, or a non-numeric span value never flags.
+      const isMergedCell = (cellNode: any): boolean => {
+        if (!cellNode || typeof cellNode !== 'object') return false
+        if (cellNode.type !== 'tableCell' && cellNode.type !== 'tableHeader') return false
+        const attrs = cellNode.attrs
+        if (!attrs || typeof attrs !== 'object') return false
+        return (typeof attrs.colspan === 'number' && attrs.colspan > 1)
+          || (typeof attrs.rowspan === 'number' && attrs.rowspan > 1)
+      }
+      const hasMergedCell = Array.isArray(node.content) && node.content.some((row: any) =>
+        row && typeof row === 'object' && row.type === 'tableRow' && Array.isArray(row.content)
+          && row.content.some(isMergedCell))
+      if (hasMergedCell) {
+        push({ kind: 'tableMergedCells', tableIndex })
+      }
     }
     if (Array.isArray(node.content)) node.content.forEach(walk)
   }
@@ -369,6 +407,10 @@ export function analyzeDoc(docJson: any): A11yResult {
     return v
   }
   let linkIndex = 0
+  // Every flushed link run, in document order, for the P2-24 rule (16)
+  // pass below. A run split across same-href text nodes is recorded
+  // once, with its full trimmed visible text.
+  const linkRuns: { linkIndex: number; href: string; linkText: string }[] = []
   const linkHrefOf = (node: any): string | null => {
     if (!node || typeof node !== 'object' || node.type !== 'text' || !Array.isArray(node.marks)) return null
     const mark = node.marks.find((m: any) => m && typeof m === 'object' && m.type === 'link')
@@ -384,6 +426,7 @@ export function analyzeDoc(docJson: any): A11yResult {
       if (runHref !== null) {
         linkIndex += 1
         const trimmed = runText.trim()
+        linkRuns.push({ linkIndex, href: runHref, linkText: trimmed })
         if (trimmed === '') {
           push({ kind: 'linkEmptyText', linkIndex, href: runHref })
         } else if (VAGUE_LINK_TEXT.has(normalizeLinkText(runText))) {
@@ -416,6 +459,30 @@ export function analyzeDoc(docJson: any): A11yResult {
     flush()
   }
   walkLinks(docJson)
+
+  // Same link text, different destinations (P2-24, rule 16): a second,
+  // independent pass over the runs collected above, so it neither
+  // suppresses nor is suppressed by the empty/vague/URL-text branches
+  // (a run may legitimately carry both a vague/URL issue and this one).
+  // Empty runs are skipped entirely (already linkEmptyText). A run is
+  // flagged only when its normalised text was already seen with a
+  // DIFFERENT href — i.e. its href is new for that text: [A, A, B]
+  // flags only B, and [A, B, A] flags only B (the third run's href A
+  // was already seen for that text, so it is not a new destination).
+  // A group with a single distinct href therefore never flags.
+  const seenLinkHrefsByText = new Map<string, Set<string>>()
+  for (const run of linkRuns) {
+    if (run.linkText === '') continue
+    const normalized = normalizeLinkText(run.linkText)
+    let hrefs = seenLinkHrefsByText.get(normalized)
+    if (!hrefs) {
+      hrefs = new Set<string>()
+      seenLinkHrefsByText.set(normalized, hrefs)
+    } else if (!hrefs.has(run.href)) {
+      push({ kind: 'linkSameTextDifferentTarget', linkIndex: run.linkIndex, href: run.href, linkText: run.linkText })
+    }
+    hrefs.add(run.href)
+  }
 
   return { issues, total: issues.length, counts }
 }
