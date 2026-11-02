@@ -56,7 +56,7 @@ describe('a11y analyzeDoc', () => {
     ))
     expect(r.total).toBe(0)
     expect(r.issues).toEqual([])
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0 })
   })
 
   it('empty doc and null input have no issues', () => {
@@ -245,7 +245,7 @@ describe('a11y analyzeDoc', () => {
       paraNodes(linked('', 'https://x.example')),
     ))
     // First heading H2 + empty H4 + skip H2->H4 + image + table + empty link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0 })
     expect(r.total).toBe(6)
   })
 
@@ -339,7 +339,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // First heading H2 + empty H4 + skip H2->H4 + missing alt + long alt
     // + table without header + empty link + vague link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0 })
     expect(r.total).toBe(8)
   })
 
@@ -352,7 +352,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // Empty heading + skip (H1->H3 on the empty heading) + image + table.
     // First heading is H1 and there are no links, so the two new rules add 0.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0 })
     expect(r.total).toBe(4)
   })
 
@@ -360,7 +360,7 @@ describe('a11y analyzeDoc', () => {
     for (const bad of [null, undefined, {}, 'garbage', 42]) {
       const r = analyzeDoc(bad)
       expect(r.total).toBe(0)
-      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0 })
+      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0 })
     }
   })
 
@@ -449,5 +449,97 @@ describe('a11y analyzeDoc', () => {
     ])
     expect(r.counts.imageAltTooLong).toBe(2)
     expect(r.counts.imageAltDuplicate).toBe(1)
+  })
+
+  it('flags filename alt text (photo.png, uppercase PHOTO.JPG, my-photo.webp) with index and alt text', () => {
+    const r = analyzeDoc(doc(image('photo.png'), image('PHOTO.JPG'), image('my-photo.webp'), image('diagram.svg')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltIsFilename')).toEqual([
+      { kind: 'imageAltIsFilename', imageIndex: 1, altText: 'photo.png' },
+      { kind: 'imageAltIsFilename', imageIndex: 2, altText: 'PHOTO.JPG' },
+      { kind: 'imageAltIsFilename', imageIndex: 3, altText: 'my-photo.webp' },
+      { kind: 'imageAltIsFilename', imageIndex: 4, altText: 'diagram.svg' },
+    ])
+    expect(r.counts.imageAltIsFilename).toBe(4)
+  })
+
+  it('descriptive alt text passes the filename rule', () => {
+    expect(analyzeDoc(doc(image('A red apple on a table'))).issues
+      .filter((i) => i.kind === 'imageAltIsFilename')).toEqual([])
+    expect(analyzeDoc(doc(image('A red apple'))).total).toBe(0)
+  })
+
+  it('alt with a filename inside a sentence passes (contains spaces)', () => {
+    const r = analyzeDoc(doc(image('See photo.png for details'), image('The file my-photo.webp shows it')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltIsFilename')).toEqual([])
+    expect(r.total).toBe(0)
+  })
+
+  it('alt with a non-image extension passes', () => {
+    const r = analyzeDoc(doc(image('report.pdf'), image('notes.txt'), image('data.csv')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltIsFilename')).toEqual([])
+    expect(r.total).toBe(0)
+  })
+
+  it('missing/empty alt is never flagged as a filename', () => {
+    const r = analyzeDoc(doc(image(), image(''), image('   '), image(null)))
+    expect(r.issues.filter((i) => i.kind === 'imageAltIsFilename')).toEqual([])
+    expect(r.counts.imageAltMissing).toBe(4)
+    expect(r.counts.imageAltIsFilename).toBe(0)
+  })
+
+  it('flags link text exactly its URL, with scheme/www/trailing-slash variants', () => {
+    const r = analyzeDoc(doc(paraNodes(
+      linked('https://example.com', 'https://example.com'),
+      linked('example.com', 'http://www.example.com/'),
+      linked('example.com', 'https://example.com'),
+    )))
+    expect(r.issues.filter((i) => i.kind === 'linkTextIsUrl')).toEqual([
+      { kind: 'linkTextIsUrl', linkIndex: 1, href: 'https://example.com', linkText: 'https://example.com' },
+      { kind: 'linkTextIsUrl', linkIndex: 2, href: 'http://www.example.com/', linkText: 'example.com' },
+      { kind: 'linkTextIsUrl', linkIndex: 3, href: 'https://example.com', linkText: 'example.com' },
+    ])
+    expect(r.counts.linkTextIsUrl).toBe(3)
+  })
+
+  it('URL-text comparison is case-insensitive', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('EXAMPLE.COM', 'https://example.com'))))
+    expect(r.issues).toEqual([
+      { kind: 'linkTextIsUrl', linkIndex: 1, href: 'https://example.com', linkText: 'EXAMPLE.COM' },
+    ])
+  })
+
+  it('descriptive link text passes the URL-text rule', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('Visit the site', 'https://example.com'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextIsUrl')).toEqual([])
+    expect(r.total).toBe(0)
+  })
+
+  it('an empty link is only linkEmptyText, never linkTextIsUrl', () => {
+    const r = analyzeDoc(doc(paraNodes(
+      linked('', 'https://a.example'),
+      linked('   ', 'https://b.example'),
+    )))
+    expect(r.issues.filter((i) => i.kind === 'linkTextIsUrl')).toEqual([])
+    expect(r.counts.linkTextIsUrl).toBe(0)
+    expect(r.counts.linkEmptyText).toBe(2)
+  })
+
+  it('flags a URL-text link inside a list item and a table cell, with correct link index', () => {
+    const r = analyzeDoc(doc(
+      listItemNodes(linked('https://list.example', 'https://list.example')),
+      table([[cellNodes(linked('cell.example', 'https://cell.example'))]]),
+      paraNodes(linked('Fine', 'https://ok.example')),
+    ))
+    expect(r.issues.filter((i) => i.kind === 'linkTextIsUrl')).toEqual([
+      { kind: 'linkTextIsUrl', linkIndex: 1, href: 'https://list.example', linkText: 'https://list.example' },
+      { kind: 'linkTextIsUrl', linkIndex: 2, href: 'https://cell.example', linkText: 'cell.example' },
+    ])
+  })
+
+  it('counts a URL-text run split across same-href text nodes once', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('https://exa', 'https://example.com'), linked('mple.com', 'https://example.com'))))
+    expect(r.issues).toEqual([
+      { kind: 'linkTextIsUrl', linkIndex: 1, href: 'https://example.com', linkText: 'https://example.com' },
+    ])
   })
 })

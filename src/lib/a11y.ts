@@ -1,9 +1,10 @@
 // Local Accessibility Checker (Mission 2, P2-5 — a Word-gap feature;
 // extended in Phase 2, P2-16, with two further JSON-derivable rules, and
-// in Phase 2, P2-18, with two more, and in Phase 2, P2-21, with two more).
+// in Phase 2, P2-18, with two more, and in Phase 2, P2-21, with two more,
+// and in Phase 2, P2-22, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
-// document, never touches storage, network, or the editor. Exactly ten
+// document, never touches storage, network, or the editor. Exactly twelve
 // local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
@@ -29,7 +30,20 @@
 //       (imageAltDuplicate — same normalisation as (9), first occurrence
 //       never flagged, only each later one; missing/empty alt is NOT
 //       flagged here, it is imageAltMissing; a duplicate long alt
-//       legitimately fires both imageAltTooLong and imageAltDuplicate).
+//       legitimately fires both imageAltTooLong and imageAltDuplicate),
+//   (11) images whose alt text is a single-token filename ending in a
+//       known image extension (imageAltIsFilename — regex
+//       /^[^\s]+\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i on the trimmed
+//       alt; missing/empty alt is NOT flagged here, it is
+//       imageAltMissing; a filename alt may legitimately also fire
+//       imageAltTooLong / imageAltDuplicate, neither branch suppresses
+//       the other),
+//   (12) links whose visible text is the link's own URL (linkTextIsUrl
+//       — the run's trimmed text compared case-insensitively with the
+//       href after stripping a leading http:// or https://, a leading
+//       www., and one trailing '/' from BOTH sides; empty runs are NOT
+//       flagged here, they are already linkEmptyText; vague phrases are
+//       unaffected).
 // Deliberately NOT covered: colour contrast — that needs rendered styles,
 // which JSON alone cannot establish, so it is omitted rather than guessed.
 //
@@ -59,6 +73,8 @@ export type A11yIssueKind =
   | 'imageAltTooLong'
   | 'headingDuplicateText'
   | 'imageAltDuplicate'
+  | 'imageAltIsFilename'
+  | 'linkTextIsUrl'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -78,9 +94,9 @@ export interface A11yIssue {
   linkIndex?: number
   /** Link target, for link issues ('' when the link mark has no href). */
   href?: string
-  /** Trimmed visible link text, for linkVagueText issues. */
+  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl issues. */
   linkText?: string
-  /** Trimmed alt text, for imageAltDuplicate issues. */
+  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename issues. */
   altText?: string
 }
 
@@ -103,6 +119,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   imageAltTooLong: 0,
   headingDuplicateText: 0,
   imageAltDuplicate: 0,
+  imageAltIsFilename: 0,
+  linkTextIsUrl: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -199,6 +217,13 @@ export function analyzeDoc(docJson: any): A11yResult {
         } else {
           seenAltTexts.add(normalizedAlt)
         }
+        // Filename alt text (P2-22): a single token (no whitespace)
+        // ending in a known image extension. Missing/empty alt is
+        // excluded above. Neither this branch nor the long/duplicate
+        // branches suppress each other.
+        if (/^[^\s]+\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(trimmedAlt)) {
+          push({ kind: 'imageAltIsFilename', imageIndex, altText: trimmedAlt })
+        }
       }
     } else if (node.type === 'table') {
       tableIndex += 1
@@ -225,13 +250,23 @@ export function analyzeDoc(docJson: any): A11yResult {
   // whitespace + mapping Arabic Yeh (ي) / Kaf (ك) to Persian (ی/ک), so
   // "CLICK  HERE" and "کلیک کنید" with Arabic letters both match, while
   // "click here for details" does not. Empty runs are NOT vague — they
-  // are already linkEmptyText, and flush() evaluates both rules per run.
+  // are already linkEmptyText, and flush() evaluates all link rules per
+  // run (empty, then vague, then URL-text, in that order).
   const VAGUE_LINK_TEXT = new Set([
     'click here', 'here', 'this', 'link', 'more', 'read more', 'click',
     'اینجا', 'اینجا کلیک کنید', 'کلیک کنید', 'لینک', 'بیشتر',
   ])
   const normalizeLinkText = (text: string): string =>
     text.trim().toLowerCase().replace(/\s+/g, ' ').replace(/ي/g, 'ی').replace(/ك/g, 'ک')
+  // URL comparison for linkTextIsUrl (P2-22): case-insensitive, after
+  // stripping a leading http:// or https://, a leading www., and one
+  // trailing '/' from both the visible text and the href.
+  const normalizeUrlForComparison = (value: string): string => {
+    let v = value.trim().toLowerCase()
+    v = v.replace(/^https?:\/\//, '').replace(/^www\./, '')
+    if (v.endsWith('/')) v = v.slice(0, -1)
+    return v
+  }
   let linkIndex = 0
   const linkHrefOf = (node: any): string | null => {
     if (!node || typeof node !== 'object' || node.type !== 'text' || !Array.isArray(node.marks)) return null
@@ -252,6 +287,8 @@ export function analyzeDoc(docJson: any): A11yResult {
           push({ kind: 'linkEmptyText', linkIndex, href: runHref })
         } else if (VAGUE_LINK_TEXT.has(normalizeLinkText(runText))) {
           push({ kind: 'linkVagueText', linkIndex, href: runHref, linkText: trimmed })
+        } else if (normalizeUrlForComparison(trimmed) !== '' && normalizeUrlForComparison(trimmed) === normalizeUrlForComparison(runHref)) {
+          push({ kind: 'linkTextIsUrl', linkIndex, href: runHref, linkText: trimmed })
         }
         runHref = null
         runText = ''
