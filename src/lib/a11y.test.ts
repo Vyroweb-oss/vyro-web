@@ -36,6 +36,20 @@ const linked = (text: string, href: string) => ({
   text,
   marks: [{ type: 'link', attrs: { href } }],
 })
+// A text node carrying a link mark with no href at all, as TipTap
+// stores a link whose destination was never set (P2-25 tests).
+const linkedNoHref = (text: string) => ({
+  type: 'text',
+  text,
+  marks: [{ type: 'link', attrs: {} }],
+})
+// A text node carrying a link mark with an arbitrary href value,
+// including non-string values (P2-25 tests).
+const linkedHrefAny = (text: string, href: any) => ({
+  type: 'text',
+  text,
+  marks: [{ type: 'link', attrs: { href } }],
+})
 const paraNodes = (...nodes: any[]) => ({ type: 'paragraph', content: nodes })
 const listItemNodes = (...nodes: any[]) => ({
   type: 'listItem',
@@ -63,7 +77,7 @@ describe('a11y analyzeDoc', () => {
     ))
     expect(r.total).toBe(0)
     expect(r.issues).toEqual([])
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0 })
   })
 
   it('empty doc and null input have no issues', () => {
@@ -233,16 +247,21 @@ describe('a11y analyzeDoc', () => {
   })
 
   it('malformed and null input yields no issues and never throws', () => {
-    for (const bad of [null, undefined, {}, { type: 'doc' }, 'garbage', 42, doc(paraNodes(
+    for (const bad of [null, undefined, {}, { type: 'doc' }, 'garbage', 42]) {
+      expect(() => analyzeDoc(bad)).not.toThrow()
+      expect(analyzeDoc(bad).total).toBe(0)
+    }
+    // P2-25: a link mark with no href but real text is no longer
+    // "healthy" — it is exactly the linkMissingHref case, so this doc
+    // still never throws but now contributes that one issue.
+    const missingHrefDoc = doc(paraNodes(
       { type: 'text', text: 'plain', marks: null },
       { type: 'text', text: '', marks: [{ type: 'bold' }] },
       { type: 'text', text: 'x', marks: [{ type: 'link' }] },
-    ))]) {
-      expect(() => analyzeDoc(bad)).not.toThrow()
-      // The last doc holds only a healthy link (a link mark with no href
-      // but real text), so it too contributes no issue.
-      expect(analyzeDoc(bad).total).toBe(0)
-    }
+    ))
+    expect(() => analyzeDoc(missingHrefDoc)).not.toThrow()
+    expect(analyzeDoc(missingHrefDoc).issues)
+      .toEqual([{ kind: 'linkMissingHref', linkIndex: 1, href: '', linkText: 'x' }])
     // A link mark with no href and empty text is still an empty link.
     expect(analyzeDoc(doc(paraNodes({ type: 'text', text: '', marks: [{ type: 'link' }] }))).issues)
       .toEqual([{ kind: 'linkEmptyText', linkIndex: 1, href: '' }])
@@ -274,7 +293,7 @@ describe('a11y analyzeDoc', () => {
       paraNodes(linked('', 'https://x.example')),
     ))
     // First heading H2 + empty H4 + skip H2->H4 + image + table + empty link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0 })
     expect(r.total).toBe(6)
   })
 
@@ -368,7 +387,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // First heading H2 + empty H4 + skip H2->H4 + missing alt + long alt
     // + table without header + empty link + vague link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0 })
     expect(r.total).toBe(8)
   })
 
@@ -381,7 +400,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // Empty heading + skip (H1->H3 on the empty heading) + image + table.
     // First heading is H1 and there are no links, so the two new rules add 0.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0 })
     expect(r.total).toBe(4)
   })
 
@@ -389,7 +408,7 @@ describe('a11y analyzeDoc', () => {
     for (const bad of [null, undefined, {}, 'garbage', 42]) {
       const r = analyzeDoc(bad)
       expect(r.total).toBe(0)
-      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0 })
+      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0 })
     }
   })
 
@@ -870,5 +889,130 @@ describe('a11y analyzeDoc', () => {
     expect(r.issues.filter((i) => i.kind === 'linkSameTextDifferentTarget')).toEqual([
       { kind: 'linkSameTextDifferentTarget', linkIndex: 2, href: 'https://b.example', linkText: 'click here' },
     ])
+  })
+
+  // P2-25, rule 17: links with no destination.
+  it('a link with no href at all flags linkMissingHref', () => {
+    const r = analyzeDoc(doc(paraNodes(linkedNoHref('Guide'))))
+    expect(r.issues.filter((i) => i.kind === 'linkMissingHref')).toEqual([
+      { kind: 'linkMissingHref', linkIndex: 1, href: '', linkText: 'Guide' },
+    ])
+  })
+
+  it('a link with an empty href flags linkMissingHref', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('Guide', ''))))
+    expect(r.issues.filter((i) => i.kind === 'linkMissingHref')).toEqual([
+      { kind: 'linkMissingHref', linkIndex: 1, href: '', linkText: 'Guide' },
+    ])
+  })
+
+  it('a link with a whitespace-only href flags linkMissingHref with href empty', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('Guide', '   '))))
+    expect(r.issues.filter((i) => i.kind === 'linkMissingHref')).toEqual([
+      { kind: 'linkMissingHref', linkIndex: 1, href: '', linkText: 'Guide' },
+    ])
+  })
+
+  it('a link with a non-string href flags linkMissingHref', () => {
+    const r = analyzeDoc(doc(paraNodes(linkedHrefAny('Guide', 123))))
+    expect(r.issues.filter((i) => i.kind === 'linkMissingHref')).toEqual([
+      { kind: 'linkMissingHref', linkIndex: 1, href: '', linkText: 'Guide' },
+    ])
+  })
+
+  it('a link with a valid href does not flag linkMissingHref', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('Guide', 'https://example.com'))))
+    expect(r.issues.filter((i) => i.kind === 'linkMissingHref')).toEqual([])
+    expect(r.total).toBe(0)
+  })
+
+  it('an empty-text link with no href fires only linkEmptyText, not linkMissingHref', () => {
+    const r = analyzeDoc(doc(
+      paraNodes(linkedNoHref('')),
+      paraNodes(linkedNoHref('  ')),
+    ))
+    expect(r.issues.filter((i) => i.kind === 'linkEmptyText')).toHaveLength(2)
+    expect(r.issues.filter((i) => i.kind === 'linkMissingHref')).toEqual([])
+  })
+
+  it('a missing-href run split across text nodes counts once', () => {
+    const r = analyzeDoc(doc(paraNodes(linkedNoHref('Gui'), linkedNoHref('de'))))
+    expect(r.issues.filter((i) => i.kind === 'linkMissingHref')).toEqual([
+      { kind: 'linkMissingHref', linkIndex: 1, href: '', linkText: 'Guide' },
+    ])
+  })
+
+  it('a vague-text link with no href fires both linkVagueText and linkMissingHref', () => {
+    const r = analyzeDoc(doc(paraNodes(linkedNoHref('click here'))))
+    expect(r.issues.filter((i) => i.kind === 'linkVagueText')).toEqual([
+      { kind: 'linkVagueText', linkIndex: 1, href: '', linkText: 'click here' },
+    ])
+    expect(r.issues.filter((i) => i.kind === 'linkMissingHref')).toEqual([
+      { kind: 'linkMissingHref', linkIndex: 1, href: '', linkText: 'click here' },
+    ])
+    expect(r.issues.filter((i) => i.kind === 'linkTextIsUrl')).toEqual([])
+  })
+
+  // P2-25, rule 18: headings that are too long.
+  it('a heading of exactly 100 code points passes', () => {
+    const r = analyzeDoc(doc(heading(1, 'a'.repeat(100)), para('Body.')))
+    expect(r.issues.filter((i) => i.kind === 'headingTooLong')).toEqual([])
+    expect(r.total).toBe(0)
+  })
+
+  it('a heading of 101 code points flags headingTooLong with the original text', () => {
+    const long = 'a'.repeat(101)
+    const r = analyzeDoc(doc(heading(1, long), para('Body.')))
+    expect(r.issues.filter((i) => i.kind === 'headingTooLong')).toEqual([
+      { kind: 'headingTooLong', headingIndex: 1, headingText: long, level: 1 },
+    ])
+  })
+
+  it('heading length counts code points, not UTF-16 units', () => {
+    // 51 emoji = 51 code points (but 102 UTF-16 units): passes.
+    const passing = analyzeDoc(doc(heading(1, '😀'.repeat(51)), para('Body.')))
+    expect(passing.issues.filter((i) => i.kind === 'headingTooLong')).toEqual([])
+    // 101 emoji = 101 code points: flags.
+    const flagging = analyzeDoc(doc(heading(1, '😀'.repeat(101)), para('Body.')))
+    expect(flagging.issues.filter((i) => i.kind === 'headingTooLong')).toHaveLength(1)
+  })
+
+  it('a long Persian heading flags headingTooLong', () => {
+    const faLong = 'دسترس‌پذیری '.repeat(9)
+    expect([...faLong.trim()].length).toBeGreaterThan(100)
+    const r = analyzeDoc(doc(heading(1, faLong), para('متن.')))
+    expect(r.issues.filter((i) => i.kind === 'headingTooLong')).toEqual([
+      { kind: 'headingTooLong', headingIndex: 1, headingText: faLong, level: 1 },
+    ])
+  })
+
+  it('a whitespace-padded heading counts its trimmed length', () => {
+    const passing = analyzeDoc(doc(heading(1, `   ${'b'.repeat(100)}   `), para('Body.')))
+    expect(passing.issues.filter((i) => i.kind === 'headingTooLong')).toEqual([])
+    const flagging = analyzeDoc(doc(heading(1, `  ${'b'.repeat(101)}  `), para('Body.')))
+    expect(flagging.issues.filter((i) => i.kind === 'headingTooLong')).toHaveLength(1)
+    expect(flagging.issues.filter((i) => i.kind === 'headingTooLong')[0].headingText)
+      .toBe(`  ${'b'.repeat(101)}  `)
+  })
+
+  it('a long heading fires alongside other heading rules independently', () => {
+    const long = 'x'.repeat(101)
+    const r = analyzeDoc(doc(heading(1, long), para('Body.'), heading(3, long)))
+    expect(r.issues.filter((i) => i.kind === 'headingTooLong').map((i) => i.headingIndex)).toEqual([1, 2])
+    expect(r.issues.filter((i) => i.kind === 'headingDuplicateText')).toEqual([
+      { kind: 'headingDuplicateText', headingIndex: 2, headingText: long, level: 3 },
+    ])
+    expect(r.issues.filter((i) => i.kind === 'headingSkip')).toHaveLength(1)
+  })
+
+  it('a mixed doc with both new rules reports full counts over 18 kinds', () => {
+    const r = analyzeDoc(doc(
+      heading(1, 'c'.repeat(101)),
+      paraNodes(linkedNoHref('Guide')),
+      image('A red apple'),
+      table([[cell('Name', true)], [cell('A')]]),
+    ))
+    expect(r.total).toBe(2)
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 1, headingTooLong: 1 })
   })
 })

@@ -2,10 +2,11 @@
 // extended in Phase 2, P2-16, with two further JSON-derivable rules, and
 // in Phase 2, P2-18, with two more, and in Phase 2, P2-21, with two more,
 // and in Phase 2, P2-22, with two more, and in Phase 2, P2-23, with two
-// more, and in Phase 2, P2-24, with two more).
+// more, and in Phase 2, P2-24, with two more, and in Phase 2, P2-25,
+// with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
-// document, never touches storage, network, or the editor. Exactly sixteen
+// document, never touches storage, network, or the editor. Exactly eighteen
 // local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
@@ -74,6 +75,22 @@
 //       [A, B, A] flags only B; empty runs are NOT flagged here, they
 //       are already linkEmptyText; the vague/URL-text branches neither
 //       suppress nor are suppressed by this rule).
+//   (17) links with non-empty visible text but no destination
+//       (linkMissingHref — per link RUN, as defined below; the run's
+//       href is missing, non-string, empty, or whitespace-only; the
+//       issue always carries href '' and the trimmed visible text;
+//       empty runs are NOT flagged here, they are already
+//       linkEmptyText; this branch neither suppresses nor is
+//       suppressed by the vague/URL-text branches, so a vague-text
+//       link with no href fires both; the URL-text branch already
+//       cannot fire on an empty href).
+//   (18) headings whose trimmed text is longer than 100 code points
+//       (headingTooLong — counted in code points of the trimmed text,
+//       so 100 passes and 101 flags; headingText carries the original,
+//       unnormalised text; empty headings have length 0 and never
+//       fire this, they are already headingEmpty; 100 is a
+//       diagnostic threshold for screen-reader navigation, not a
+//       hard WCAG limit).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -117,6 +134,8 @@ export type A11yIssueKind =
   | 'headingNoContent'
   | 'tableMergedCells'
   | 'linkSameTextDifferentTarget'
+  | 'linkMissingHref'
+  | 'headingTooLong'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -167,6 +186,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   headingNoContent: 0,
   tableMergedCells: 0,
   linkSameTextDifferentTarget: 0,
+  linkMissingHref: 0,
+  headingTooLong: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -220,6 +241,17 @@ export function analyzeDoc(docJson: any): A11yResult {
   const headings = extractHeadings(docJson)
   headings.forEach((h, i) => {
     if (h.empty) push({ kind: 'headingEmpty', headingIndex: i + 1, headingText: h.text, level: h.level })
+  })
+  // Headings that are too long (P2-25, rule 18): trimmed text over
+  // 100 code points flags; 100 passes. Empty headings have length 0
+  // and never fire this (already headingEmpty). Independent of the
+  // other heading rules — a long heading may legitimately also fire
+  // headingSkip / headingDuplicateText / headingNoContent.
+  // headingText carries the original, unnormalised text.
+  headings.forEach((h, i) => {
+    if ([...h.text.trim()].length > 100) {
+      push({ kind: 'headingTooLong', headingIndex: i + 1, headingText: h.text, level: h.level })
+    }
   })
   // Duplicate heading text (P2-21): only later occurrences are flagged,
   // never the first; empty headings are excluded (already headingEmpty).
@@ -429,10 +461,22 @@ export function analyzeDoc(docJson: any): A11yResult {
         linkRuns.push({ linkIndex, href: runHref, linkText: trimmed })
         if (trimmed === '') {
           push({ kind: 'linkEmptyText', linkIndex, href: runHref })
-        } else if (VAGUE_LINK_TEXT.has(normalizeLinkText(runText))) {
-          push({ kind: 'linkVagueText', linkIndex, href: runHref, linkText: trimmed })
-        } else if (normalizeUrlForComparison(trimmed) !== '' && normalizeUrlForComparison(trimmed) === normalizeUrlForComparison(runHref)) {
-          push({ kind: 'linkTextIsUrl', linkIndex, href: runHref, linkText: trimmed })
+        } else {
+          if (VAGUE_LINK_TEXT.has(normalizeLinkText(runText))) {
+            push({ kind: 'linkVagueText', linkIndex, href: runHref, linkText: trimmed })
+          } else if (normalizeUrlForComparison(trimmed) !== '' && normalizeUrlForComparison(trimmed) === normalizeUrlForComparison(runHref)) {
+            push({ kind: 'linkTextIsUrl', linkIndex, href: runHref, linkText: trimmed })
+          }
+          // Links with no destination (P2-25, rule 17): independent of
+          // the vague/URL-text branches above, so a vague-text link
+          // with no href fires both. linkHrefOf already coerces a
+          // missing or non-string href to '', so a whitespace-only
+          // href is the only remaining missing case; the issue always
+          // carries href ''. Empty runs are excluded by the branch
+          // above (already linkEmptyText).
+          if (runHref.trim() === '') {
+            push({ kind: 'linkMissingHref', linkIndex, href: '', linkText: trimmed })
+          }
         }
         runHref = null
         runText = ''
