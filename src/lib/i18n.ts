@@ -437,6 +437,7 @@ const en = {
   menuContext: 'Context menu',
   pastePlainUnavailable: 'Could not read the clipboard — your browser may block clipboard access. Try Ctrl+Shift+V to paste as plain text.',
   imageAltPrompt: 'Image description (alt text)',
+  imageTargetGone: 'That image is no longer there, so the description was not saved.',
   // M2-07 Tables Pro + Images Pro + Link Manager
   addRowBefore: 'Add row above',
   addColumnBefore: 'Add column left',
@@ -1120,6 +1121,7 @@ const fa: Record<I18nKey, string> = {
   menuContext: 'منوی زمینه',
   pastePlainUnavailable: 'خواندن حافظهٔ موقت ممکن نشد — شاید مرورگرتان دسترسی به آن را مسدود کرده باشد. برای چسباندن متن ساده، Ctrl+Shift+V را امتحان کنید.',
   imageAltPrompt: 'توضیح تصویر (متن جایگزین)',
+  imageTargetGone: 'آن تصویر دیگر وجود ندارد، بنابراین توضیح آن ذخیره نشد.',
   // M2-07 Tables Pro + Images Pro + Link Manager
   addRowBefore: 'افزودن ردیف بالا',
   addColumnBefore: 'افزودن ستون چپ',
