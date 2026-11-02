@@ -19,8 +19,10 @@ const GROUP_ORDER: { kind: A11yIssueKind; labelKey: I18nKey }[] = [
   { kind: 'linkVagueText', labelKey: 'a11yLinkVagueText' },
   { kind: 'imageAltTooLong', labelKey: 'a11yImageAltTooLong' },
   { kind: 'headingDuplicateText', labelKey: 'a11yHeadingDuplicateText' },
+  { kind: 'headingNoContent', labelKey: 'a11yHeadingNoContent' },
   { kind: 'imageAltDuplicate', labelKey: 'a11yImageAltDuplicate' },
   { kind: 'imageAltIsFilename', labelKey: 'a11yImageAltIsFilename' },
+  { kind: 'imageAltVague', labelKey: 'a11yImageAltVague' },
   { kind: 'linkTextIsUrl', labelKey: 'a11yLinkTextIsUrl' },
 ]
 
@@ -52,6 +54,14 @@ function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
       return issue.headingText
         ? `H${issue.level}: ${issue.headingText}`
         : `H${issue.level}`
+    case 'headingNoContent':
+      return issue.headingText && issue.headingText.trim() !== ''
+        ? `H${issue.level}: ${issue.headingText}`
+        : `${t('a11yHeading')} ${issue.headingIndex}`
+    case 'imageAltVague':
+      return issue.altText
+        ? `${t('a11yImage')} ${issue.imageIndex}: ${issue.altText}`
+        : `${t('a11yImage')} ${issue.imageIndex}`
     case 'imageAltDuplicate':
       return issue.altText
         ? `${t('a11yImage')} ${issue.imageIndex}: ${issue.altText}`

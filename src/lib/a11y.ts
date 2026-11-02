@@ -1,10 +1,11 @@
 // Local Accessibility Checker (Mission 2, P2-5 — a Word-gap feature;
 // extended in Phase 2, P2-16, with two further JSON-derivable rules, and
 // in Phase 2, P2-18, with two more, and in Phase 2, P2-21, with two more,
-// and in Phase 2, P2-22, with two more).
+// and in Phase 2, P2-22, with two more, and in Phase 2, P2-23, with two
+// more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
-// document, never touches storage, network, or the editor. Exactly twelve
+// document, never touches storage, network, or the editor. Exactly fourteen
 // local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
@@ -43,7 +44,28 @@
 //       href after stripping a leading http:// or https://, a leading
 //       www., and one trailing '/' from BOTH sides; empty runs are NOT
 //       flagged here, they are already linkEmptyText; vague phrases are
-//       unaffected).
+//       unaffected),
+//   (13) images whose alt text is exactly a generic word (imageAltVague
+//       — exact match only, never substring, after the same duplicate
+//       normalisation as (9)/(10); missing/empty alt is NOT flagged
+//       here, it is imageAltMissing; this branch does not suppress the
+//       long/duplicate/filename branches, and they do not suppress it),
+//   (14) TOP-LEVEL headings whose section contains no readable content
+//       (headingNoContent — hierarchical: for a top-level heading at
+//       level L, a following heading with level <= L ends the section,
+//       a following heading with level > L is a subsection and scanning
+//       continues past it, a block counts as content when its recursive
+//       trimmed text is non-empty or it is/contains an image node, and
+//       empty paragraphs neither count nor stop the scan; reaching the
+//       end of the document without content flags the heading).
+//       LIMITATION, documented deliberately: only top-level headings are
+//       evaluated for rule (14) — a heading nested inside a blockquote
+//       or list item is never flagged by this rule (it is still covered
+//       by the other heading rules, e.g. headingEmpty / headingSkip /
+//       headingDuplicateText, which use extractHeadings over the whole
+//       document). headingIndex for rule (14) still matches
+//       extractHeadings order: headings nested inside earlier top-level
+//       blocks are counted when assigning the index.
 // Deliberately NOT covered: colour contrast — that needs rendered styles,
 // which JSON alone cannot establish, so it is omitted rather than guessed.
 //
@@ -75,6 +97,8 @@ export type A11yIssueKind =
   | 'imageAltDuplicate'
   | 'imageAltIsFilename'
   | 'linkTextIsUrl'
+  | 'imageAltVague'
+  | 'headingNoContent'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -96,7 +120,7 @@ export interface A11yIssue {
   href?: string
   /** Trimmed visible link text, for linkVagueText / linkTextIsUrl issues. */
   linkText?: string
-  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename issues. */
+  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague issues. */
   altText?: string
 }
 
@@ -121,6 +145,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   imageAltDuplicate: 0,
   imageAltIsFilename: 0,
   linkTextIsUrl: 0,
+  imageAltVague: 0,
+  headingNoContent: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -135,6 +161,30 @@ function isHeaderCell(cell: any): boolean {
  */
 function normalizeDuplicateText(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, ' ').replace(/ي/g, 'ی').replace(/ك/g, 'ک')
+}
+
+/** Recursive text of a node (same shape as headings.ts nodeText). */
+function nodeTextRecursive(node: any): string {
+  if (!node || typeof node !== 'object') return ''
+  if (node.type === 'text') return typeof node.text === 'string' ? node.text : ''
+  if (Array.isArray(node.content)) return node.content.map(nodeTextRecursive).join('')
+  return ''
+}
+
+/** True when the node itself is, or recursively contains, an image node. */
+function nodeHasImage(node: any): boolean {
+  if (!node || typeof node !== 'object') return false
+  if (node.type === 'image') return true
+  return Array.isArray(node.content) && node.content.some(nodeHasImage)
+}
+
+/** Number of heading nodes in a subtree, in document order. */
+function countHeadings(node: any): number {
+  if (!node || typeof node !== 'object') return 0
+  const self = node.type === 'heading' ? 1 : 0
+  return self + (Array.isArray(node.content)
+    ? node.content.reduce((n: number, c: any) => n + countHeadings(c), 0)
+    : 0)
 }
 
 /** Analyse a stored TipTap JSON doc. Null / malformed input => no issues. */
@@ -189,6 +239,45 @@ export function analyzeDoc(docJson: any): A11yResult {
     })
   }
 
+  // Headings with no content (P2-23, rule 14): TOP-LEVEL headings only
+  // (see the header comment for the limitation). A top-level heading's
+  // index is assigned in extractHeadings order, counting headings
+  // nested inside earlier top-level blocks before it.
+  const topBlocks: any[] = Array.isArray((docJson as any)?.content) ? (docJson as any).content : []
+  let headingsSeenBefore = 0
+  const topInfos = topBlocks.map((block: any) => {
+    const isHeading = !!block && typeof block === 'object' && block.type === 'heading'
+    const info = {
+      node: block,
+      isHeading,
+      level: isHeading ? (block.attrs?.level || 1) : 0,
+      text: isHeading ? nodeTextRecursive(block) : '',
+      headingIndex: isHeading ? headingsSeenBefore + 1 : 0,
+    }
+    headingsSeenBefore += countHeadings(block)
+    return info
+  })
+  topInfos.forEach((info, i) => {
+    if (!info.isHeading) return
+    let hasContent = false
+    for (let j = i + 1; j < topInfos.length && !hasContent; j += 1) {
+      const next = topInfos[j]
+      if (next.isHeading) {
+        // A heading at or above this level ends the section; a deeper
+        // heading is a subsection — keep scanning past it (its own text
+        // is not content, and content under it still counts).
+        if (next.level <= info.level) break
+      } else if (nodeHasImage(next.node) || nodeTextRecursive(next.node).trim() !== '') {
+        hasContent = true
+      }
+      // Empty paragraphs (and other text-free, image-free blocks)
+      // neither count as content nor stop the scan.
+    }
+    if (!hasContent) {
+      push({ kind: 'headingNoContent', headingIndex: info.headingIndex, headingText: info.text, level: info.level })
+    }
+  })
+
   // Images + tables, in document order, anywhere in the doc (including
   // inside list items / blockquotes / table cells). A table's own first
   // row is inspected directly — never via its nested content walk.
@@ -223,6 +312,18 @@ export function analyzeDoc(docJson: any): A11yResult {
         // branches suppress each other.
         if (/^[^\s]+\.(png|jpe?g|gif|webp|svg|bmp|avif)$/i.test(trimmedAlt)) {
           push({ kind: 'imageAltIsFilename', imageIndex, altText: trimmedAlt })
+        }
+        // Vague alt text (P2-23): the normalised alt EXACTLY matches a
+        // generic word — never a substring, so 'a photo of a cat' is
+        // not vague. Missing/empty alt is excluded above. Neither this
+        // branch nor the long/duplicate/filename branches suppress
+        // each other, so a vague duplicate fires both rules.
+        const VAGUE_ALT_TEXT = new Set([
+          'image', 'photo', 'picture', 'img', 'graphic', 'illustration', 'photograph',
+          'تصویر', 'عکس', 'نگاره',
+        ])
+        if (VAGUE_ALT_TEXT.has(normalizedAlt)) {
+          push({ kind: 'imageAltVague', imageIndex, altText: trimmedAlt })
         }
       }
     } else if (node.type === 'table') {

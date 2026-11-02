@@ -36,6 +36,7 @@ const listItemNodes = (...nodes: any[]) => ({
   content: [paraNodes(...nodes)],
 })
 const cellNodes = (...nodes: any[]) => ({ type: 'tableCell', content: [paraNodes(...nodes)] })
+const blockquote = (...content: any[]) => ({ type: 'blockquote', content })
 
 function deepFreeze(v: any): any {
   if (v && typeof v === 'object') {
@@ -56,7 +57,7 @@ describe('a11y analyzeDoc', () => {
     ))
     expect(r.total).toBe(0)
     expect(r.issues).toEqual([])
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0 })
   })
 
   it('empty doc and null input have no issues', () => {
@@ -78,10 +79,20 @@ describe('a11y analyzeDoc', () => {
 
   it('flags heading skips H1->H3 but H1->H2 is clean', () => {
     const skipped = analyzeDoc(doc(heading(1, 'A'), heading(3, 'B')))
-    expect(skipped.issues).toEqual([{
-      kind: 'headingSkip', headingIndex: 2, headingText: 'B', level: 3, prevLevel: 1,
-    }])
-    expect(analyzeDoc(doc(heading(1, 'A'), heading(2, 'B'))).total).toBe(0)
+    // Both headings also have no content (A's subsection B is not content,
+    // and B trails the document), so headingNoContent fires for both.
+    expect(skipped.issues).toEqual([
+      { kind: 'headingSkip', headingIndex: 2, headingText: 'B', level: 3, prevLevel: 1 },
+      { kind: 'headingNoContent', headingIndex: 1, headingText: 'A', level: 1 },
+      { kind: 'headingNoContent', headingIndex: 2, headingText: 'B', level: 3 },
+    ])
+    // H1->H2 is not a skip, but both headings still have no content.
+    const clean = analyzeDoc(doc(heading(1, 'A'), heading(2, 'B')))
+    expect(clean.issues.filter((i) => i.kind === 'headingSkip')).toEqual([])
+    expect(clean.issues.filter((i) => i.kind === 'headingNoContent')).toEqual([
+      { kind: 'headingNoContent', headingIndex: 1, headingText: 'A', level: 1 },
+      { kind: 'headingNoContent', headingIndex: 2, headingText: 'B', level: 2 },
+    ])
     // Going shallower is never a skip, and the first heading has no predecessor
     // for the skip rule (the separate firstHeadingNotH1 rule may still fire).
     expect(analyzeDoc(doc(heading(3, 'A'), heading(1, 'B'))).issues.filter((i) => i.kind === 'headingSkip')).toEqual([])
@@ -110,12 +121,19 @@ describe('a11y analyzeDoc', () => {
   it('handles FA/Dari headings including ZWNJ text without normalising it', () => {
     const text = 'می‌کنم و کتاب‌های من'
     const r = analyzeDoc(doc(heading(1, text), heading(3, 'بخش دوم')))
-    expect(r.issues).toEqual([{
-      kind: 'headingSkip', headingIndex: 2, headingText: 'بخش دوم', level: 3, prevLevel: 1,
-    }])
-    // The ZWNJ heading itself is not empty and its text passes through untouched.
+    // Both headings also have no content (the H3 is a subsection of the
+    // H1, and it trails the document), so headingNoContent fires for both.
+    expect(r.issues).toEqual([
+      { kind: 'headingSkip', headingIndex: 2, headingText: 'بخش دوم', level: 3, prevLevel: 1 },
+      { kind: 'headingNoContent', headingIndex: 1, headingText: text, level: 1 },
+      { kind: 'headingNoContent', headingIndex: 2, headingText: 'بخش دوم', level: 3 },
+    ])
+    // The ZWNJ heading itself is not empty and its text passes through untouched;
+    // alone at the end of the document it has no content, so that is its only issue.
     const clean = analyzeDoc(doc(heading(1, text)))
-    expect(clean.total).toBe(0)
+    expect(clean.issues).toEqual([
+      { kind: 'headingNoContent', headingIndex: 1, headingText: text, level: 1 },
+    ])
     expect(analyzeDoc(doc(heading(1, 'مقدمه'), heading(2, ''))).issues[0].headingText).toBe('')
   })
 
@@ -162,8 +180,10 @@ describe('a11y analyzeDoc', () => {
     expect(r.issues.filter((i) => i.kind === 'firstHeadingNotH1')).toEqual([
       { kind: 'firstHeadingNotH1', headingIndex: 1, headingText: 'Opening', level: 2 },
     ])
-    // H2->H3 is not a skip, so this doc has exactly the one new issue.
-    expect(r.total).toBe(1)
+    // H2->H3 is not a skip; the doc's issues are the first-heading issue
+    // plus headingNoContent for both headings (the H3 is a subsection of
+    // the H2, and it trails the document).
+    expect(r.total).toBe(3)
     // An empty first heading above H1 still reports its level (bare text '').
     expect(analyzeDoc(doc(heading(3, ''))).issues.filter((i) => i.kind === 'firstHeadingNotH1'))
       .toEqual([{ kind: 'firstHeadingNotH1', headingIndex: 1, headingText: '', level: 3 }])
@@ -229,8 +249,11 @@ describe('a11y analyzeDoc', () => {
     ))
     const before = JSON.stringify(input)
     const r = analyzeDoc(input)
+    // The heading is followed only by a paragraph whose link text is
+    // empty, so it also has no content.
     expect(r.issues).toEqual([
       { kind: 'firstHeadingNotH1', headingIndex: 1, headingText: 'Opening', level: 2 },
+      { kind: 'headingNoContent', headingIndex: 1, headingText: 'Opening', level: 2 },
       { kind: 'linkEmptyText', linkIndex: 1, href: 'https://x.example' },
     ])
     expect(JSON.stringify(input)).toBe(before)
@@ -245,7 +268,7 @@ describe('a11y analyzeDoc', () => {
       paraNodes(linked('', 'https://x.example')),
     ))
     // First heading H2 + empty H4 + skip H2->H4 + image + table + empty link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0 })
     expect(r.total).toBe(6)
   })
 
@@ -339,7 +362,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // First heading H2 + empty H4 + skip H2->H4 + missing alt + long alt
     // + table without header + empty link + vague link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0 })
     expect(r.total).toBe(8)
   })
 
@@ -352,7 +375,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // Empty heading + skip (H1->H3 on the empty heading) + image + table.
     // First heading is H1 and there are no links, so the two new rules add 0.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0 })
     expect(r.total).toBe(4)
   })
 
@@ -360,7 +383,7 @@ describe('a11y analyzeDoc', () => {
     for (const bad of [null, undefined, {}, 'garbage', 42]) {
       const r = analyzeDoc(bad)
       expect(r.total).toBe(0)
-      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0 })
+      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0 })
     }
   })
 
@@ -541,5 +564,125 @@ describe('a11y analyzeDoc', () => {
     expect(r.issues).toEqual([
       { kind: 'linkTextIsUrl', linkIndex: 1, href: 'https://example.com', linkText: 'https://example.com' },
     ])
+  })
+
+  // ---- P2-23: imageAltVague ----
+
+  it('flags every generic alt word (EN and FA) with index and trimmed alt text', () => {
+    const words = ['image', 'photo', 'picture', 'img', 'graphic', 'illustration', 'photograph', 'تصویر', 'عکس', 'نگاره']
+    const r = analyzeDoc(doc(...words.map((w) => image(w))))
+    expect(r.issues.filter((i) => i.kind === 'imageAltVague')).toEqual(
+      words.map((w, i) => ({ kind: 'imageAltVague', imageIndex: i + 1, altText: w })),
+    )
+    expect(r.counts.imageAltVague).toBe(10)
+  })
+
+  it('does NOT flag descriptive alt text that merely contains a generic word', () => {
+    const r = analyzeDoc(doc(image('a photo of a cat'), image('my photo from the trip')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltVague')).toEqual([])
+    expect(r.total).toBe(0)
+  })
+
+  it('flags vague alt text despite surrounding whitespace and case differences', () => {
+    const r = analyzeDoc(doc(image('  PHOTO  '), image('Image'), image('  عکس  ')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltVague')).toEqual([
+      { kind: 'imageAltVague', imageIndex: 1, altText: 'PHOTO' },
+      { kind: 'imageAltVague', imageIndex: 2, altText: 'Image' },
+      { kind: 'imageAltVague', imageIndex: 3, altText: 'عکس' },
+    ])
+  })
+
+  it('missing/empty alt is never flagged as vague alt', () => {
+    const r = analyzeDoc(doc(image(), image(''), image('   '), image(null)))
+    expect(r.issues.filter((i) => i.kind === 'imageAltVague')).toEqual([])
+    expect(r.counts.imageAltMissing).toBe(4)
+    expect(r.counts.imageAltVague).toBe(0)
+  })
+
+  it('a vague duplicate alt fires both imageAltVague and imageAltDuplicate', () => {
+    const r = analyzeDoc(doc(image('photo'), image('photo')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltVague').map((i) => i.imageIndex)).toEqual([1, 2])
+    expect(r.issues.filter((i) => i.kind === 'imageAltDuplicate')).toEqual([
+      { kind: 'imageAltDuplicate', imageIndex: 2, altText: 'photo' },
+    ])
+    expect(r.counts.imageAltVague).toBe(2)
+    expect(r.counts.imageAltDuplicate).toBe(1)
+  })
+
+  // ---- P2-23: headingNoContent ----
+
+  it('a title heading followed by a subsection heading with body is not flagged', () => {
+    const r = analyzeDoc(doc(heading(1, 'Title'), heading(2, 'Section'), para('Body text.')))
+    expect(r.issues.filter((i) => i.kind === 'headingNoContent')).toEqual([])
+  })
+
+  it('flags earlier headings when a shallower heading ends their section, but not the headed one', () => {
+    const r = analyzeDoc(doc(heading(1, 'A'), heading(2, 'B'), heading(1, 'C'), para('Body text.')))
+    expect(r.issues.filter((i) => i.kind === 'headingNoContent')).toEqual([
+      { kind: 'headingNoContent', headingIndex: 1, headingText: 'A', level: 1 },
+      { kind: 'headingNoContent', headingIndex: 2, headingText: 'B', level: 2 },
+    ])
+  })
+
+  it('flags a trailing heading at the end of the document', () => {
+    const r = analyzeDoc(doc(heading(1, 'Title'), para('Body text.'), heading(2, 'Lonely')))
+    expect(r.issues.filter((i) => i.kind === 'headingNoContent')).toEqual([
+      { kind: 'headingNoContent', headingIndex: 2, headingText: 'Lonely', level: 2 },
+    ])
+  })
+
+  it('flags a heading followed only by empty paragraphs', () => {
+    const r = analyzeDoc(doc(heading(1, 'Title'), para(''), para('   ')))
+    expect(r.issues.filter((i) => i.kind === 'headingNoContent')).toEqual([
+      { kind: 'headingNoContent', headingIndex: 1, headingText: 'Title', level: 1 },
+    ])
+  })
+
+  it('does not flag a heading followed by an image', () => {
+    const r = analyzeDoc(doc(heading(1, 'Title'), image('A red apple')))
+    expect(r.issues.filter((i) => i.kind === 'headingNoContent')).toEqual([])
+  })
+
+  it('does not flag a heading followed by a table with text', () => {
+    const r = analyzeDoc(doc(heading(1, 'Title'), table([[cell('Name', true), cell('Value', true)]])))
+    expect(r.issues.filter((i) => i.kind === 'headingNoContent')).toEqual([])
+  })
+
+  it('does not flag a heading nested inside a blockquote for this rule', () => {
+    const r = analyzeDoc(doc(blockquote(heading(2, 'Nested'))))
+    expect(r.issues.filter((i) => i.kind === 'headingNoContent')).toEqual([])
+  })
+
+  it('counts nested headings before a top-level heading when assigning its index', () => {
+    const r = analyzeDoc(doc(
+      blockquote(heading(2, 'Nested')),
+      heading(1, 'Top'),
+      para('Body text.'),
+    ))
+    // 'Top' is the second heading in extractHeadings order (after the
+    // nested one), and it has body content, so it is not flagged — but
+    // a trailing top-level heading after it would carry index 3.
+    expect(r.issues.filter((i) => i.kind === 'headingNoContent')).toEqual([])
+    const trailing = analyzeDoc(doc(
+      blockquote(heading(2, 'Nested')),
+      heading(1, 'Top'),
+      para('Body text.'),
+      heading(2, 'After'),
+    ))
+    expect(trailing.issues.filter((i) => i.kind === 'headingNoContent')).toEqual([
+      { kind: 'headingNoContent', headingIndex: 3, headingText: 'After', level: 2 },
+    ])
+  })
+
+  it('the clean-doc fixture still yields 0 for the no-content rule', () => {
+    const r = analyzeDoc(doc(
+      heading(1, 'Title'),
+      heading(2, 'Section'),
+      para('Body text.'),
+      image('A red apple'),
+      table([[cell('Name', true), cell('Value', true)], [cell('A'), cell('B')]]),
+    ))
+    expect(r.issues.filter((i) => i.kind === 'headingNoContent')).toEqual([])
+    expect(r.counts.headingNoContent).toBe(0)
   })
 })
