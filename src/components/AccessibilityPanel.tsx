@@ -28,6 +28,8 @@ const GROUP_ORDER: { kind: A11yIssueKind; labelKey: I18nKey }[] = [
   { kind: 'linkSameTextDifferentTarget', labelKey: 'a11yLinkSameTextDifferentTarget' },
   { kind: 'linkMissingHref', labelKey: 'a11yLinkMissingHref' },
   { kind: 'headingTooLong', labelKey: 'a11yHeadingTooLong' },
+  { kind: 'headingMultipleH1', labelKey: 'a11yHeadingMultipleH1' },
+  { kind: 'imageAltRedundantPrefix', labelKey: 'a11yImageAltRedundantPrefix' },
 ]
 
 function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
@@ -92,6 +94,14 @@ function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
       return issue.headingText && issue.headingText.trim() !== ''
         ? `H${issue.level}: ${issue.headingText}`
         : `${t('a11yHeading')} ${issue.headingIndex}`
+    case 'headingMultipleH1':
+      return issue.headingText && issue.headingText.trim() !== ''
+        ? `H${issue.level}: ${issue.headingText}`
+        : `${t('a11yHeading')} ${issue.headingIndex}`
+    case 'imageAltRedundantPrefix':
+      return issue.altText
+        ? `${t('a11yImage')} ${issue.imageIndex}: ${issue.altText}`
+        : `${t('a11yImage')} ${issue.imageIndex}`
     default:
       return ''
   }

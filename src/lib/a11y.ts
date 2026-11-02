@@ -3,10 +3,10 @@
 // in Phase 2, P2-18, with two more, and in Phase 2, P2-21, with two more,
 // and in Phase 2, P2-22, with two more, and in Phase 2, P2-23, with two
 // more, and in Phase 2, P2-24, with two more, and in Phase 2, P2-25,
-// with two more).
+// with two more, and in Phase 2, P2-26, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
-// document, never touches storage, network, or the editor. Exactly eighteen
+// document, never touches storage, network, or the editor. Exactly twenty
 // local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
@@ -91,6 +91,24 @@
 //       fire this, they are already headingEmpty; 100 is a
 //       diagnostic threshold for screen-reader navigation, not a
 //       hard WCAG limit).
+//   (19) a document with more than one Heading 1 (headingMultipleH1 —
+//       only the SECOND and later H1 headings are flagged, never the
+//       first; empty H1 headings are excluded, they are already
+//       headingEmpty; headingText carries the original, unnormalised
+//       text; independent of headingDuplicateText / headingSkip /
+//       firstHeadingNotH1, so a second H1 may legitimately fire
+//       several rules).
+//   (20) images whose alt text opens with a redundant word
+//       (imageAltRedundantPrefix — the first whitespace-separated
+//       token of the trimmed alt, lowercased, with trailing
+//       punctuation (: , . ; - –) stripped, is one of image, photo,
+//       picture, photograph, graphic, illustration, img, عکس, تصویر,
+//       نگاره, AND there is more text after that first word, so an
+//       exact vague alt such as 'photo' is NOT flagged here, it is
+//       already imageAltVague; missing/empty alt is NOT flagged here,
+//       it is already imageAltMissing; independent of the
+//       long/duplicate/filename/vague branches, so a redundant-prefix
+//       alt may legitimately fire several of them too).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -136,6 +154,8 @@ export type A11yIssueKind =
   | 'linkSameTextDifferentTarget'
   | 'linkMissingHref'
   | 'headingTooLong'
+  | 'headingMultipleH1'
+  | 'imageAltRedundantPrefix'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -188,6 +208,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   linkSameTextDifferentTarget: 0,
   linkMissingHref: 0,
   headingTooLong: 0,
+  headingMultipleH1: 0,
+  imageAltRedundantPrefix: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -251,6 +273,21 @@ export function analyzeDoc(docJson: any): A11yResult {
   headings.forEach((h, i) => {
     if ([...h.text.trim()].length > 100) {
       push({ kind: 'headingTooLong', headingIndex: i + 1, headingText: h.text, level: h.level })
+    }
+  })
+  // Multiple Heading 1 headings (P2-26, rule 19): only the SECOND and
+  // later non-empty H1 headings are flagged, never the first; empty
+  // H1 headings are excluded (already headingEmpty). headingText
+  // carries the original, unnormalised text. Independent of the
+  // duplicate / skip / first-heading rules — a second H1 may
+  // legitimately fire several of them.
+  let seenH1 = false
+  headings.forEach((h, i) => {
+    if (h.level !== 1 || h.empty) return
+    if (seenH1) {
+      push({ kind: 'headingMultipleH1', headingIndex: i + 1, headingText: h.text, level: 1 })
+    } else {
+      seenH1 = true
     }
   })
   // Duplicate heading text (P2-21): only later occurrences are flagged,
@@ -376,6 +413,25 @@ export function analyzeDoc(docJson: any): A11yResult {
         ])
         if (VAGUE_ALT_TEXT.has(normalizedAlt)) {
           push({ kind: 'imageAltVague', imageIndex, altText: trimmedAlt })
+        }
+        // Redundant-prefix alt text (P2-26, rule 20): the FIRST word
+        // of the trimmed alt is a word screen readers already announce
+        // for an image, followed by more text. Only the first token
+        // counts — 'A photo of a cat' is not flagged (first word 'a'),
+        // and an exact vague alt ('photo') is not flagged here either
+        // (it has no more text; it is already imageAltVague).
+        // Missing/empty alt is excluded above. Neither this branch nor
+        // the long/duplicate/filename/vague branches suppress each other.
+        const REDUNDANT_ALT_OPENING_WORDS = new Set([
+          'image', 'photo', 'picture', 'photograph', 'graphic', 'illustration', 'img',
+          'عکس', 'تصویر', 'نگاره',
+        ])
+        const altTokens = trimmedAlt.split(/\s+/)
+        if (altTokens.length > 1) {
+          const firstWord = altTokens[0].toLowerCase().replace(/[:,\.;\-–]+$/, '')
+          if (REDUNDANT_ALT_OPENING_WORDS.has(firstWord)) {
+            push({ kind: 'imageAltRedundantPrefix', imageIndex, altText: trimmedAlt })
+          }
         }
       }
     } else if (node.type === 'table') {

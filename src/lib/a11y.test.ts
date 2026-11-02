@@ -77,7 +77,7 @@ describe('a11y analyzeDoc', () => {
     ))
     expect(r.total).toBe(0)
     expect(r.issues).toEqual([])
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0 })
   })
 
   it('empty doc and null input have no issues', () => {
@@ -94,7 +94,10 @@ describe('a11y analyzeDoc', () => {
   })
 
   it('image WITH alt text passes', () => {
-    expect(analyzeDoc(doc(image('Photo of a cat'))).total).toBe(0)
+    // 'A cat on a sofa' — not a redundant-prefix alt (contrast P2-26:
+    // 'Photo of a cat' now flags imageAltRedundantPrefix, so it is no
+    // longer a clean-alt fixture).
+    expect(analyzeDoc(doc(image('A cat on a sofa'))).total).toBe(0)
   })
 
   it('flags heading skips H1->H3 but H1->H2 is clean', () => {
@@ -293,7 +296,7 @@ describe('a11y analyzeDoc', () => {
       paraNodes(linked('', 'https://x.example')),
     ))
     // First heading H2 + empty H4 + skip H2->H4 + image + table + empty link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0 })
     expect(r.total).toBe(6)
   })
 
@@ -387,7 +390,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // First heading H2 + empty H4 + skip H2->H4 + missing alt + long alt
     // + table without header + empty link + vague link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0 })
     expect(r.total).toBe(8)
   })
 
@@ -400,7 +403,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // Empty heading + skip (H1->H3 on the empty heading) + image + table.
     // First heading is H1 and there are no links, so the two new rules add 0.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0 })
     expect(r.total).toBe(4)
   })
 
@@ -408,7 +411,7 @@ describe('a11y analyzeDoc', () => {
     for (const bad of [null, undefined, {}, 'garbage', 42]) {
       const r = analyzeDoc(bad)
       expect(r.total).toBe(0)
-      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0 })
+      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0 })
     }
   })
 
@@ -1005,7 +1008,95 @@ describe('a11y analyzeDoc', () => {
     expect(r.issues.filter((i) => i.kind === 'headingSkip')).toHaveLength(1)
   })
 
-  it('a mixed doc with both new rules reports full counts over 18 kinds', () => {
+  // P2-26, rule 19: multiple Heading 1 headings.
+  it('a single H1 passes the multiple-H1 rule', () => {
+    const r = analyzeDoc(doc(heading(1, 'Title'), para('Body.')))
+    expect(r.issues.filter((i) => i.kind === 'headingMultipleH1')).toEqual([])
+    expect(r.total).toBe(0)
+  })
+
+  it('two H1 headings flag only the second', () => {
+    const r = analyzeDoc(doc(heading(1, 'Intro'), para('Body.'), heading(1, 'Details'), para('More.')))
+    expect(r.issues.filter((i) => i.kind === 'headingMultipleH1')).toEqual([
+      { kind: 'headingMultipleH1', headingIndex: 2, headingText: 'Details', level: 1 },
+    ])
+    expect(r.counts.headingMultipleH1).toBe(1)
+  })
+
+  it('three H1 headings flag the second and third', () => {
+    const r = analyzeDoc(doc(heading(1, 'One'), para('A.'), heading(1, 'Two'), para('B.'), heading(1, 'Three'), para('C.')))
+    expect(r.issues.filter((i) => i.kind === 'headingMultipleH1').map((i) => i.headingIndex)).toEqual([2, 3])
+    expect(r.issues.filter((i) => i.kind === 'headingMultipleH1')).toEqual([
+      { kind: 'headingMultipleH1', headingIndex: 2, headingText: 'Two', level: 1 },
+      { kind: 'headingMultipleH1', headingIndex: 3, headingText: 'Three', level: 1 },
+    ])
+  })
+
+  it('H2 headings never flag the multiple-H1 rule', () => {
+    const r = analyzeDoc(doc(heading(2, 'One'), para('A.'), heading(2, 'Two'), para('B.')))
+    expect(r.issues.filter((i) => i.kind === 'headingMultipleH1')).toEqual([])
+  })
+
+  it('an empty second H1 is excluded from the multiple-H1 rule', () => {
+    const r = analyzeDoc(doc(heading(1, 'Title'), para('Body.'), heading(1, '')))
+    expect(r.issues.filter((i) => i.kind === 'headingMultipleH1')).toEqual([])
+    expect(r.issues.filter((i) => i.kind === 'headingEmpty')).toHaveLength(1)
+  })
+
+  it('a second H1 with duplicate text fires both multiple-H1 and duplicate-text', () => {
+    const r = analyzeDoc(doc(heading(1, 'Title'), para('Body.'), heading(1, 'Title'), para('More.')))
+    expect(r.issues.filter((i) => i.kind === 'headingMultipleH1')).toEqual([
+      { kind: 'headingMultipleH1', headingIndex: 2, headingText: 'Title', level: 1 },
+    ])
+    expect(r.issues.filter((i) => i.kind === 'headingDuplicateText')).toEqual([
+      { kind: 'headingDuplicateText', headingIndex: 2, headingText: 'Title', level: 1 },
+    ])
+  })
+
+  // P2-26, rule 20: alt text with a redundant opening word.
+  it('flags every redundant-prefix alt (EN and FA, punctuation and case variants)', () => {
+    const alts = [
+      'Image of a cat', 'Photo: sunset', 'picture of dog', 'عکس یک گربه', 'تصویر: غروب',
+      'PHOTO: sunset', 'Image, a cat', 'Illustration of a scene', 'graphic of a chart',
+    ]
+    const r = analyzeDoc(doc(...alts.map((a) => image(a))))
+    expect(r.issues.filter((i) => i.kind === 'imageAltRedundantPrefix')).toEqual(
+      alts.map((a, i) => ({ kind: 'imageAltRedundantPrefix', imageIndex: i + 1, altText: a })),
+    )
+    expect(r.counts.imageAltRedundantPrefix).toBe(alts.length)
+  })
+
+  it('does NOT flag redundant-prefix lookalikes: later word, exact vague, or filename', () => {
+    for (const alt of ['A photo of a cat', 'Sample photo', 'photo', 'photo.png']) {
+      const r = analyzeDoc(doc(image(alt)))
+      expect(r.issues.filter((i) => i.kind === 'imageAltRedundantPrefix')).toEqual([])
+      expect(r.counts.imageAltRedundantPrefix).toBe(0)
+    }
+    // 'photo' alone is vague-only; 'photo.png' is filename-only.
+    expect(analyzeDoc(doc(image('photo'))).issues.filter((i) => i.kind === 'imageAltVague')).toHaveLength(1)
+    expect(analyzeDoc(doc(image('photo.png'))).issues.filter((i) => i.kind === 'imageAltIsFilename')).toHaveLength(1)
+  })
+
+  it('missing/empty alt is never flagged as a redundant prefix', () => {
+    const r = analyzeDoc(doc(image(), image(''), image('   '), image(null)))
+    expect(r.issues.filter((i) => i.kind === 'imageAltRedundantPrefix')).toEqual([])
+    expect(r.counts.imageAltMissing).toBe(4)
+    expect(r.counts.imageAltRedundantPrefix).toBe(0)
+  })
+
+  it('a mixed doc with both P2-26 rules reports full counts over 20 kinds', () => {
+    const r = analyzeDoc(doc(
+      heading(1, 'Title'),
+      para('Body.'),
+      heading(1, 'Second'),
+      para('More.'),
+      image('Photo: sunset'),
+    ))
+    expect(r.total).toBe(2)
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 1, imageAltRedundantPrefix: 1 })
+  })
+
+  it('a mixed doc with both new rules reports full counts over 20 kinds', () => {
     const r = analyzeDoc(doc(
       heading(1, 'c'.repeat(101)),
       paraNodes(linkedNoHref('Guide')),
@@ -1013,6 +1104,6 @@ describe('a11y analyzeDoc', () => {
       table([[cell('Name', true)], [cell('A')]]),
     ))
     expect(r.total).toBe(2)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 1, headingTooLong: 1 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 1, headingTooLong: 1, headingMultipleH1: 0, imageAltRedundantPrefix: 0 })
   })
 })
