@@ -17,9 +17,37 @@ import { isSupabaseConfigured } from './lib/supabaseEnv'
 import { computeEntitlement } from './lib/entitlement'
 import { saveUiLang, tr, uiDir, type UiLang, type I18nKey } from './lib/i18n'
 import SettingsPanel from './components/SettingsPanel'
+import { useCloudSync } from './components/useCloudSync'
+import AuthScreen from './components/AuthScreen'
+import type { AuthClientLike } from './lib/authFlow'
+import ConflictResolveModal from './components/ConflictResolveModal'
+import CloudLibraryModal from './components/CloudLibraryModal'
+import { saveVersions } from './lib/versions'
+import { loadDrafts, saveDraft, clearDraft } from './lib/recovery'
+import type { RestoredLibrary } from './lib/libraryBackup'
+import type { ConflictChoice } from './lib/conflictResolve'
+import type { DocSyncStatus } from './lib/syncProtocol'
 import { loadSettings, saveSettings, resolveTheme, defaultSettings, uiSizeClass, newDocDir, applyNewDocDefaults, type VyroSettings } from './lib/settings'
 
 type CardEdit = { id: string; kind: 'rename' | 'folder' }
+
+// Stage 2B: per-document cloud sync status → i18n key + badge. Rendered
+// ONLY while cloud sync is active (flag on + configured + premium); with
+// the flag off nothing in the dashboard or editor changes at all.
+const SYNC_KEY: Record<DocSyncStatus, I18nKey> = { 'local-only': 'syncLocalOnly', queued: 'syncQueued', syncing: 'syncSyncing', synced: 'syncSynced', conflict: 'syncConflict', failed: 'syncFailed' }
+function syncStatusText(status: DocSyncStatus, syncedAt: string | undefined, lang: UiLang): string {
+  if (status === 'synced' && syncedAt) return `${tr(lang, 'syncSynced')} · ${new Date(syncedAt).toLocaleTimeString()}`
+  return tr(lang, SYNC_KEY[status])
+}
+function SyncBadge({ status, syncedAt, lang, onResolve }: { status: DocSyncStatus | null; syncedAt?: string; lang: UiLang; onResolve?: () => void }) {
+  if (!status) return null
+  const text = syncStatusText(status, syncedAt, lang)
+  // Stage 2C: a conflict badge is the doorway to resolution.
+  if (status === 'conflict' && onResolve) {
+    return <button type="button" className="bdg sync bdg-btn" aria-label={`${text} — ${tr(lang, 'resolveConflict')}`} onClick={(e) => { e.stopPropagation(); onResolve() }}>{text}</button>
+  }
+  return <span className="bdg sync">{text}</span>
+}
 
 // Inline rename/folder editor for a document card. Local state is initialised
 // ONCE per edit session (mount), so parent re-renders can't churn the input;
@@ -56,8 +84,10 @@ export default function App(){
   const toggleTheme=()=>setSettings(s=>({...s, theme: resolveTheme(s.theme, systemDark)==='dark'?'light':'dark'}))
   const [settingsOpen,setSettingsOpen]=useState(false)
   const [freshDefaults,setFreshDefaults]=useState<{id:string;font:string;size:number}|null>(null)
-  const [user,setUser]=useState<any>(null); const [authMsg,setAuthMsg]=useState(''); const [email,setEmail]=useState(''); const [password,setPassword]=useState('')
+  const [user,setUser]=useState<any>(null); const [authMsg,setAuthMsg]=useState(''); const [authClient,setAuthClient]=useState<AuthClientLike|null>(null); const [username,setUsername]=useState<string|null>(null)
   const [showPremium,setShowPremium]=useState(false)
+  const [showCloudLib,setShowCloudLib]=useState(false)
+  const [conflictId,setConflictId]=useState<string|null>(null)
   const [saveError,setSaveError]=useState(false)
   const [menuId,setMenuId]=useState<string|null>(null)
   const [cardEdit,setCardEdit]=useState<CardEdit|null>(null)
@@ -109,6 +139,9 @@ export default function App(){
   const t=(k:I18nKey)=>tr(lang,k)
   const entitlement=useMemo(()=> computeEntitlement(user, new Date()),[user])
   const isPremium = isSupabaseConfigured && !!user && entitlement.isPremium
+  // Stage 2B: cloud sync engine lifecycle (inert unless the kill-switch
+  // flag is on AND a premium user is signed in — see useCloudSync).
+  const cloud=useCloudSync({ user, isPremium, docs, setDocs })
   useEffect(()=>{ const ok=saveDocs(localStorage, docs); if(!ok && !saveErrorShown.current){ saveErrorShown.current=true; setSaveError(true) } if(ok){ saveErrorShown.current=false; setSaveError(false) } },[docs])
   useEffect(()=>{ document.documentElement.dataset.theme=theme; try{ localStorage.setItem('vyro-web-theme',theme) }catch{ /* best-effort */ } },[theme])
   useEffect(()=>{ saveUiLang(localStorage, lang); document.documentElement.lang = lang==='fa' ? 'fa' : 'en' },[lang])
@@ -119,7 +152,11 @@ export default function App(){
   // P2-4: the Supabase client loads only when auth is configured (Local
   // Mode never fetches it). A failed chunk load leaves the app in Local
   // Mode instead of breaking the dashboard.
-  useEffect(()=>{ if(!isSupabaseConfigured) return; let cancelled=false; let sub:{unsubscribe:()=>void}|null=null; (async()=>{ try{ const { supabase }=await import('./lib/supabase'); if(cancelled || !supabase) return; const {data}=await supabase.auth.getUser(); if(!cancelled) setUser(data.user??null); const res=supabase.auth.onAuthStateChange(async()=>{ const {data}=await supabase.auth.getUser(); if(!cancelled) setUser(data.user??null) }); sub=res.data.subscription }catch{ /* Local Mode fallback */ } })(); return ()=>{ cancelled=true; sub?.unsubscribe() } },[])
+  useEffect(()=>{ if(!isSupabaseConfigured) return; let cancelled=false; let sub:{unsubscribe:()=>void}|null=null; (async()=>{ try{ const { supabase }=await import('./lib/supabase'); if(cancelled || !supabase) return; setAuthClient(supabase.auth as unknown as AuthClientLike); const {data}=await supabase.auth.getUser(); if(!cancelled) setUser(data.user??null); const res=supabase.auth.onAuthStateChange(async()=>{ const {data}=await supabase.auth.getUser(); if(!cancelled) setUser(data.user??null) }); sub=res.data.subscription }catch{ /* Local Mode fallback */ } })(); return ()=>{ cancelled=true; sub?.unsubscribe() } },[])
+  // R2-I: load the signed-in user's auto-generated username (own profiles
+  // row only). Local Mode and signed-out state never fetch it; a missing
+  // row (pre-trigger account) simply leaves the line hidden.
+  useEffect(()=>{ if(!isSupabaseConfigured || !user?.id){ setUsername(null); return } let cancelled=false; (async()=>{ try{ const { supabase }=await import('./lib/supabase'); if(cancelled || !supabase) return; const { fetchOwnUsername }=await import('./lib/profile'); const name=await fetchOwnUsername(supabase as unknown as import('./lib/profile').ProfilesClientLike, user.id); if(!cancelled) setUsername(name) }catch{ if(!cancelled) setUsername(null) } })(); return ()=>{ cancelled=true } },[user?.id])
   const liveDocs=useMemo(()=>docs.filter(d=>!d.deletedAt),[docs])
   const filtered=useMemo(()=>sortDocs(filterDocs(docs,{query,folder: folder||undefined, favoritesOnly:favOnly}), sort),[docs,query,folder,favOnly,sort])
   // M2-16: which empty message the Recent list needs (trash has its own).
@@ -155,15 +192,28 @@ export default function App(){
   // createDoc path (same folder + direction as the source doc). The source
   // document stays open and untouched; the merged docs appear on the dashboard.
   const createMergedDocs=(items:{title:string;content:any}[])=>{ if(!openDoc) return; const src=openDoc; setDocs(prev=>{ let nd=prev; for(const item of [...items].reverse()){ const res=createDoc(nd,{title:item.title, content:item.content, dir:src.dir, folder:src.folder, margins:src.margins, orientation:src.orientation, pageSize:src.pageSize, pageW:src.pageW, pageH:src.pageH, customMargins:src.customMargins, headerText:src.headerText, footerText:src.footerText}); nd=res.docs } return nd }) }
-  const authAction=async(kind:'in'|'up'|'out')=>{ if(!isSupabaseConfigured) return; setAuthMsg(''); try{ const { supabase }=await import('./lib/supabase'); if(!supabase) return; if(kind==='out'){ await supabase.auth.signOut(); setUser(null) } else if(kind==='in'){ const {error}=await supabase.auth.signInWithPassword({email,password}); if(error) throw error; const {data}=await supabase.auth.getUser(); setUser(data.user) } else { const {error}=await supabase.auth.signUp({email,password}); if(error) throw error; const {data}=await supabase.auth.getUser(); setUser(data.user); setAuthMsg(t('accountCreated')) } }catch(e:any){ setAuthMsg(e.message||t('authFailed')) } }
+  // R1: sign-in / sign-up / reset live in AuthScreen + authFlow (validated,
+  // mapped errors, no raw server messages). App keeps only sign-out and the
+  // signed-in refresh used as AuthScreen's onSignedIn callback.
+  const refreshUser=async()=>{ try{ const { supabase }=await import('./lib/supabase'); if(!supabase) return; const {data}=await supabase.auth.getUser(); setUser(data.user??null) }catch{ /* Local Mode fallback */ } }
+  const authAction=async(kind:'out')=>{ if(!isSupabaseConfigured) return; setAuthMsg(''); try{ const { supabase }=await import('./lib/supabase'); if(!supabase) return; if(kind==='out'){ await supabase.auth.signOut(); setUser(null) } }catch(e:any){ setAuthMsg(e.message||t('authFailed')) } }
   const startCardEdit=(d:VyroDoc, kind:'rename'|'folder')=>{ setMenuId(null); setDeleteId(null); setCardEdit({id:d.id, kind}) }
   const commitCardEdit=(id:string, kind:'rename'|'folder', value:string)=>{ if(kind==='rename'){ if(value.trim()) setDocs(prev=>renameDoc(prev,id,value)) } else { setDocs(prev=>updateDoc(prev,id,{folder:value.trim()})) } setCardEdit(null) }
   const askDelete=(id:string)=>{ setMenuId(null); setCardEdit(null); setDeleteId(id) }
   const doTrash=(id:string)=>{ setDocs(prev=>trashDoc(prev,id)); setDeleteId(null) }
   const doRestore=(id:string)=>{ setDocs(prev=>restoreDoc(prev,id)); setPurgeId(null) }
   const doPurge=(id:string)=>{ setDocs(prev=>purgeDoc(prev,id)); setPurgeId(null) }
+  // Stage 2D: apply a restored library backup. Documents flow through the
+  // normal docs state (persisted by the saveDocs effect); versions and
+  // drafts are replaced in their own stores. Restored documents carry no
+  // cloud fields — nothing is re-linked automatically.
+  const applyLibraryRestore=(restored:RestoredLibrary)=>{ saveVersions(localStorage, restored.versions); const current=loadDrafts(localStorage); for(const id of Object.keys(current)) clearDraft(localStorage, id); for(const d of Object.values(restored.drafts)) saveDraft(localStorage, d); setDocs(restored.documents) }
   const dir=uiDir(lang)
-  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={toggleTheme} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions} writingWidth={settings.writingWidth} toolbarMode={settings.toolbar} autosaveEnabled={settings.autosaveEnabled} autosaveIntervalMs={settings.autosaveIntervalMs} freshDefaults={freshDefaults?.id===openDoc.id? freshDefaults : undefined} settings={settings} onSettingsChange={(patch)=>setSettings(s=>({...s, ...patch}))} onSettingsReset={()=>setSettings(defaultSettings())} isLocal={!isSupabaseConfigured} onCreateMergedDocs={createMergedDocs} docsList={docs.filter(d=>!d.deletedAt).map(d=>({id:d.id,title:d.title,updatedAt:d.updatedAt}))} onOpenDoc={(id)=>setOpenId(id)} onNewDoc={()=>createFromTemplate('blank')} onMakeCopy={(id)=>{ const next=duplicateDoc(docs,id); if(next!==docs){ setDocs(next); setOpenId(next[0].id) } }} accountLabel={user?.email||undefined}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
+  const openSyncStatus=openDoc? cloud.statusFor(openDoc) : null
+  const openSyncText=openSyncStatus? syncStatusText(openSyncStatus, openDoc?.cloudSyncedAt, lang) : undefined
+  const conflictDoc=conflictId? docs.find(d=>d.id===conflictId && d.cloudConflict) ?? null : null
+  const conflictModal=conflictDoc? <ConflictResolveModal doc={conflictDoc} lang={lang} onClose={()=>setConflictId(null)} onResolve={(choice: ConflictChoice)=>cloud.resolveConflict(conflictDoc.id, choice)}/> : null
+  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} syncStatusText={openSyncText} onSyncStatusClick={openDoc.cloudConflict? ()=>setConflictId(openDoc.id):undefined} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={toggleTheme} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions} writingWidth={settings.writingWidth} toolbarMode={settings.toolbar} autosaveEnabled={settings.autosaveEnabled} autosaveIntervalMs={settings.autosaveIntervalMs} freshDefaults={freshDefaults?.id===openDoc.id? freshDefaults : undefined} settings={settings} onSettingsChange={(patch)=>setSettings(s=>({...s, ...patch}))} onSettingsReset={()=>setSettings(defaultSettings())} isLocal={!isSupabaseConfigured} onCreateMergedDocs={createMergedDocs} docsList={docs.filter(d=>!d.deletedAt).map(d=>({id:d.id,title:d.title,updatedAt:d.updatedAt}))} onOpenDoc={(id)=>setOpenId(id)} onNewDoc={()=>createFromTemplate('blank')} onMakeCopy={(id)=>{ const next=duplicateDoc(docs,id); if(next!==docs){ setDocs(next); setOpenId(next[0].id) } }} accountLabel={user?.email||undefined}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{conflictModal}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
   return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}>
     <header className="appbar"><div className="appbar-inner">
       <div className="logo big"><span className="vmark">V</span><span>Vyro Web</span></div>
@@ -176,6 +226,7 @@ export default function App(){
         {!isSupabaseConfigured && <span className="local-chip">{t('localSaving')}</span>}
         <button className="rbtn" onClick={openPalette} title="Ctrl+K" aria-label={t('commandPalette')}>⌘K</button>
         <button className="rbtn" onClick={()=>setShortcutsOpen(true)} aria-label={t('keyboardShortcuts')} title={t('keyboardShortcuts')}>⌨</button>
+        <button className="rbtn" onClick={()=>setShowCloudLib(true)} aria-label={t('cloudLibrary')} title={t('cloudLibrary')}>☁</button>
         <div className="lang-toggle" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>setLang('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>setLang('fa')}>فارسی</button></div>
         <button className="rbtn" onClick={()=>setSettingsOpen(true)} aria-label={t('settings')} title={t('settings')}>⚙</button>
         <button className="rbtn" onClick={toggleTheme} aria-label={theme==='dark'? t('lightUi'):t('darkUi')}>{theme==='dark'?'☀':'☾'}</button>
@@ -193,9 +244,7 @@ export default function App(){
           <button className={`side-nav-item${view==='trash'?' active':''}`} aria-pressed={view==='trash'} onClick={()=>setView('trash')}><span>🗑 {t('trash')}</span><span className="side-nav-count">{trashed.length}</span></button>
         </nav>
         <div className="card sub-card"><h3>{t('profileSubscription')}</h3>
-          {!isSupabaseConfigured ? <><p><b>{t('localFree')}</b></p><p className="muted">{t('noAccount')}</p></> : user ? <><p>{user.email}</p><p>{(user.user_metadata?.display_name)||t('noDisplayName')}</p><p><b>{entitlement.isPremium?`${t('premiumActive')} — ${entitlement.status}`: entitlement.status==='expired'? t('premiumExpired'): t('free')}</b></p>{entitlement.premiumUntil && <p className="muted">{t('until')} {entitlement.premiumUntil.toLocaleString()}</p>}<button className="rbtn" onClick={()=>authAction('out')}>{t('signOut')}</button>{!entitlement.isPremium && <button className="primary small" onClick={()=>setShowPremium(true)}>{t('goPremium')}</button>}</> : <>
-            <input placeholder={t('email')} aria-label={t('email')} value={email} onChange={e=>setEmail(e.target.value)}/><input placeholder={t('password')} aria-label={t('password')} type="password" value={password} onChange={e=>setPassword(e.target.value)}/>
-            <div className="row"><button className="primary small" onClick={()=>authAction('in')}>{t('signIn')}</button><button className="rbtn" onClick={()=>authAction('up')}>{t('signUp')}</button></div></>}
+          {!isSupabaseConfigured ? <><p><b>{t('localFree')}</b></p><p className="muted">{t('noAccount')}</p></> : user ? <><p>{user.email}</p>{username && <p className="muted">{t('usernameLabel')}: {username}</p>}<p>{(user.user_metadata?.display_name)||t('noDisplayName')}</p><p><b>{entitlement.isPremium?`${t('premiumActive')} — ${entitlement.status}`: entitlement.status==='expired'? t('premiumExpired'): t('free')}</b></p>{entitlement.premiumUntil && <p className="muted">{t('until')} {entitlement.premiumUntil.toLocaleString()}</p>}<button className="rbtn" onClick={()=>authAction('out')}>{t('signOut')}</button>{!entitlement.isPremium && <button className="primary small" onClick={()=>setShowPremium(true)}>{t('goPremium')}</button>}</> : <AuthScreen lang={settings.uiLang} auth={authClient} onSignedIn={refreshUser}/>}
           {authMsg && <p className="muted">{authMsg}</p>}
         </div>
       </aside>
@@ -279,6 +328,7 @@ export default function App(){
             <div className="doc-badges">
               <span className="bdg dir">{d.dir==='rtl' ? 'RTL · دری/فارسی' : 'LTR · English'}</span>
               {d.folder && <span className="bdg" dir="auto">{d.folder}</span>}
+              {cloud.active && <SyncBadge status={cloud.statusFor(d)} syncedAt={d.cloudSyncedAt} lang={lang} onResolve={()=>setConflictId(d.id)}/>}
             </div>
             {cardEdit && cardEdit.id===d.id && <InlineEditForm key={cardEdit.kind}
               label={cardEdit.kind==='rename'? t('rename') : t('folder')}
@@ -302,6 +352,8 @@ export default function App(){
     {settingsOpen && <SettingsPanel settings={settings} lang={lang} onChange={(patch)=>setSettings(s=>({...s, ...patch}))} onReset={()=>setSettings(defaultSettings())} onClose={()=>setSettingsOpen(false)}/>}
     {tplModal && <div className="modal-backdrop" onClick={()=>setTplModal(false)}><form ref={tplFormRef} className="modal" onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); createCustomTemplate() }}><h2>{t('customTemplate')}</h2><label className="field">{t('customTemplatePrompt')}<input autoFocus value={tplName} dir="auto" onChange={e=>setTplName(e.target.value)}/></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setTplModal(false)}>{t('cancel')}</button><button type="submit" className="primary small" disabled={!tplName.trim()}>{t('create')}</button></div></form></div>}
     {showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}
+    {showCloudLib && <CloudLibraryModal lang={lang} docs={docs} cloud={cloud} onRestore={applyLibraryRestore} onClose={()=>setShowCloudLib(false)}/>}
+    {conflictModal}
     {smartForm && <SmartTemplateForm tpl={smartForm} lang={lang} onClose={()=>setSmartForm(null)} onCreate={createFromSmartForm}/>}
   </div>
 }

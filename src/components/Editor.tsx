@@ -37,6 +37,7 @@ import { validateImageFile, imageSizeKb, IMAGE_WIDTH_PRESETS } from '../lib/imag
 import FindReplacePanel from './FindReplacePanel'
 import ContextMenu from './ContextMenu'
 import { sanitizePastedHtml, htmlToPlainText, getContextMenuItems, rectOverlapsSpans, tableMenuAvailability, type MenuItemId, type TableSelectionState } from '../lib/paste'
+import { resolveMenuImageTarget, imageTargetAlt, applyAltToTarget, type ImageTarget } from '../lib/imageAltTarget'
 import { selectedRect, cellAround } from '@tiptap/pm/tables'
 import { createSnapshot, addVersion, loadVersions, saveVersions, restoreVersion, listVersions, hasSnapshotWorthyContent, type VersionSnapshot, type VersionTrigger } from '../lib/versions'
 import { languageTagForDir } from '../lib/dir'
@@ -177,7 +178,7 @@ const TABS: { id:string; key:I18nKey }[] = [
   { id:'Layout', key:'tabLayout' }, { id:'References', key:'tabReferences' }, { id:'Mailings', key:'tabMailings' }, { id:'Review', key:'tabReview' }, { id:'View', key:'tabView' },
 ]
 
-export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults, settings, onSettingsChange, onSettingsReset, isLocal, onCreateMergedDocs, onNewDoc, onOpenDoc, onMakeCopy, docsList, accountLabel }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number }; settings?: VyroSettings; onSettingsChange?: (patch: Partial<VyroSettings>)=>void; onSettingsReset?: ()=>void; isLocal?: boolean; onCreateMergedDocs?: (items:{title:string;content:any}[])=>void; onNewDoc?: ()=>void; onOpenDoc?: (id:string)=>void; onMakeCopy?: (id:string)=>void; docsList?: { id:string; title:string; updatedAt:string }[]; accountLabel?: string }){
+export default function Editor({ doc, onChange, onBack, isPremium, onRequirePremium, theme, onToggleTheme, lang, onLangChange, saveFailed, syncStatusText, onSyncStatusClick, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults, settings, onSettingsChange, onSettingsReset, isLocal, onCreateMergedDocs, onNewDoc, onOpenDoc, onMakeCopy, docsList, accountLabel }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; isPremium:boolean; onRequirePremium:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; syncStatusText?:string; onSyncStatusClick?:()=>void; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number }; settings?: VyroSettings; onSettingsChange?: (patch: Partial<VyroSettings>)=>void; onSettingsReset?: ()=>void; isLocal?: boolean; onCreateMergedDocs?: (items:{title:string;content:any}[])=>void; onNewDoc?: ()=>void; onOpenDoc?: (id:string)=>void; onMakeCopy?: (id:string)=>void; docsList?: { id:string; title:string; updatedAt:string }[]; accountLabel?: string }){
   const t=(k:I18nKey)=>tr(lang,k)
   const [tab,setTab]=useState('Home')
   const [zoom,setZoom]=useState(100)
@@ -297,9 +298,17 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   useEffect(()=>{ setDraft(null) },[doc.id])
   const commitTitle=()=>{ const d=titleDraftRef.current; if(d==null) return; const r=resolveTitleCommit(doc.title, d); setDraft(null); if(r.changed) onChange({ title: r.title }) }
   // M2-06 contextual menu + image alt-text dialog (transient UI only).
-  const [ctxMenu,setCtxMenu]=useState<{ items:MenuItemId[]; x:number; y:number; linkHref:string|null }|null>(null)
+  const [ctxMenu,setCtxMenu]=useState<{ items:MenuItemId[]; x:number; y:number; linkHref:string|null; imageTarget:ImageTarget|null }|null>(null)
   const [altOpen,setAltOpen]=useState(false)
   const [altText,setAltText]=useState('')
+  // Context-menu alt dialog: the clicked image is captured when the
+  // menu opens and held here while the dialog is open, so Save writes
+  // to that image even if the editor selection has moved on (P2-19
+  // defect: the old save relied on the ambient selection and silently
+  // lost the text). Cleared on every close, so a stale target can
+  // never be applied by a later dialog.
+  const altTargetRef=useRef<ImageTarget|null>(null)
+  const closeAltDialog=()=>{ altTargetRef.current=null; setAltOpen(false) }
   const [shortcutsOpen,setShortcutsOpen]=useState(false)
   // P2-13 Symbols panel: opener recorded before opening (link/image
   // dialog pattern) so focus returns to the ribbon button on close.
@@ -360,7 +369,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
   // inputs, so autofocus stays off there; image-preview focuses Insert
   // (the last button) so Enter confirms instead of cancelling.
   useDialogFocus(linkOpen, { containerRef: linkDialogRef, onClose: ()=>setLinkOpen(false), autofocus: false, trap: true, opener: dialogOpenerRef.current })
-  useDialogFocus(altOpen, { containerRef: altDialogRef, onClose: ()=>setAltOpen(false), autofocus: false, trap: true, opener: dialogOpenerRef.current })
+  useDialogFocus(altOpen, { containerRef: altDialogRef, onClose: closeAltDialog, autofocus: false, trap: true, opener: dialogOpenerRef.current })
   useDialogFocus(imgPreview!==null, { containerRef: imgPreviewDialogRef, onClose: ()=>setImgPreview(null), autofocusLast: true, trap: true, opener: dialogOpenerRef.current })
   useDialogFocus(imgEditOpen, { containerRef: imgEditDialogRef, onClose: ()=>setImgEditOpen(false), autofocus: true, trap: true, opener: dialogOpenerRef.current })
   // M2-15: versions region panel — no autoFocus inside, so the opener is
@@ -1001,7 +1010,8 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       const inLink=editor.isActive('link')
       const linkHref=inLink ? (editor.getAttributes('link').href as string|null) ?? null : null
       const items=getContextMenuItems({ hasSelection, inTable, inImage, inLink, linkHref, table: tableMenuAvailability(tableState) })
-      setCtxMenu({ items, x: clientX, y: clientY, linkHref })
+      const imageTarget=inImage ? resolveMenuImageTarget(editor.state.doc, hit?.pos ?? null, { from: sel.from, nodeName: (sel as any).node?.type.name ?? null }) : null
+      setCtxMenu({ items, x: clientX, y: clientY, linkHref, imageTarget })
     } catch { /* menu is best-effort; a failed probe must never break editing */ }
   }
   const runMenuAction=(id:MenuItemId)=>{
@@ -1010,6 +1020,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
     // focus here on close; openLink re-records the same element.
     dialogOpenerRef.current=document.activeElement
     const linkHref=ctxMenu?.linkHref ?? null
+    const imageTarget=ctxMenu?.imageTarget ?? null
     setCtxMenu(null)
     const chain=()=>editor.chain().focus()
     switch(id){
@@ -1026,7 +1037,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       case 'deleteColumn': chain().deleteColumn().run(); break
       case 'mergeCells': chain().mergeCells().run(); break
       case 'splitCell': chain().splitCell().run(); break
-      case 'imageAlt': setAltText((editor.getAttributes('image').alt as string)||''); setAltOpen(true); break
+      case 'imageAlt': altTargetRef.current=imageTarget; setAltText(imageTarget ? imageTargetAlt(editor.state.doc, imageTarget) : ((editor.getAttributes('image').alt as string)||'')); setAltOpen(true); break
       case 'alignLeft': chain().setTextAlign('left').run(); break
       case 'alignCenter': chain().setTextAlign('center').run(); break
       case 'alignRight': chain().setTextAlign('right').run(); break
@@ -1036,7 +1047,22 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       case 'openLink': if(linkHref && isSafeLinkUrl(linkHref)) window.open(linkHref, '_blank', 'noopener'); break
     }
   }
-  const applyImageAlt=()=>{ if(!editor) return; editor.chain().focus().updateAttributes('image', { alt: altText.trim() || null }).run(); setAltOpen(false) }
+  const applyImageAlt=()=>{
+    if(!editor) return
+    const alt=altText.trim() || null
+    const target=altTargetRef.current
+    if(target){
+      // Save to the image the menu was opened for: applyAltToTarget
+      // re-selects it and identity-checks it first, so a deleted or
+      // replaced target gets NO write — never a wrong-image write —
+      // and the user is told instead of the text vanishing silently.
+      const applied=applyAltToTarget(editor, target, alt)
+      closeAltDialog()
+      if(!applied) setToast(t('imageTargetGone'))
+      return
+    }
+    editor.chain().focus().updateAttributes('image', { alt }).run(); setAltOpen(false)
+  }
   /** Guarded long-press: timer cleared on any move/scroll/end, so normal
    *  taps (caret placement) and scrolling never trigger the menu. If the
    *  timer fires, the native long-press menu is suppressed by the
@@ -1251,6 +1277,14 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
          word-based estimate remains only inside the statistics
          dialog's separate figure. */}
       <span className={saveState==='failed' ? 'status-save failed' : 'status-save'}>{saveText}</span>
+      {/* Stage 2B: cloud sync status for this document — rendered only when
+          App passes a label (cloud sync active); absent = exactly the
+          pre-2B status bar. The local save text above stays authoritative
+          for local saving; this never claims a cloud save before the
+          server ack (the label comes from the sync engine's state). */}
+      {syncStatusText && (onSyncStatusClick
+        ? <button type="button" className="status-sync status-sync-btn" onClick={onSyncStatusClick}>{syncStatusText}</button>
+        : <span className="status-sync">{syncStatusText}</span>)}
       <button type="button" className="status-stats-btn" onClick={()=>setStatsOpen(true)} aria-label={t('documentStatistics')} title={t('documentStatistics')}>{statusStats.words} {countNoun(statusStats.words, t('wordSingular'), t('words'))} · {statusStats.charsWithSpaces} {countNoun(statusStats.charsWithSpaces, t('charSingular'), t('chars'))} · {pageCount} {countNoun(pageCount, t('pageSingular'), t('pagesLabel'))}</button>
       <span className="status-dir" aria-label={t('language')} title={t('language')}>{documentLanguageLabel(doc.dir)}</span>
       <span className="status-dir" aria-label={t('direction')} title={t('direction')}>{documentDirectionLabel(doc.dir)}</span>
@@ -1258,7 +1292,7 @@ export default function Editor({ doc, onChange, onBack, isPremium, onRequirePrem
       <div className="status-zoom"><span>{t('zoom')}</span><button type="button" className="status-btn" aria-label={t('zoomOut')} onClick={()=>setZoom(z=>zoomStep(z,-10))}>−</button><input type="range" min={50} max={200} step={5} value={zoom} onChange={e=>setZoom(clampZoom(Number(e.target.value)))} aria-label={t('zoom')}/><span>{zoom}%</span><button type="button" className="status-btn" aria-label={t('zoomIn')} onClick={()=>setZoom(z=>zoomStep(z,10))}>+</button></div>
     </footer>}
     {ctxMenu && <ContextMenu items={ctxMenu.items} x={ctxMenu.x} y={ctxMenu.y} lang={lang} onAction={runMenuAction} onClose={()=>setCtxMenu(null)} />}
-    {altOpen && <div className="modal-backdrop" onClick={()=>setAltOpen(false)}><form className="modal" ref={altDialogRef} onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageAlt() }}><h2>{t('menuImageAlt')}</h2><label className="field">{t('imageAltPrompt')}<input autoFocus value={altText} dir="auto" onChange={e=>setAltText(e.target.value)} /></label><div className="row end"><button type="button" className="rbtn" onClick={()=>setAltOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
+    {altOpen && <div className="modal-backdrop" onClick={closeAltDialog}><form className="modal" ref={altDialogRef} onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageAlt() }}><h2>{t('menuImageAlt')}</h2><label className="field">{t('imageAltPrompt')}<input autoFocus value={altText} dir="auto" onChange={e=>setAltText(e.target.value)} /></label><div className="row end"><button type="button" className="rbtn" onClick={closeAltDialog}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
     {imgPreview && <div className="modal-backdrop" onClick={()=>setImgPreview(null)}><div className="modal" ref={imgPreviewDialogRef} onClick={e=>e.stopPropagation()}><h2>{t('imagePreview')}</h2><img src={imgPreview.src} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><p className="muted">{t('imageSizeKb')}: {imageSizeKb(imgPreview.size)}</p><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgPreview(null)}>{t('cancel')}</button><button type="button" className="primary small" onClick={insertPreviewImage}>{t('imageInsert')}</button></div></div></div>}
     {imgEditOpen && <div className="modal-backdrop" onClick={()=>setImgEditOpen(false)}><form className="modal" ref={imgEditDialogRef} onClick={e=>e.stopPropagation()} onSubmit={e=>{ e.preventDefault(); applyImageEdit() }}><h2>{t('imageEdit')}</h2><img src={imgSrc} alt="" style={{ maxWidth:'100%', height:'auto', borderRadius:8 }} /><label className="field">{t('imageWidth')}<select value={imgWidth} onChange={e=>setImgWidth(e.target.value)}>{IMAGE_WIDTH_PRESETS.map(p=><option key={p.value} value={p.value}>{p.value==='' ? t('imageWidthOriginal') : p.label}</option>)}</select></label><label className="field">{t('imageCaption')}<input value={imgCaption} dir="auto" onChange={e=>setImgCaption(e.target.value)} /></label><label className="field">{t('imageAltPrompt')}<input value={imgAlt} dir="auto" onChange={e=>setImgAlt(e.target.value)} /></label><div className="row wrap"><button type="button" className="rbtn" onClick={()=>replaceImgRef.current?.click()}>{t('imageReplace')}</button><button type="button" className="danger-btn" onClick={deleteImageEdit}>{t('delete')}</button></div><div className="row end"><button type="button" className="rbtn" onClick={()=>setImgEditOpen(false)}>{t('cancel')}</button><button type="submit" className="primary small">{t('save')}</button></div></form></div>}
     {shortcutsOpen && <KeyboardShortcutsDialog open={shortcutsOpen} onClose={()=>setShortcutsOpen(false)} lang={lang} />}
