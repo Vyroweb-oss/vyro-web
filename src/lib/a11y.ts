@@ -3,11 +3,12 @@
 // in Phase 2, P2-18, with two more, and in Phase 2, P2-21, with two more,
 // and in Phase 2, P2-22, with two more, and in Phase 2, P2-23, with two
 // more, and in Phase 2, P2-24, with two more, and in Phase 2, P2-25,
-// with two more, and in Phase 2, P2-26, with two more).
+// with two more, and in Phase 2, P2-26, with two more, and in Phase 2,
+// P2-27, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
-// document, never touches storage, network, or the editor. Exactly twenty
-// local, JSON-derivable rules — nothing is faked:
+// document, never touches storage, network, or the editor. Exactly
+// twenty-two local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -109,6 +110,26 @@
 //       it is already imageAltMissing; independent of the
 //       long/duplicate/filename/vague branches, so a redundant-prefix
 //       alt may legitimately fire several of them too).
+//   (21) tables containing at least one empty cell (tableEmptyCells —
+//       a tableCell or tableHeader anywhere in its rows whose
+//       recursive text, trimmed, is '' AND which contains no image
+//       node, so a whitespace-only cell flags but a cell holding an
+//       image does not; one issue per table, never per cell, carrying
+//       tableIndex only; independent of tableNoHeader and
+//       tableMergedCells, so a table may legitimately fire several).
+//   (22) links whose visible text differs from an earlier link's text
+//       but points to the same destination (linkSameTargetDifferentText
+//       — the inverse of (16), a second independent pass over the
+//       already-collected linkRuns; runs are grouped by the exact href
+//       string, and a run is flagged only when its normalised text
+//       (the same normalisation as (7)) is NEW for that href while an
+//       earlier run with the same href already exists, so [Guide,
+//       Manual] to one href flags only Manual, [Guide, Guide] flags
+//       nothing, and [Guide, Manual, Guide] flags only Manual; empty
+//       runs are NOT flagged here, they are already linkEmptyText, and
+//       runs with href '' are NOT flagged here, they are already
+//       linkMissingHref; independent of (16) and of the vague/URL-text
+//       branches).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -156,6 +177,8 @@ export type A11yIssueKind =
   | 'headingTooLong'
   | 'headingMultipleH1'
   | 'imageAltRedundantPrefix'
+  | 'tableEmptyCells'
+  | 'linkSameTargetDifferentText'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -210,6 +233,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   headingTooLong: 0,
   headingMultipleH1: 0,
   imageAltRedundantPrefix: 0,
+  tableEmptyCells: 0,
+  linkSameTargetDifferentText: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -461,6 +486,23 @@ export function analyzeDoc(docJson: any): A11yResult {
       if (hasMergedCell) {
         push({ kind: 'tableMergedCells', tableIndex })
       }
+      // Empty cells (P2-27, rule 21): one issue per table, never per
+      // cell, independent of the header and merged-cell rules above —
+      // neither branch suppresses the others. A cell is empty when its
+      // recursive text, trimmed, is '' AND it contains no image node,
+      // so a whitespace-only cell flags but a cell holding an image
+      // does not, even if the image has no alt text of its own.
+      const isEmptyCell = (cellNode: any): boolean => {
+        if (!cellNode || typeof cellNode !== 'object') return false
+        if (cellNode.type !== 'tableCell' && cellNode.type !== 'tableHeader') return false
+        return nodeTextRecursive(cellNode).trim() === '' && !nodeHasImage(cellNode)
+      }
+      const hasEmptyCell = Array.isArray(node.content) && node.content.some((row: any) =>
+        row && typeof row === 'object' && row.type === 'tableRow' && Array.isArray(row.content)
+          && row.content.some(isEmptyCell))
+      if (hasEmptyCell) {
+        push({ kind: 'tableEmptyCells', tableIndex })
+      }
     }
     if (Array.isArray(node.content)) node.content.forEach(walk)
   }
@@ -496,8 +538,9 @@ export function analyzeDoc(docJson: any): A11yResult {
   }
   let linkIndex = 0
   // Every flushed link run, in document order, for the P2-24 rule (16)
-  // pass below. A run split across same-href text nodes is recorded
-  // once, with its full trimmed visible text.
+  // pass and the P2-27 rule (22) pass below. A run split across
+  // same-href text nodes is recorded once, with its full trimmed
+  // visible text.
   const linkRuns: { linkIndex: number; href: string; linkText: string }[] = []
   const linkHrefOf = (node: any): string | null => {
     if (!node || typeof node !== 'object' || node.type !== 'text' || !Array.isArray(node.marks)) return null
@@ -582,6 +625,36 @@ export function analyzeDoc(docJson: any): A11yResult {
       push({ kind: 'linkSameTextDifferentTarget', linkIndex: run.linkIndex, href: run.href, linkText: run.linkText })
     }
     hrefs.add(run.href)
+  }
+
+  // Same destination, different link text (P2-27, rule 22): the inverse
+  // of rule (16), a second independent pass over the same collected
+  // runs, so it neither suppresses nor is suppressed by the
+  // empty/vague/URL-text branches or by rule (16) — each pass flags on
+  // its own grouping, and a run may legitimately carry both issues
+  // (e.g. its text seen before with another href, its href seen before
+  // with another text).
+  // Runs are grouped by the EXACT href string. Empty runs are skipped
+  // entirely (already linkEmptyText) and runs with href '' are skipped
+  // entirely (already linkMissingHref) — neither establishes an earlier
+  // run for its href. A run is flagged only when its normalised text
+  // (the same normalisation as (7)) is NEW for that href while an
+  // earlier run with the same href already exists: [Guide, Manual] to
+  // one href flags only Manual, [Guide, Guide] flags nothing, and
+  // [Guide, Manual, Guide] flags only Manual. A group with a single
+  // distinct text therefore never flags.
+  const seenLinkTextsByHref = new Map<string, Set<string>>()
+  for (const run of linkRuns) {
+    if (run.linkText === '' || run.href === '') continue
+    const normalized = normalizeLinkText(run.linkText)
+    let texts = seenLinkTextsByHref.get(run.href)
+    if (!texts) {
+      texts = new Set<string>()
+      seenLinkTextsByHref.set(run.href, texts)
+    } else if (!texts.has(normalized)) {
+      push({ kind: 'linkSameTargetDifferentText', linkIndex: run.linkIndex, href: run.href, linkText: run.linkText })
+    }
+    texts.add(normalized)
   }
 
   return { issues, total: issues.length, counts }

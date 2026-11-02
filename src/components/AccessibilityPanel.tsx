@@ -30,6 +30,8 @@ const GROUP_ORDER: { kind: A11yIssueKind; labelKey: I18nKey }[] = [
   { kind: 'headingTooLong', labelKey: 'a11yHeadingTooLong' },
   { kind: 'headingMultipleH1', labelKey: 'a11yHeadingMultipleH1' },
   { kind: 'imageAltRedundantPrefix', labelKey: 'a11yImageAltRedundantPrefix' },
+  { kind: 'tableEmptyCells', labelKey: 'a11yTableEmptyCells' },
+  { kind: 'linkSameTargetDifferentText', labelKey: 'a11yLinkSameTargetDifferentText' },
 ]
 
 function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
@@ -41,6 +43,8 @@ function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
     case 'tableNoHeader':
       return `${t('a11yTable')} ${issue.tableIndex}`
     case 'tableMergedCells':
+      return `${t('a11yTable')} ${issue.tableIndex}`
+    case 'tableEmptyCells':
       return `${t('a11yTable')} ${issue.tableIndex}`
     case 'headingSkip':
       return issue.headingText
@@ -87,6 +91,10 @@ function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
         ? `${t('a11yLink')} ${issue.linkIndex}: ${issue.linkText}`
         : `${t('a11yLink')} ${issue.linkIndex}`
     case 'linkMissingHref':
+      return issue.linkText
+        ? `${t('a11yLink')} ${issue.linkIndex}: ${issue.linkText}`
+        : `${t('a11yLink')} ${issue.linkIndex}`
+    case 'linkSameTargetDifferentText':
       return issue.linkText
         ? `${t('a11yLink')} ${issue.linkIndex}: ${issue.linkText}`
         : `${t('a11yLink')} ${issue.linkIndex}`
