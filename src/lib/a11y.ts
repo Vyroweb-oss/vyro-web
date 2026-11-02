@@ -1,9 +1,9 @@
 // Local Accessibility Checker (Mission 2, P2-5 — a Word-gap feature;
 // extended in Phase 2, P2-16, with two further JSON-derivable rules, and
-// in Phase 2, P2-18, with two more).
+// in Phase 2, P2-18, with two more, and in Phase 2, P2-21, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
-// document, never touches storage, network, or the editor. Exactly eight
+// document, never touches storage, network, or the editor. Exactly ten
 // local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
@@ -18,7 +18,18 @@
 //       Persian Yeh/Kaf, so "click here for details" is NOT vague),
 //   (8) images whose alt text is longer than 125 characters
 //       (imageAltTooLong — counted in code points of the trimmed alt;
-//       missing/empty alt is NOT flagged here, it is imageAltMissing).
+//       missing/empty alt is NOT flagged here, it is imageAltMissing),
+//   (9) headings whose text duplicates an earlier heading's text
+//       (headingDuplicateText — the first occurrence is never flagged,
+//       only each later one; normalisation is trim + lowercasing +
+//       collapsing internal whitespace + mapping Arabic Yeh/Kaf to
+//       Persian Yeh/Kaf, with ZWNJ preserved; empty headings are NOT
+//       flagged here, they are already headingEmpty),
+//   (10) images whose alt text duplicates an earlier image's alt text
+//       (imageAltDuplicate — same normalisation as (9), first occurrence
+//       never flagged, only each later one; missing/empty alt is NOT
+//       flagged here, it is imageAltMissing; a duplicate long alt
+//       legitimately fires both imageAltTooLong and imageAltDuplicate).
 // Deliberately NOT covered: colour contrast — that needs rendered styles,
 // which JSON alone cannot establish, so it is omitted rather than guessed.
 //
@@ -46,6 +57,8 @@ export type A11yIssueKind =
   | 'firstHeadingNotH1'
   | 'linkVagueText'
   | 'imageAltTooLong'
+  | 'headingDuplicateText'
+  | 'imageAltDuplicate'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -67,6 +80,8 @@ export interface A11yIssue {
   href?: string
   /** Trimmed visible link text, for linkVagueText issues. */
   linkText?: string
+  /** Trimmed alt text, for imageAltDuplicate issues. */
+  altText?: string
 }
 
 export interface A11yResult {
@@ -86,10 +101,22 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   firstHeadingNotH1: 0,
   linkVagueText: 0,
   imageAltTooLong: 0,
+  headingDuplicateText: 0,
+  imageAltDuplicate: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
   return !!cell && typeof cell === 'object' && cell.type === 'tableHeader'
+}
+
+/**
+ * Normalisation shared by the duplicate-text rules (P2-21): trim,
+ * lowercase, collapse internal whitespace, map Arabic Yeh (ي) / Kaf (ك)
+ * to Persian (ی/ک). ZWNJ is preserved — it is not whitespace and is
+ * never normalised away.
+ */
+function normalizeDuplicateText(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, ' ').replace(/ي/g, 'ی').replace(/ك/g, 'ک')
 }
 
 /** Analyse a stored TipTap JSON doc. Null / malformed input => no issues. */
@@ -105,6 +132,19 @@ export function analyzeDoc(docJson: any): A11yResult {
   const headings = extractHeadings(docJson)
   headings.forEach((h, i) => {
     if (h.empty) push({ kind: 'headingEmpty', headingIndex: i + 1, headingText: h.text, level: h.level })
+  })
+  // Duplicate heading text (P2-21): only later occurrences are flagged,
+  // never the first; empty headings are excluded (already headingEmpty).
+  // headingText carries the original, unnormalised text.
+  const seenHeadingTexts = new Set<string>()
+  headings.forEach((h, i) => {
+    if (h.empty) return
+    const normalized = normalizeDuplicateText(h.text)
+    if (seenHeadingTexts.has(normalized)) {
+      push({ kind: 'headingDuplicateText', headingIndex: i + 1, headingText: h.text, level: h.level })
+    } else {
+      seenHeadingTexts.add(normalized)
+    }
   })
   // levelSkipWarnings reads only `level`; HeadingItem carries no positions.
   const skips = levelSkipWarnings(headings as unknown as LiveHeading[])
@@ -136,6 +176,7 @@ export function analyzeDoc(docJson: any): A11yResult {
   // row is inspected directly — never via its nested content walk.
   let imageIndex = 0
   let tableIndex = 0
+  const seenAltTexts = new Set<string>()
   const walk = (node: any) => {
     if (!node || typeof node !== 'object') return
     if (node.type === 'image') {
@@ -143,8 +184,21 @@ export function analyzeDoc(docJson: any): A11yResult {
       const alt = node.attrs?.alt
       if (typeof alt !== 'string' || alt.trim() === '') {
         push({ kind: 'imageAltMissing', imageIndex })
-      } else if ([...alt.trim()].length > 125) {
-        push({ kind: 'imageAltTooLong', imageIndex })
+      } else {
+        const trimmedAlt = alt.trim()
+        if ([...trimmedAlt].length > 125) {
+          push({ kind: 'imageAltTooLong', imageIndex })
+        }
+        // Duplicate alt text (P2-21): only later occurrences are flagged,
+        // never the first; missing/empty alt is excluded above. A
+        // duplicate long alt legitimately fires both rules, so neither
+        // branch suppresses the other.
+        const normalizedAlt = normalizeDuplicateText(trimmedAlt)
+        if (seenAltTexts.has(normalizedAlt)) {
+          push({ kind: 'imageAltDuplicate', imageIndex, altText: trimmedAlt })
+        } else {
+          seenAltTexts.add(normalizedAlt)
+        }
       }
     } else if (node.type === 'table') {
       tableIndex += 1

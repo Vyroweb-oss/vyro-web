@@ -56,7 +56,7 @@ describe('a11y analyzeDoc', () => {
     ))
     expect(r.total).toBe(0)
     expect(r.issues).toEqual([])
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0 })
   })
 
   it('empty doc and null input have no issues', () => {
@@ -245,7 +245,7 @@ describe('a11y analyzeDoc', () => {
       paraNodes(linked('', 'https://x.example')),
     ))
     // First heading H2 + empty H4 + skip H2->H4 + image + table + empty link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0 })
     expect(r.total).toBe(6)
   })
 
@@ -328,7 +328,7 @@ describe('a11y analyzeDoc', () => {
     expect(r.counts.imageAltTooLong).toBe(0)
   })
 
-  it('counts all eight kinds together in one mixed doc', () => {
+  it('counts all ten kinds together in one mixed doc', () => {
     const r = analyzeDoc(doc(
       heading(2, 'Title'),
       heading(4, ''),
@@ -339,7 +339,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // First heading H2 + empty H4 + skip H2->H4 + missing alt + long alt
     // + table without header + empty link + vague link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0 })
     expect(r.total).toBe(8)
   })
 
@@ -352,7 +352,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // Empty heading + skip (H1->H3 on the empty heading) + image + table.
     // First heading is H1 and there are no links, so the two new rules add 0.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0 })
     expect(r.total).toBe(4)
   })
 
@@ -360,7 +360,94 @@ describe('a11y analyzeDoc', () => {
     for (const bad of [null, undefined, {}, 'garbage', 42]) {
       const r = analyzeDoc(bad)
       expect(r.total).toBe(0)
-      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0 })
+      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0 })
     }
+  })
+
+  it('flags an exact duplicate heading once, for the second occurrence only', () => {
+    const r = analyzeDoc(doc(heading(1, 'Introduction'), heading(2, 'Introduction')))
+    expect(r.issues.filter((i) => i.kind === 'headingDuplicateText')).toEqual([
+      { kind: 'headingDuplicateText', headingIndex: 2, headingText: 'Introduction', level: 2 },
+    ])
+    // A single heading is its own first occurrence: never flagged.
+    expect(analyzeDoc(doc(heading(1, 'Introduction'))).issues
+      .filter((i) => i.kind === 'headingDuplicateText')).toEqual([])
+  })
+
+  it('flags each later occurrence of three identical headings (2 issues)', () => {
+    const r = analyzeDoc(doc(heading(1, 'Summary'), heading(2, 'Summary'), heading(2, 'Summary')))
+    expect(r.issues.filter((i) => i.kind === 'headingDuplicateText')).toEqual([
+      { kind: 'headingDuplicateText', headingIndex: 2, headingText: 'Summary', level: 2 },
+      { kind: 'headingDuplicateText', headingIndex: 3, headingText: 'Summary', level: 2 },
+    ])
+    expect(r.counts.headingDuplicateText).toBe(2)
+  })
+
+  it('distinct headings pass the duplicate-heading rule', () => {
+    const r = analyzeDoc(doc(heading(1, 'Title'), heading(2, 'Section'), heading(2, 'Appendix')))
+    expect(r.issues.filter((i) => i.kind === 'headingDuplicateText')).toEqual([])
+    expect(r.counts.headingDuplicateText).toBe(0)
+  })
+
+  it('duplicate headings match case- and whitespace-insensitively, keeping original text', () => {
+    const r = analyzeDoc(doc(heading(1, 'Introduction to Word'), heading(2, '  INTRODUCTION   to  Word ')))
+    expect(r.issues.filter((i) => i.kind === 'headingDuplicateText')).toEqual([
+      { kind: 'headingDuplicateText', headingIndex: 2, headingText: '  INTRODUCTION   to  Word ', level: 2 },
+    ])
+  })
+
+  it('duplicate headings match across Arabic Yeh/Kaf vs Persian Yeh/Kaf', () => {
+    const r = analyzeDoc(doc(
+      heading(1, 'کتاب من'),
+      heading(2, 'كتاب من'),
+      heading(2, 'خانه‌ی من'),
+      heading(2, 'خانه‌ي من'),
+    ))
+    expect(r.issues.filter((i) => i.kind === 'headingDuplicateText')).toEqual([
+      { kind: 'headingDuplicateText', headingIndex: 2, headingText: 'كتاب من', level: 2 },
+      { kind: 'headingDuplicateText', headingIndex: 4, headingText: 'خانه‌ي من', level: 2 },
+    ])
+  })
+
+  it('empty headings are never flagged as duplicates', () => {
+    const r = analyzeDoc(doc(heading(1, ''), heading(2, '   '), heading(2, 'Title')))
+    expect(r.issues.filter((i) => i.kind === 'headingDuplicateText')).toEqual([])
+    // The empties are still headingEmpty, just not duplicates.
+    expect(r.issues.filter((i) => i.kind === 'headingEmpty')).toHaveLength(2)
+  })
+
+  it('flags an exact duplicate alt once, for the second image only', () => {
+    const r = analyzeDoc(doc(image('A red apple'), image('A red apple')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltDuplicate')).toEqual([
+      { kind: 'imageAltDuplicate', imageIndex: 2, altText: 'A red apple' },
+    ])
+    expect(analyzeDoc(doc(image('A red apple'))).issues
+      .filter((i) => i.kind === 'imageAltDuplicate')).toEqual([])
+  })
+
+  it('duplicate alts match case- and whitespace-insensitively, with trimmed alt text', () => {
+    const r = analyzeDoc(doc(image('Photo of a Cat'), image('  photo   of  a cat ')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltDuplicate')).toEqual([
+      { kind: 'imageAltDuplicate', imageIndex: 2, altText: 'photo   of  a cat' },
+    ])
+  })
+
+  it('distinct alts pass, and missing/empty alts are never flagged as duplicates', () => {
+    const distinct = analyzeDoc(doc(image('A red apple'), image('A green apple')))
+    expect(distinct.issues.filter((i) => i.kind === 'imageAltDuplicate')).toEqual([])
+    const missing = analyzeDoc(doc(image(), image(''), image('   '), image(null)))
+    expect(missing.issues.filter((i) => i.kind === 'imageAltDuplicate')).toEqual([])
+    expect(missing.counts.imageAltMissing).toBe(4)
+  })
+
+  it('a duplicate long alt fires both imageAltTooLong and imageAltDuplicate', () => {
+    const long = 'a'.repeat(126)
+    const r = analyzeDoc(doc(image(long), image(long)))
+    expect(r.issues.filter((i) => i.kind === 'imageAltTooLong').map((i) => i.imageIndex)).toEqual([1, 2])
+    expect(r.issues.filter((i) => i.kind === 'imageAltDuplicate')).toEqual([
+      { kind: 'imageAltDuplicate', imageIndex: 2, altText: long },
+    ])
+    expect(r.counts.imageAltTooLong).toBe(2)
+    expect(r.counts.imageAltDuplicate).toBe(1)
   })
 })
