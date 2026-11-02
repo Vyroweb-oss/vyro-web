@@ -39,9 +39,25 @@
 //   sentence. A `.` between two digits is a decimal point, not a
 //   boundary ("3.14" is one fragment). A fragment counts as a sentence
 //   only if it contains at least one word, so trailing punctuation and
-//   empty fragments never inflate the count. Abbreviations ("e.g.") will
-//   over-count — a known heuristic limit, not a bug fixable without a
-//   language model.
+//   empty fragments never inflate the count.
+// - ABBREVIATIONS (P2-20): a `.` is NOT a boundary when it belongs to an
+//   abbreviation, decided inside isTerminator before `.` returns true:
+//   (1) an internal dot with a letter on both sides (i.e./e.g./U.S.
+//   internal dots, initials); (2) a token ending at the dot that is a
+//   single initial (J.), a title (Dr., Mr., Mrs., Ms., Prof., Sr., Jr.,
+//   St.), or an acronym of single letters joined by dots (U.S., U.K.,
+//   U.S.A.); (3) a known abbreviation (e.g., i.e., etc., vs., approx.,
+//   fig., eq., no., vol., pp., dept., est., misc., al.) is NOT a
+//   boundary only when the next word starts with a lowercase letter or
+//   a digit ("e.g. apples", "approx. 5 dollars"); when the next word
+//   starts with an uppercase letter it IS a boundary (sentence-final
+//   "etc. Then he left.").
+// - REMAINING HEURISTIC LIMITS (documented, not hidden): a sentence-final
+//   initial or acronym followed by another sentence still merges the two
+//   ("He lives in the U.S. He works." counts as 1), and a capitalised
+//   continuation after e.g./etc. counts as a new sentence ("etc. Apples
+//   ..." counts the continuation separately). Fixing those needs real
+//   language understanding, not a longer abbreviation list.
 // - AVG SENTENCE LENGTH: words / sentences, 0 when there are no sentences.
 // - READING TIME: ceil(words / 200) minutes, 0 when there are no words.
 //   It is an ESTIMATE (reading speed varies); the UI label must say so.
@@ -101,11 +117,32 @@ function hasWord(text: string): boolean {
   return countWords(text) > 0
 }
 
+// Titles whose trailing '.' is never a sentence boundary (P2-20).
+const ABBREV_TITLES = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'st'])
+// Other known abbreviations: not a boundary only when the next word
+// starts with a lowercase letter or a digit (continuation). Uppercase
+// next word means the abbreviation ended the sentence.
+const ABBREV_CONTINUATION_ONLY = new Set([
+  'e.g', 'i.e', 'etc', 'vs', 'approx', 'fig', 'eq', 'no', 'vol', 'pp',
+  'dept', 'est', 'misc', 'al',
+])
+
 /** Sentence count under the SENTENCES definition above. */
 export function countSentences(text: string): number {
   if (!text || !hasWord(text)) return 0
   let count = 0
   let start = 0
+  // First cased letter/digit word after a dot: true when it starts with
+  // an uppercase letter. No next word, a digit, a lowercase letter, or
+  // a caseless letter (e.g. Persian) all count as continuation (false).
+  const nextWordStartsUppercase = (dotIndex: number): boolean => {
+    let j = dotIndex + 1
+    while (j < text.length && /[\s)\]}"'”»]/.test(text[j])) j++
+    if (j >= text.length) return false
+    const c = text[j]
+    if (!/\p{L}/u.test(c)) return false
+    return c !== c.toLowerCase() && c === c.toUpperCase()
+  }
   const isTerminator = (i: number): boolean => {
     const ch = text[i]
     if (ch === '!' || ch === '?' || ch === '؟' || ch === '…') return true
@@ -114,6 +151,21 @@ export function countSentences(text: string): number {
     const prev = text[i - 1]
     const next = text[i + 1]
     if (prev !== undefined && next !== undefined && /\d/.test(prev) && /\d/.test(next)) return false
+    // (1) Internal dot: a letter immediately before AND after.
+    if (prev !== undefined && next !== undefined && /[A-Za-z]/.test(prev) && /[A-Za-z]/.test(next)) return false
+    // Token ending at this dot, scanned back over letters and dots.
+    let k = i - 1
+    while (k >= 0 && /[A-Za-z.]/.test(text[k])) k--
+    const token = text.slice(k + 1, i).replace(/\.+$/, '').toLowerCase()
+    // (2) Single initial (J.) or title (Dr., Mr., ...): never a boundary.
+    if (/^[a-z]$/.test(token)) return false
+    if (ABBREV_TITLES.has(token)) return false
+    // (3) Other known abbreviations: boundary only on an uppercase
+    // next word (sentence-final case); lowercase/digit means continuation.
+    if (ABBREV_CONTINUATION_ONLY.has(token)) return nextWordStartsUppercase(i)
+    // (2, continued) Acronym of single letters joined by dots (U.S., U.K.).
+    const parts = token.split('.')
+    if (parts.length >= 2 && parts.every((p) => /^[a-z]$/.test(p))) return false
     return true
   }
   for (let i = 0; i < text.length; i++) {
