@@ -56,7 +56,7 @@ describe('a11y analyzeDoc', () => {
     ))
     expect(r.total).toBe(0)
     expect(r.issues).toEqual([])
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0 })
   })
 
   it('empty doc and null input have no issues', () => {
@@ -245,8 +245,102 @@ describe('a11y analyzeDoc', () => {
       paraNodes(linked('', 'https://x.example')),
     ))
     // First heading H2 + empty H4 + skip H2->H4 + image + table + empty link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0 })
     expect(r.total).toBe(6)
+  })
+
+  it('flags every vague EN phrase once per run, with index, href and text', () => {
+    const phrases = ['click here', 'here', 'this', 'link', 'more', 'read more', 'click']
+    const r = analyzeDoc(doc(paraNodes(...phrases.map((p, i) => linked(p, `https://v${i}.example`)))))
+    expect(r.issues.filter((i) => i.kind === 'linkVagueText')).toEqual(
+      phrases.map((p, i) => ({ kind: 'linkVagueText', linkIndex: i + 1, href: `https://v${i}.example`, linkText: p })),
+    )
+    // Normalisation: case, extra whitespace and Arabic Yeh/Kaf still match.
+    const norm = analyzeDoc(doc(paraNodes(
+      linked('  CLICK   HERE  ', 'https://a.example'),
+      linked('اينجا', 'https://b.example'),
+    )))
+    expect(norm.issues.filter((i) => i.kind === 'linkVagueText')).toEqual([
+      { kind: 'linkVagueText', linkIndex: 1, href: 'https://a.example', linkText: 'CLICK   HERE' },
+      { kind: 'linkVagueText', linkIndex: 2, href: 'https://b.example', linkText: 'اينجا' },
+    ])
+  })
+
+  it('does NOT flag near-vague phrases: exact match only, never substring', () => {
+    const r = analyzeDoc(doc(paraNodes(
+      linked('click here for details', 'https://a.example'),
+      linked('here we go', 'https://b.example'),
+      linked('more information', 'https://c.example'),
+      linked('this page', 'https://d.example'),
+    )))
+    expect(r.total).toBe(0)
+    expect(r.counts.linkVagueText).toBe(0)
+  })
+
+  it('flags FA/Dari vague phrases', () => {
+    const r = analyzeDoc(doc(paraNodes(
+      linked('اینجا', 'https://a.example'),
+      linked('اینجا کلیک کنید', 'https://b.example'),
+      linked('کلیک کنید', 'https://c.example'),
+      linked('لینک', 'https://d.example'),
+      linked('بیشتر', 'https://e.example'),
+      linked('برای جزئیات بیشتر اینجا کلیک کنید', 'https://f.example'),
+    )))
+    expect(r.issues.filter((i) => i.kind === 'linkVagueText').map((i) => i.linkIndex)).toEqual([1, 2, 3, 4, 5])
+    // The longer sentence merely contains a vague phrase: not an exact match.
+    expect(r.total).toBe(5)
+  })
+
+  it('counts a vague run split across same-href text nodes once', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('click ', 'https://x.example'), linked('here', 'https://x.example'))))
+    expect(r.issues).toEqual([
+      { kind: 'linkVagueText', linkIndex: 1, href: 'https://x.example', linkText: 'click here' },
+    ])
+  })
+
+  it('an empty link is only linkEmptyText, never linkVagueText', () => {
+    const r = analyzeDoc(doc(paraNodes(
+      linked('', 'https://a.example'),
+      linked('   ', 'https://b.example'),
+    )))
+    expect(r.issues).toEqual([
+      { kind: 'linkEmptyText', linkIndex: 1, href: 'https://a.example' },
+      { kind: 'linkEmptyText', linkIndex: 2, href: 'https://b.example' },
+    ])
+    expect(r.counts.linkVagueText).toBe(0)
+  })
+
+  it('flags alt text over 125 code points only; exactly 125 passes', () => {
+    const r = analyzeDoc(doc(image('a'.repeat(125)), image('b'.repeat(126)), image('😀'.repeat(126))))
+    // 126 emoji are 126 code points (252 UTF-16 units): the count is code points.
+    expect(r.issues.filter((i) => i.kind === 'imageAltTooLong').map((i) => i.imageIndex)).toEqual([2, 3])
+    expect(r.counts.imageAltMissing).toBe(0)
+    // Whitespace around a 126-char alt does not hide it; padding around a
+    // 125-char alt does not push it over (the trimmed length counts).
+    expect(analyzeDoc(doc(image(`  ${'c'.repeat(126)}  `))).issues)
+      .toEqual([{ kind: 'imageAltTooLong', imageIndex: 1 }])
+    expect(analyzeDoc(doc(image(`  ${'d'.repeat(125)}  `))).total).toBe(0)
+  })
+
+  it('missing alt is only imageAltMissing, never imageAltTooLong', () => {
+    const r = analyzeDoc(doc(image(), image(''), image('   '), image(null)))
+    expect(r.issues.filter((i) => i.kind === 'imageAltMissing').map((i) => i.imageIndex)).toEqual([1, 2, 3, 4])
+    expect(r.counts.imageAltTooLong).toBe(0)
+  })
+
+  it('counts all eight kinds together in one mixed doc', () => {
+    const r = analyzeDoc(doc(
+      heading(2, 'Title'),
+      heading(4, ''),
+      image(),
+      image('e'.repeat(126)),
+      table([[cell('A')]]),
+      paraNodes(linked('', 'https://empty.example'), linked('click here', 'https://vague.example')),
+    ))
+    // First heading H2 + empty H4 + skip H2->H4 + missing alt + long alt
+    // + table without header + empty link + vague link.
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1 })
+    expect(r.total).toBe(8)
   })
 
   it('counts each check independently in one mixed doc', () => {
@@ -258,7 +352,15 @@ describe('a11y analyzeDoc', () => {
     ))
     // Empty heading + skip (H1->H3 on the empty heading) + image + table.
     // First heading is H1 and there are no links, so the two new rules add 0.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0 })
     expect(r.total).toBe(4)
+  })
+
+  it('malformed and null input still yields no issues of any kind', () => {
+    for (const bad of [null, undefined, {}, 'garbage', 42]) {
+      const r = analyzeDoc(bad)
+      expect(r.total).toBe(0)
+      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0 })
+    }
   })
 })

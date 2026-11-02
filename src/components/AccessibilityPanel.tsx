@@ -16,11 +16,15 @@ const GROUP_ORDER: { kind: A11yIssueKind; labelKey: I18nKey }[] = [
   { kind: 'tableNoHeader', labelKey: 'a11yTableNoHeader' },
   { kind: 'linkEmptyText', labelKey: 'a11yLinkEmptyText' },
   { kind: 'firstHeadingNotH1', labelKey: 'a11yFirstHeadingNotH1' },
+  { kind: 'linkVagueText', labelKey: 'a11yLinkVagueText' },
+  { kind: 'imageAltTooLong', labelKey: 'a11yImageAltTooLong' },
 ]
 
 function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
   switch (issue.kind) {
     case 'imageAltMissing':
+      return `${t('a11yImage')} ${issue.imageIndex}`
+    case 'imageAltTooLong':
       return `${t('a11yImage')} ${issue.imageIndex}`
     case 'tableNoHeader':
       return `${t('a11yTable')} ${issue.tableIndex}`
@@ -32,6 +36,10 @@ function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
       return `${t('a11yHeading')} ${issue.headingIndex}`
     case 'linkEmptyText':
       return `${t('a11yLink')} ${issue.linkIndex}`
+    case 'linkVagueText':
+      return issue.linkText
+        ? `${t('a11yLink')} ${issue.linkIndex}: ${issue.linkText}`
+        : `${t('a11yLink')} ${issue.linkIndex}`
     case 'firstHeadingNotH1':
       return issue.headingText
         ? `H${issue.level}: ${issue.headingText}`

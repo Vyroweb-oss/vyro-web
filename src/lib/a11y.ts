@@ -1,8 +1,9 @@
 // Local Accessibility Checker (Mission 2, P2-5 — a Word-gap feature;
-// extended in Phase 2, P2-16, with two further JSON-derivable rules).
+// extended in Phase 2, P2-16, with two further JSON-derivable rules, and
+// in Phase 2, P2-18, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
-// document, never touches storage, network, or the editor. Exactly six
+// document, never touches storage, network, or the editor. Exactly eight
 // local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
@@ -10,7 +11,14 @@
 //   (4) tables whose first row has no header cell,
 //   (5) links with empty visible text (linkEmptyText),
 //   (6) the document's first heading not being Heading 1
-//       (firstHeadingNotH1, at most one per document).
+//       (firstHeadingNotH1, at most one per document),
+//   (7) links whose visible text is exactly a vague phrase
+//       (linkVagueText — exact match only, never substring, after trim,
+//       lowercasing, whitespace collapsing, and mapping Arabic Yeh/Kaf to
+//       Persian Yeh/Kaf, so "click here for details" is NOT vague),
+//   (8) images whose alt text is longer than 125 characters
+//       (imageAltTooLong — counted in code points of the trimmed alt;
+//       missing/empty alt is NOT flagged here, it is imageAltMissing).
 // Deliberately NOT covered: colour contrast — that needs rendered styles,
 // which JSON alone cannot establish, so it is omitted rather than guessed.
 //
@@ -36,6 +44,8 @@ export type A11yIssueKind =
   | 'tableNoHeader'
   | 'linkEmptyText'
   | 'firstHeadingNotH1'
+  | 'linkVagueText'
+  | 'imageAltTooLong'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -55,6 +65,8 @@ export interface A11yIssue {
   linkIndex?: number
   /** Link target, for link issues ('' when the link mark has no href). */
   href?: string
+  /** Trimmed visible link text, for linkVagueText issues. */
+  linkText?: string
 }
 
 export interface A11yResult {
@@ -72,6 +84,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   tableNoHeader: 0,
   linkEmptyText: 0,
   firstHeadingNotH1: 0,
+  linkVagueText: 0,
+  imageAltTooLong: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -129,6 +143,8 @@ export function analyzeDoc(docJson: any): A11yResult {
       const alt = node.attrs?.alt
       if (typeof alt !== 'string' || alt.trim() === '') {
         push({ kind: 'imageAltMissing', imageIndex })
+      } else if ([...alt.trim()].length > 125) {
+        push({ kind: 'imageAltTooLong', imageIndex })
       }
     } else if (node.type === 'table') {
       tableIndex += 1
@@ -144,11 +160,24 @@ export function analyzeDoc(docJson: any): A11yResult {
   }
   walk(docJson)
 
-  // Links with empty visible text, counted per link RUN (see the header
-  // comment). Runs are scoped to one parent's content array: entering a
-  // nested node flushes any open run and starts fresh inside it, so runs
-  // never span paragraphs, list items, or table cells. A link mark with
-  // no href counts as href ''.
+  // Links with empty or vague visible text, counted per link RUN (see
+  // the header comment). Runs are scoped to one parent's content array:
+  // entering a nested node flushes any open run and starts fresh inside
+  // it, so runs never span paragraphs, list items, or table cells. A link
+  // mark with no href counts as href ''.
+  //
+  // Vague phrases are matched EXACTLY (never substring) against the run's
+  // visible text after trim + lowercasing + collapsing internal
+  // whitespace + mapping Arabic Yeh (ي) / Kaf (ك) to Persian (ی/ک), so
+  // "CLICK  HERE" and "کلیک کنید" with Arabic letters both match, while
+  // "click here for details" does not. Empty runs are NOT vague — they
+  // are already linkEmptyText, and flush() evaluates both rules per run.
+  const VAGUE_LINK_TEXT = new Set([
+    'click here', 'here', 'this', 'link', 'more', 'read more', 'click',
+    'اینجا', 'اینجا کلیک کنید', 'کلیک کنید', 'لینک', 'بیشتر',
+  ])
+  const normalizeLinkText = (text: string): string =>
+    text.trim().toLowerCase().replace(/\s+/g, ' ').replace(/ي/g, 'ی').replace(/ك/g, 'ک')
   let linkIndex = 0
   const linkHrefOf = (node: any): string | null => {
     if (!node || typeof node !== 'object' || node.type !== 'text' || !Array.isArray(node.marks)) return null
@@ -164,7 +193,12 @@ export function analyzeDoc(docJson: any): A11yResult {
     const flush = () => {
       if (runHref !== null) {
         linkIndex += 1
-        if (runText.trim() === '') push({ kind: 'linkEmptyText', linkIndex, href: runHref })
+        const trimmed = runText.trim()
+        if (trimmed === '') {
+          push({ kind: 'linkEmptyText', linkIndex, href: runHref })
+        } else if (VAGUE_LINK_TEXT.has(normalizeLinkText(runText))) {
+          push({ kind: 'linkVagueText', linkIndex, href: runHref, linkText: trimmed })
+        }
         runHref = null
         runText = ''
       }
