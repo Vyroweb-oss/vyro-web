@@ -8,11 +8,11 @@
 // Phase 2, P2-29, with two more, and in Phase 2, P2-30, with two more, and in
 // Phase 2, P2-32, with two more, and in Phase 2, P2-33, with two more, and in
 // Phase 2, P2-34, with two more, and in Phase 2, P2-35, with two
-// more).
+// more, and in Phase 2, P2-36, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// thirty-six local, JSON-derivable rules — nothing is faked:
+// thirty-eight local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -278,6 +278,28 @@
 //       independent of all other link branches, so a phone-number
 //       link legitimately also fires linkTextNoLetters (its text
 //       contains no letters), and no branch suppresses another).
+//   (37) headings whose TRIMMED text is a phone number
+//       (headingTextIsPhoneNumber — the same phone test as rule
+//       (36), on the trimmed heading text, so '+98 912 345 6789'
+//       and a 10-digit plain number flag, while a YYYY-MM-DD
+//       date (8 digits, hyphens only) and a bare hyphenated
+//       7-digit string do not; empty headings are EXCLUDED,
+//       they are already headingEmpty; headingText carries the
+//       original, unnormalised text, and the issue also carries
+//       level; independent of all other heading rules, so a
+//       phone heading legitimately also fires headingNoLetters
+//       (its text contains no letters), and no branch suppresses
+//       another).
+//   (38) images whose TRIMMED alt text is a phone number
+//       (imageAltIsPhoneNumber — the same phone test as rule
+//       (36), on the trimmed alt text, so '+98 912 345 6789'
+//       and a 10-digit plain number flag, while a YYYY-MM-DD
+//       date (8 digits, hyphens only) and a bare hyphenated
+//       7-digit string do not; missing/empty/whitespace alt is
+//       EXCLUDED, it is already imageAltMissing; independent of
+//       all other alt branches, so a phone alt legitimately
+//       also fires imageAltNoLetters (its text contains no
+//       letters), and no branch suppresses another).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -341,6 +363,8 @@ export type A11yIssueKind =
   | 'linkTextIsEmail'
   | 'headingTextIsEmail'
   | 'linkTextIsPhoneNumber'
+  | 'headingTextIsPhoneNumber'
+  | 'imageAltIsPhoneNumber'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -362,7 +386,7 @@ export interface A11yIssue {
   href?: string
   /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber issues. */
   linkText?: string
-  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort issues. */
+  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber issues. */
   altText?: string
 }
 
@@ -411,6 +435,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   linkTextIsEmail: 0,
   headingTextIsEmail: 0,
   linkTextIsPhoneNumber: 0,
+  headingTextIsPhoneNumber: 0,
+  imageAltIsPhoneNumber: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -425,6 +451,24 @@ function isHeaderCell(cell: any): boolean {
  */
 function normalizeDuplicateText(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, ' ').replace(/ي/g, 'ی').replace(/ك/g, 'ک')
+}
+
+/**
+ * Phone-number test shared by rules (36), (37), and (38) (P2-35/P2-36):
+ * the input must already be trimmed. Strip spaces, parentheses,
+ * hyphens, and dots, then an optional leading '+'; what remains must
+ * be all digits with at least 7 digits, AND the original trimmed text
+ * must either start with '+', contain a space or parenthesis, or have
+ * at least 10 digits — that last condition is what keeps a
+ * YYYY-MM-DD date (8 digits, hyphens only) and a bare hyphenated
+ * 7-digit string from flagging.
+ */
+function isPhoneNumberText(trimmed: string): boolean {
+  const phoneDigits = trimmed.replace(/[\s().-]/g, '').replace(/^\+/, '')
+  return /^\d{7,}$/.test(phoneDigits)
+    && (trimmed.startsWith('+')
+      || /[\s()]/.test(trimmed)
+      || phoneDigits.length >= 10)
 }
 
 /** Recursive text of a node (same shape as headings.ts nodeText). */
@@ -551,6 +595,21 @@ export function analyzeDoc(docJson: any): A11yResult {
     const trimmedHeading = h.text.trim()
     if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmedHeading)) {
       push({ kind: 'headingTextIsEmail', headingIndex: i + 1, headingText: h.text, level: h.level })
+    }
+  })
+  // Headings that are exactly a phone number (P2-36, rule 37):
+  // the same phone test as rule (36), on the TRIMMED text, so
+  // '+98 912 345 6789' and a 10-digit plain number flag, while
+  // a YYYY-MM-DD date (8 digits, hyphens only) and a bare
+  // hyphenated 7-digit string do not. Empty headings are
+  // excluded (already headingEmpty). headingText carries the
+  // original, unnormalised text. Independent of the other
+  // heading rules — a phone heading legitimately also fires
+  // headingNoLetters (its text contains no letters).
+  headings.forEach((h, i) => {
+    if (h.empty) return
+    if (isPhoneNumberText(h.text.trim())) {
+      push({ kind: 'headingTextIsPhoneNumber', headingIndex: i + 1, headingText: h.text, level: h.level })
     }
   })
   // Duplicate heading text (P2-21): only later occurrences are flagged,
@@ -725,6 +784,18 @@ export function analyzeDoc(docJson: any): A11yResult {
         // so co-firing is legitimate.
         if ([...trimmedAlt].length >= 1 && [...trimmedAlt].length <= 2) {
           push({ kind: 'imageAltVeryShort', imageIndex, altText: trimmedAlt })
+        }
+        // Phone-number alt text (P2-36, rule 38): the same phone
+        // test as rule (36), on the TRIMMED alt, so '+98 912 345
+        // 6789' and a 10-digit plain number flag, while a
+        // YYYY-MM-DD date (8 digits, hyphens only) and a bare
+        // hyphenated 7-digit string do not. Missing/empty alt
+        // is excluded above (already imageAltMissing).
+        // Independent of all other alt branches — a phone alt
+        // legitimately also fires imageAltNoLetters (its text
+        // contains no letters), so no branch suppresses another.
+        if (isPhoneNumberText(trimmedAlt)) {
+          push({ kind: 'imageAltIsPhoneNumber', imageIndex, altText: trimmedAlt })
         }
       }
     } else if (node.type === 'table') {
@@ -1002,14 +1073,8 @@ export function analyzeDoc(docJson: any): A11yResult {
           // branches above — no branch suppresses another, so a
           // phone-number link legitimately also fires
           // linkTextNoLetters (its text contains no letters).
-          {
-            const phoneDigits = trimmed.replace(/[\s().-]/g, '').replace(/^\+/, '')
-            if (/^\d{7,}$/.test(phoneDigits)
-              && (trimmed.startsWith('+')
-                || /[\s()]/.test(trimmed)
-                || phoneDigits.length >= 10)) {
-              push({ kind: 'linkTextIsPhoneNumber', linkIndex, href: runHref, linkText: trimmed })
-            }
+          if (isPhoneNumberText(trimmed)) {
+            push({ kind: 'linkTextIsPhoneNumber', linkIndex, href: runHref, linkText: trimmed })
           }
         }
         runHref = null
