@@ -10,11 +10,12 @@
 // Phase 2, P2-34, with two more, and in Phase 2, P2-35, with two
 // more, and in Phase 2, P2-36, with two more, and in
 // Phase 2, P2-37, with two more, and in Phase 2, P2-38,
-// with two more, and in Phase 2, P2-39, with two more).
+// with two more, and in Phase 2, P2-39, with two more, and in
+// Phase 2, P2-40, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// forty-four local, JSON-derivable rules — nothing is faked:
+// forty-six local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -371,6 +372,28 @@
 //       and the issue also carries level; independent of
 //       all other heading rules, so co-firing is
 //       legitimate).
+//   (45) links whose TRIMMED visible text is in ALL CAPITAL
+//       letters (linkTextAllCaps — per link RUN, as defined
+//       below; exactly the headingAllCaps (rule 32) /
+//       imageAltAllCaps (rule 42) test: the trimmed run text
+//       has at least one Unicode letter, and trimmed ===
+//       trimmed.toUpperCase() AND trimmed !==
+//       trimmed.toLowerCase(), so Persian/Dari/Arabic caseless
+//       link text never flags and mixed-case or lowercase
+//       text never flags; empty runs are NOT flagged here,
+//       they are already linkEmptyText; the issue carries
+//       linkIndex, href, and the trimmed linkText;
+//       independent of all other link branches, so no branch
+//       suppresses another).
+//   (46) non-empty headings whose TRIMMED text ends with a
+//       full stop / period '.' (headingEndsWithPeriod —
+//       only '.' flags, NOT '?' (question headings are
+//       legitimate), NOT ':' or ';' (label punctuation);
+//       empty headings are EXCLUDED, they are already
+//       headingEmpty; headingText carries the original,
+//       unnormalised text, and the issue also carries
+//       level; independent of all other heading rules, so
+//       co-firing is legitimate).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -442,12 +465,14 @@ export type A11yIssueKind =
   | 'imageAltAllCaps'
   | 'linkTextIsFilename'
   | 'headingTextIsFilename'
+  | 'linkTextAllCaps'
+  | 'headingEndsWithPeriod'
 
 export interface A11yIssue {
   kind: A11yIssueKind
   /** 1-based ordinal among headings, for heading issues. */
   headingIndex?: number
-  /** Heading text ('' for an empty heading); never normalised. */
+  /** Heading text ('' for an empty heading); never normalised. Carried by heading issues, including headingEndsWithPeriod. */
   headingText?: string
   /** Heading level, for heading issues. */
   level?: number
@@ -461,7 +486,7 @@ export interface A11yIssue {
   linkIndex?: number
   /** Link target, for link issues ('' when the link mark has no href). */
   href?: string
-  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort / linkTextIsFilename issues. */
+  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort / linkTextIsFilename / linkTextAllCaps issues. */
   linkText?: string
   /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail / imageAltAllCaps issues. */
   altText?: string
@@ -520,6 +545,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   imageAltAllCaps: 0,
   linkTextIsFilename: 0,
   headingTextIsFilename: 0,
+  linkTextAllCaps: 0,
+  headingEndsWithPeriod: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -740,6 +767,21 @@ export function analyzeDoc(docJson: any): A11yResult {
     if (h.empty) return
     if (isFilenameText(h.text.trim())) {
       push({ kind: 'headingTextIsFilename', headingIndex: i + 1, headingText: h.text, level: h.level })
+    }
+  })
+  // Headings ending with a period (P2-40, rule 46): a
+  // NON-empty heading whose TRIMMED text ends with '.'
+  // (a full stop) flags. '?' does NOT flag (question
+  // headings are legitimate), and neither do ':' or ';'
+  // (label punctuation). Empty headings are excluded
+  // (already headingEmpty). headingText carries the
+  // original, unnormalised text. Independent of the
+  // other heading rules — no branch suppresses another,
+  // so co-firing is legitimate.
+  headings.forEach((h, i) => {
+    if (h.empty) return
+    if (h.text.trim().endsWith('.')) {
+      push({ kind: 'headingEndsWithPeriod', headingIndex: i + 1, headingText: h.text, level: h.level })
     }
   })
   // Duplicate heading text (P2-21): only later occurrences are flagged,
@@ -1260,6 +1302,23 @@ export function analyzeDoc(docJson: any): A11yResult {
           // another, so co-firing is legitimate.
           if (isFilenameText(trimmed)) {
             push({ kind: 'linkTextIsFilename', linkIndex, href: runHref, linkText: trimmed })
+          }
+          // Links with all-caps visible text (P2-40, rule
+          // 45): exactly the headingAllCaps (rule 32) /
+          // imageAltAllCaps (rule 42) test on the trimmed
+          // run text — at least one Unicode letter, and
+          // trimmed === trimmed.toUpperCase() AND trimmed
+          // !== trimmed.toLowerCase(), so Persian/Dari/
+          // Arabic caseless link text never flags and
+          // mixed-case or lowercase text never flags.
+          // Empty runs are excluded by the branch above
+          // (already linkEmptyText). Independent of all
+          // other link branches — no branch suppresses
+          // another, so co-firing is legitimate.
+          if (/\p{L}/u.test(trimmed)
+            && trimmed === trimmed.toUpperCase()
+            && trimmed !== trimmed.toLowerCase()) {
+            push({ kind: 'linkTextAllCaps', linkIndex, href: runHref, linkText: trimmed })
           }
         }
         runHref = null

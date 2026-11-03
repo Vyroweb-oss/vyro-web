@@ -54,6 +54,8 @@ const GROUP_ORDER: { kind: A11yIssueKind; labelKey: I18nKey }[] = [
   { kind: 'imageAltAllCaps', labelKey: 'a11yImageAltAllCaps' },
   { kind: 'linkTextIsFilename', labelKey: 'a11yLinkTextIsFilename' },
   { kind: 'headingTextIsFilename', labelKey: 'a11yHeadingTextIsFilename' },
+  { kind: 'linkTextAllCaps', labelKey: 'a11yLinkTextAllCaps' },
+  { kind: 'headingEndsWithPeriod', labelKey: 'a11yHeadingEndsWithPeriod' },
 ]
 
 function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
@@ -212,7 +214,15 @@ function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
       return issue.linkText
         ? `${t('a11yLink')} ${issue.linkIndex}: ${issue.linkText}`
         : `${t('a11yLink')} ${issue.linkIndex}`
+    case 'linkTextAllCaps':
+      return issue.linkText
+        ? `${t('a11yLink')} ${issue.linkIndex}: ${issue.linkText}`
+        : `${t('a11yLink')} ${issue.linkIndex}`
     case 'headingTextIsFilename':
+      return issue.headingText && issue.headingText.trim() !== ''
+        ? `H${issue.level}: ${issue.headingText}`
+        : `${t('a11yHeading')} ${issue.headingIndex}`
+    case 'headingEndsWithPeriod':
       return issue.headingText && issue.headingText.trim() !== ''
         ? `H${issue.level}: ${issue.headingText}`
         : `${t('a11yHeading')} ${issue.headingIndex}`
