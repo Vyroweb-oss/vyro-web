@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest'
 import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
   buildTemplate, buildResearchDoc, assembleResearch, parseSections, cleanWikiText,
-  normalizeDigits, splitSentences,
+  buildAnswer, searchQueryFor, normalizeDigits, splitSentences,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -104,8 +104,8 @@ describe('assistant web research (owner order 2026-11-03)', () => {
     const one = mk(30, 'موضوع الف', 'https://fa.wikipedia.org/wiki/A')
     const two = mk(30, 'موضوع ب', 'https://fa.wikipedia.org/wiki/B')
     const out = assembleResearch([one, two], 'fa', { pages: 2 })
-    expect(out.targetWords).toBe(700)
-    expect(out.words).toBeGreaterThanOrEqual(560)
+    expect(out.targetWords).toBe(600)
+    expect(out.words).toBeGreaterThanOrEqual(480)
     const all = JSON.stringify(out.nodes)
     expect(all).toContain('منابع:')
     expect(all).toContain('https://fa.wikipedia.org/wiki/A')
@@ -152,8 +152,46 @@ describe('assistant web research (owner order 2026-11-03)', () => {
     expect(texts).toContain('تاریخچه')
     const actual = out.nodes
       .map((n) => ((n.content as { text?: string }[] | undefined) ?? []).map((c) => c.text ?? '').join(' '))
-      .join(' ').split(/\s+/).filter(Boolean).length
+      .join(' ').split(/[^\p{L}\p{N}\u200C]+/u).filter((t) => t.length > 0).length
     expect(out.words).toBe(actual)
+  })
+  it('topic extraction survives commas and no-type words (live failure 2026-11-03)', () => {
+    const a = parseAssistantCommand('درباره انرژی خورشیدی در اینترنت بگرد و بنویس، فقط نشان بده تایپ نکن')
+    expect(a.kind).toBe('research')
+    if (a.kind === 'research') {
+      expect(a.topic).toBe('انرژی خورشیدی')
+      expect(a.insert).toBe(false)
+    }
+  })
+  it('answers ANY free-form question — not just preset commands (owner order)', () => {
+    expect(parseAssistantCommand('پایتخت فرانسه کجاست؟').kind).toBe('answer')
+    expect(parseAssistantCommand('چرا آسمان آبی است؟').kind).toBe('answer')
+    expect(parseAssistantCommand('what is the capital of France?').kind).toBe('answer')
+    expect(searchQueryFor('پایتخت فرانسه کجاست؟')).toBe('پایتخت فرانسه')
+    expect(searchQueryFor('چرا آسمان آبی است؟')).toBe('آسمان آبی')
+    // …while build commands are never hijacked:
+    expect(parseAssistantCommand('جدول ۳×۴ بساز').kind).toBe('insert-table')
+    expect(parseAssistantCommand('درباره آب در اینترنت بگرد و بنویس').kind).toBe('research')
+  })
+  it('computes simple arithmetic itself, instantly, with no internet', () => {
+    const a = parseAssistantCommand('۲۵ × ۴ چند می‌شود؟')
+    expect(a.kind).toBe('answer-local')
+    if (a.kind === 'answer-local') expect(a.lines[0]).toContain('= 100')
+    const p = parseAssistantCommand('۲۰ درصد از ۵۰۰ چند می‌شود؟')
+    expect(p.kind).toBe('answer-local')
+    if (p.kind === 'answer-local') expect(p.lines[0]).toContain('= 100')
+  })
+  it('buildAnswer picks the sentences matching the question and credits the source', () => {
+    const src = [{
+      title: 'پاریس', url: 'https://fa.wikipedia.org/wiki/Paris',
+      extract: 'پاریس پایتخت و پرجمعیت ترین شهر فرانسه است و در شمال این کشور قرار دارد. رود سن از میان این شهر می گذرد و زیبایی آن را دوچندان می کند. برج ایفل نماد معروف این شهر در جهان شناخته می شود.',
+    }]
+    const ans = buildAnswer(src, 'پایتخت فرانسه کجاست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('پایتخت')
+    expect(ans.lines[ans.lines.length - 1]).toContain('منبع: ویکی‌پدیا')
+    const none = buildAnswer(src, 'قیمت دلار امروز چند است؟', 'fa')
+    expect(none.found).toBe(false)
   })
   it('buildResearchDoc assembles title, lead, body — and ALWAYS the source line', () => {
     const extract = 'آلودگی هوا یک مشکل بزرگ است. دود کارخانه ها هوا را خراب می کند. مردم مریض می شوند. دولت ها باید قانون بگذارند. در شهرهای بزرگ ترافیک زیاد است. کودکان بیشتر آسیب می بینند. انرژی پاک یک راه حل است.'

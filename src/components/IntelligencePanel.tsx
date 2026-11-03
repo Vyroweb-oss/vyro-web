@@ -5,7 +5,8 @@ import { usePanelFocusReturn } from './useDialogFocus'
 import { truncatePreview } from '../lib/intelligence'
 import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
-  buildTemplate, assembleResearch, WORDS_PER_PAGE, type AssistantAction, type ResearchData,
+  buildTemplate, assembleResearch, buildAnswer, searchQueryFor, WORDS_PER_PAGE,
+  type AssistantAction, type ResearchData,
 } from '../lib/assistant'
 import { computeDocumentStats } from '../lib/stats'
 import { supabase } from '../lib/supabase'
@@ -170,9 +171,12 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         : data.title && data.extract && data.url ? [{ title: data.title, extract: data.extract, url: data.url }] : []
       if (!data.found || sources.length === 0) { setMessage(t('assistantSearchNotFound')); return }
       const built = assembleResearch(sources, lang, { pages: action.pages, paragraphs: action.paragraphs })
+      // Report the word count with the app's OWN statistics engine,
+      // so the number always matches the document's status bar.
+      const trueWords = computeDocumentStats({ type: 'doc', content: built.nodes }).words
       const meta = t('assistantResearchMeta')
-        .replace('{w}', String(built.words))
-        .replace('{p}', String(Math.max(1, Math.round(built.words / WORDS_PER_PAGE))))
+        .replace('{w}', String(trueWords))
+        .replace('{p}', String(Math.max(1, Math.round(trueWords / WORDS_PER_PAGE))))
       const short = built.words < built.targetWords * 0.85 ? ` ${t('assistantResearchShort')}` : ''
       if (action.insert) {
         editor.chain().focus().insertContent(built.nodes as object[]).run()
@@ -196,11 +200,48 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
     }
   }
 
+  // Free-form questions (owner order 2026-11-03: ANY question gets
+  // searched and answered in seconds, not just preset commands).
+  const doAnswer = async (action: Extract<AssistantAction, { kind: 'answer' }>) => {
+    if (!supabase) { setMessage(t('assistantSearchOffline')); return }
+    setBusy(true)
+    setResult(null)
+    setPendingResearch(null)
+    setMessage(t('assistantSearching'))
+    try {
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess.session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/assistant-search`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: searchQueryFor(action.question), lang, pages: 1 }),
+      })
+      if (!res.ok) { setMessage(t('assistantSearchFailed')); return }
+      const data = (await res.json()) as { found?: boolean; sources?: ResearchData[] } & Partial<ResearchData>
+      const sources: ResearchData[] = data.sources && data.sources.length > 0
+        ? data.sources
+        : data.title && data.extract && data.url ? [{ title: data.title, extract: data.extract, url: data.url }] : []
+      if (!data.found || sources.length === 0) { setMessage(t('assistantSearchNotFound')); return }
+      const answer = buildAnswer(sources, action.question, lang)
+      if (!answer.found) { setMessage(t('assistantAnswerNotFound')); return }
+      setMessage('')
+      setResult({ title: t('assistantAnswerTitle'), lines: answer.lines, asList: false })
+    } catch {
+      setMessage(t('assistantSearchFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const runCommand = (raw: string) => {
     if (!raw.trim() || busy) return
     const action = parseAssistantCommand(raw)
     if (action.kind === 'research') void doResearch(action)
-    else execute(action)
+    else if (action.kind === 'answer') void doAnswer(action)
+    else if (action.kind === 'answer-local') {
+      setResult({ title: t('assistantAnswerTitle'), lines: action.lines, asList: false })
+      setMessage('')
+    } else execute(action)
     setCommand('')
   }
 

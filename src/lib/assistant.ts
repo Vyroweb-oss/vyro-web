@@ -22,6 +22,8 @@ export type AssistantAction =
   | { kind: 'insert-page-break' }
   | { kind: 'insert-date' }
   | { kind: 'research'; topic: string; paragraphs: number; pages?: number; insert: boolean }
+  | { kind: 'answer'; question: string }
+  | { kind: 'answer-local'; lines: string[] }
   | { kind: 'selection-heading'; level: 1 | 2 | 3 }
   | { kind: 'selection-bold' }
   | { kind: 'selection-cleanup' }
@@ -57,17 +59,40 @@ const RESEARCH_STOP = new Set([
   'درباره', 'باره', 'مقاله', 'انشا', 'متن', 'یک', 'و', 'را', 'کن', 'پاراگراف', 'سایت',
   'صفحه', 'صفحات', 'page', 'pages', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه',
   'ده', 'پانزده', 'بیست', 'سی', 'تایپ', 'درج', 'نشان', 'نمایش', 'سند', 'فقط', 'بده',
+  'نکن', 'ننویس', 'نکنید',
   'essay', 'write', 'search', 'research', 'internet', 'web', 'online', 'the', 'for',
   'about', 'make', 'an', 'a', 'article', 'text', 'find', 'paragraph', 'paragraphs', 'and',
 ])
+
+const cleanToken = (w: string) => w.replace(/[،,؛;:«»"“”؟?!.\u200C]/g, '')
 
 /** The topic left after the command words are removed. */
 export function extractResearchTopic(normalized: string): string {
   return normalized
     .split(' ')
+    .map(cleanToken)
     .filter((w) => w && !RESEARCH_STOP.has(w) && !/^\d+$/.test(w))
     .join(' ')
     .trim()
+}
+
+const QUESTION_STOP = new Set([
+  'چیست', 'چه', 'چرا', 'چگونه', 'چطور', 'کی', 'کجا', 'کجاست', 'کدام', 'آیا', 'است', 'هست',
+  'می', 'شود', 'کیست', 'چی', 'بگو', 'بده', 'لطفا', 'توضیح',
+  'what', 'why', 'how', 'when', 'where', 'who', 'which', 'is', 'are', 'can', 'does', 'do',
+  'the', 'a', 'an', 'of', 'in', 'on', 'please', 'tell', 'me', 'about',
+])
+
+/** The searchable subject of a free-form question (owner order
+ *  2026-11-03: ANY question gets searched, not just preset ones). */
+export function searchQueryFor(question: string): string {
+  const cleaned = normalizeCommand(question)
+    .split(' ')
+    .map(cleanToken)
+    .filter((w) => w && !QUESTION_STOP.has(w))
+    .join(' ')
+    .trim()
+  return cleaned.length >= 2 ? cleaned : normalizeCommand(question).replace(/[؟?]/g, '').trim()
 }
 
 function numbersIn(s: string): number[] {
@@ -206,6 +231,36 @@ export function parseAssistantCommand(raw: string): AssistantAction {
   const writeMatch = input.match(/^(?:بنویس|بنویسى|write|type)\s*[:：]\s*(.+)/is)
   if (writeMatch) return { kind: 'insert-text', text: writeMatch[1].trim() }
 
+  // Simple arithmetic is answered by the assistant's OWN engine,
+  // instantly, with no internet (owner order 2026-11-03: any kind of
+  // question). Anchored patterns only, so build commands like
+  // «جدول ۳×۴ بساز» are never hijacked.
+  const fmtNum = (n: number) => String(Math.round(n * 10000) / 10000)
+  const pct = s.match(/^(\d+(?:\.\d+)?)\s*(?:درصد|%|٪)\s*(?:از\s*)?(\d+(?:\.\d+)?)\s*(?:چند می شود|چند است)?\s*[=؟?]?$/)
+  if (pct) {
+    const a = parseFloat(pct[1]); const b = parseFloat(pct[2])
+    return { kind: 'answer-local', lines: [`${fmtNum(a)}٪ × ${fmtNum(b)} = ${fmtNum((a * b) / 100)}`] }
+  }
+  const arith = s.match(/^(-?\d+(?:\.\d+)?)\s*([+\-×x*\/÷])\s*(-?\d+(?:\.\d+)?)\s*(?:چند می شود|چند است)?\s*[=؟?]?$/)
+  if (arith) {
+    const a = parseFloat(arith[1]); const b = parseFloat(arith[3])
+    const op = arith[2]
+    const shown = op === 'x' || op === '*' ? '×' : op === '/' ? '÷' : op
+    const value = op === '+' ? a + b : op === '-' ? a - b
+      : shown === '×' ? a * b : b === 0 ? NaN : a / b
+    if (Number.isFinite(value)) {
+      return { kind: 'answer-local', lines: [`${fmtNum(a)} ${shown} ${fmtNum(b)} = ${fmtNum(value)}`] }
+    }
+  }
+
+  // ANY free-form question (owner order 2026-11-03: «هر نوع سوالی را
+  // جواب بدهد» — not just preset commands): the assistant searches
+  // the web itself and answers from sources, in seconds.
+  const QUESTION_START = /^(چیست|چه|چرا|چگونه|چطور|کی|کجا|کجاست|کدام|چند|آیا|what|why|how|when|where|who|which|is|are|can|does|do)\b/
+  if (/[؟?]$/.test(s) || QUESTION_START.test(s)) {
+    return { kind: 'answer', question: input }
+  }
+
   return { kind: 'unknown', input }
 }
 
@@ -287,13 +342,19 @@ export interface ResearchData {
 }
 
 /** Words per page calibrated to Vyro's OWN A4 pagination (live
- *  measurement 2026-11-03: 1,024 words rendered as 3 pages). */
-export const WORDS_PER_PAGE = 350
+ *  measurements 2026-11-03: 1,024 words → 3 pages unsectioned; 821
+ *  words → 3 pages with many section headings; 300 sits between). */
+export const WORDS_PER_PAGE = 300
 const WORDS_PER_PARAGRAPH = 110
 
 export interface ResearchAssembly { nodes: JsonNode[]; words: number; targetWords: number }
 
-const countWords = (s: string) => s.split(/\s+/).filter(Boolean).length
+/** Word counting aligned with the app's own statistics engine:
+ *  split on anything that is not a letter/digit/ZWNJ, so punctuation
+ *  and URLs tokenize the same way the status bar counts them, while
+ *  ZWNJ-joined Persian words stay one word («می‌کنم» = 1). */
+const countWords = (s: string) =>
+  s.split(/[^\p{L}\p{N}\u200C]+/u).filter((t) => t.length > 0).length
 
 const nodeText = (n: JsonNode): string => {
   const own = typeof n.text === 'string' ? n.text : ''
@@ -429,6 +490,46 @@ export function assembleResearch(
 /** Single-article convenience wrapper (paragraph mode). */
 export function buildResearchDoc(data: ResearchData, lang: 'fa' | 'en', paragraphCount = 3): JsonNode[] {
   return assembleResearch([data], lang, { paragraphs: paragraphCount }).nodes
+}
+
+/** Answer a free-form question from the fetched sources (owner order
+ *  2026-11-03: any kind of question, answered in seconds). The
+ *  answer is the sources' own sentences that best match the
+ *  question's subject — extractive, never invented — and it always
+ *  ends with the source credit. When no sentence matches the
+ *  subject, found is false and the panel says so honestly. */
+export function buildAnswer(
+  sources: ResearchData[],
+  question: string,
+  lang: 'fa' | 'en',
+): { lines: string[]; found: boolean } {
+  const qTokens = new Set(searchQueryFor(question).split(' ').filter((w) => w.length > 1))
+  if (qTokens.size === 0 || sources.length === 0) return { lines: [], found: false }
+  interface Cand { text: string; score: number; order: number; url: string }
+  const cands: Cand[] = []
+  let order = 0
+  for (const src of sources) {
+    for (const section of parseSections(src.extract)) {
+      for (const sentence of splitSentences(section.text)) {
+        if (!usableSentence(sentence)) continue
+        const toks = new Set(sentence.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
+        let score = 0
+        qTokens.forEach((t) => { if (toks.has(t)) score++ })
+        cands.push({ text: sentence, score, order: order++, url: src.url })
+      }
+    }
+  }
+  const best = cands
+    .filter((c) => c.score > 0)
+    .sort((a, b) => b.score - a.score || a.order - b.order)
+    .slice(0, 3)
+    .sort((a, b) => a.order - b.order)
+  if (best.length === 0) return { lines: [], found: false }
+  const lines = best.map((c) => c.text)
+  for (const url of [...new Set(best.map((c) => c.url))].slice(0, 2)) {
+    lines.push(lang === 'fa' ? `منبع: ویکی‌پدیا — ${url}` : `Source: Wikipedia — ${url}`)
+  }
+  return { lines, found: true }
 }
 
 /** Ready-made document structures in the app's own document format.
