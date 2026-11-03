@@ -95,6 +95,22 @@ export function searchQueryFor(question: string): string {
   return cleaned.length >= 2 ? cleaned : normalizeCommand(question).replace(/[؟?]/g, '').trim()
 }
 
+/** Ranking / comparison / current questions (A-01d2): these have no
+ *  single generic article answer, so a generic Wikipedia match must
+ *  never pre-empt the web answer — the web fallback runs first, and
+ *  Wikipedia wins only when its own sentence states the ranking.
+ *  Token-based on the NORMALIZED question (ZWNJ becomes a space, so
+ *  «قوی‌ترین» tokenizes as «قوی» + «ترین»). Mirrors the function
+ *  side's looksRankingOrCurrent, plus the «ترین» superlative form. */
+const RANKING_QUESTION_TOKENS = new Set([
+  'قوی', 'ترین', 'قویترین', 'بهترین', 'برتر', 'آخرین', 'جدیدترین', 'مقایسه', 'رتبه',
+  'strongest', 'best', 'latest', 'top', 'ranking', 'compare', 'comparison', 'fastest', 'newest',
+])
+export function isRankingOrCurrentQuestion(question: string): boolean {
+  const toks = new Set(normalizeCommand(question).split(' ').filter(Boolean))
+  return [...RANKING_QUESTION_TOKENS].some((t) => toks.has(t))
+}
+
 function numbersIn(s: string): number[] {
   return (s.match(/\d+/g) ?? []).map((n) => parseInt(n, 10)).filter((n) => Number.isFinite(n))
 }
@@ -569,12 +585,116 @@ export function buildAnswer(
       }
     }
   }
+  // Light synonyms shared by the A-01c top-source fallback and the
+  // A-01d whole-web fallback (defined once, at this scope, so the
+  // A-01d2 ranking-preference pass can reuse the web fallback).
+  const SYNONYMS: Record<string, string[]> = {
+    'نویسنده': ['اثر', 'مولف', 'سراینده'],
+    'اثر': ['نویسنده'],
+    author: ['written', 'wrote', 'writer'],
+    writer: ['author', 'wrote'],
+    written: ['author'],
+    wrote: ['author', 'written', 'writer'],
+    // A-01d ranking synonyms (ZWNJ forms normalized: the question
+    // tokenizes «قوی‌ترین» as «قوی» + «تر», so both forms map).
+    'قوی‌ترین': ['قوی', 'برتر', 'پیشرو', 'اول'],
+    'قویترین': ['قوی', 'برتر', 'پیشرو', 'اول'],
+    'قوی': ['برتر', 'پیشرو', 'اول'],
+    'بهترین': ['قوی', 'برتر', 'پیشرو', 'اول'],
+    'بهتر': ['برتر', 'اول'],
+    strongest: ['strong', 'top', 'leading', 'first'],
+    best: ['strongest', 'top', 'leading', 'first'],
+    top: ['best', 'leading', 'first'],
+    ranking: ['rank', 'best', 'top'],
+    latest: ['newest', 'recent'],
+  }
+  const orderedTokens = searchQueryFor(question).split(' ').filter((w) => w.length > 1)
+  /** Sentence tokens with ZWNJ-joined words also counted as their
+   *  parts, so «قوی‌ترین» matches the question token «قوی». */
+  const expandedToks = (text: string): Set<string> => {
+    const raw = new Set(text.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
+    const out = new Set<string>(raw)
+    raw.forEach((t) => t.split('\u200C').forEach((p) => { if (p) out.add(p) }))
+    return out
+  }
+  /** A-01d WHOLE-WEB fallback, as a reusable pass: ONLY
+   *  non-Wikipedia sources, in order — a Wikipedia secondary source
+   *  can never be rescued by this pass (the France/Korea guard).
+   *  The topic token is taken from EACH web source's own title
+   *  (else the longest subject token), and the sentence must match
+   *  it AND another subject token or a light synonym. A winner or
+   *  ranking is stated only when the fetched source's OWN sentence
+   *  states it — never invented. At most 2 sentences + that
+   *  source's site credit; null when no web source answers. */
+  const webFallback = (): string[] | null => {
+    for (const ws of sources.filter((s) => !isWikiUrl(s.url))) {
+      const wTitleToks = new Set(ws.title.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
+      let wtopic = orderedTokens.filter((t) => wTitleToks.has(t))
+      if (wtopic.length === 0) {
+        const longest = Math.max(...orderedTokens.map((t) => t.length))
+        wtopic = [orderedTokens.find((t) => t.length === longest) as string]
+      }
+      const wtopicSet = new Set(wtopic)
+      const wother = new Set<string>()
+      qTokens.forEach((t) => {
+        if (!wtopicSet.has(t)) wother.add(t)
+        ;(SYNONYMS[t] ?? []).forEach((s) => wother.add(s))
+      })
+      const wb = cands
+        .filter((c) => c.url === ws.url)
+        .filter((c) => {
+          const toks = expandedToks(c.text)
+          return wtopic.some((t) => toks.has(t)) && [...wother].some((t) => toks.has(t))
+        })
+        .sort((a, b) => a.order - b.order)
+        .slice(0, 2)
+      if (wb.length > 0) {
+        const lines = wb.map((c) => c.text)
+        lines.push(lang === 'fa' ? `منبع: ${sourceSiteName(ws, lang)} — ${ws.url}` : `Source: ${sourceSiteName(ws, lang)} — ${ws.url}`)
+        return lines
+      }
+    }
+    return null
+  }
   // Strictness (v2.4, from the live France/Korea failure): when the
   // question names two or more subject words, an answer sentence
   // must match at least TWO of them — matching only a generic word
   // like «پایتخت» in an article about another country is not an
   // answer. Otherwise the honest result is "not found".
   const minScore = qTokens.size >= 2 ? 2 : 1
+  // A-01d2 RANKING PREFERENCE (live failure 2026-11-03: the owner's
+  // coding-AI question was answered from a generic Wikipedia
+  // sentence about Claude, so the web fallback never ran): for
+  // ranking/comparison/current questions ONLY, a generic Wikipedia
+  // match must not pre-empt the web answer. Order here: (1) a
+  // Wikipedia sentence that ITSELF states a comparison/ranking
+  // (score ≥ minScore AND a ranking marker) still wins — e.g. the
+  // Pacific article stating it is the largest ocean; (2) the web
+  // fallback; (3) otherwise fall through to the generic strict pass
+  // below, so a question with no web answer keeps its old sourced
+  // answer instead of going blank.
+  if (isRankingOrCurrentQuestion(question) && qTokens.size >= 2) {
+    const RANK_MARKERS = new Set([
+      'قوی', 'ترین', 'بهترین', 'برتر', 'پیشرو', 'اول', 'رتبه', 'مقایسه', 'جدیدترین', 'آخرین',
+      'strongest', 'best', 'top', 'leading', 'first', 'fastest', 'newest', 'latest', 'ranked', 'ranking', 'compare', 'comparison', 'versus',
+    ])
+    const wikiRanking = cands
+      .filter((c) => isWikiUrl(c.url) && c.score >= minScore)
+      .filter((c) => [...expandedToks(c.text)].some((t) => RANK_MARKERS.has(t)))
+      .sort((a, b) => b.score - a.score || a.order - b.order)
+      .slice(0, 3)
+      .sort((a, b) => a.order - b.order)
+    if (wikiRanking.length > 0) {
+      const lines = wikiRanking.map((c) => c.text)
+      for (const url of [...new Set(wikiRanking.map((c) => c.url))].slice(0, 2)) {
+        const cand = wikiRanking.find((c) => c.url === url) as Cand
+        lines.push(lang === 'fa' ? `منبع: ${sourceSiteName({ url, site: cand.site }, lang)} — ${url}` : `Source: ${sourceSiteName({ url, site: cand.site }, lang)} — ${url}`)
+      }
+      return { lines, found: true }
+    }
+    const webLines = webFallback()
+    if (webLines) return { lines: webLines, found: true }
+  }
   const best = cands
     .filter((c) => c.score >= minScore)
     .sort((a, b) => b.score - a.score || a.order - b.order)
@@ -592,26 +712,6 @@ export function buildAnswer(
     // light synonym. The France/Korea guard survives: a Korea
     // article's sentences match «پایتخت» but never «فرانسه» or any
     // of its synonyms, so the fallback still returns not-found.
-    const SYNONYMS: Record<string, string[]> = {
-      'نویسنده': ['اثر', 'مولف', 'سراینده'],
-      'اثر': ['نویسنده'],
-      author: ['written', 'wrote', 'writer'],
-      writer: ['author', 'wrote'],
-      written: ['author'],
-      wrote: ['author', 'written', 'writer'],
-      // A-01d ranking synonyms (ZWNJ forms normalized: the question
-      // tokenizes «قوی‌ترین» as «قوی» + «تر», so both forms map).
-      'قوی‌ترین': ['قوی', 'برتر', 'پیشرو', 'اول'],
-      'قویترین': ['قوی', 'برتر', 'پیشرو', 'اول'],
-      'قوی': ['برتر', 'پیشرو', 'اول'],
-      'بهترین': ['قوی', 'برتر', 'پیشرو', 'اول'],
-      'بهتر': ['برتر', 'اول'],
-      strongest: ['strong', 'top', 'leading', 'first'],
-      best: ['strongest', 'top', 'leading', 'first'],
-      top: ['best', 'leading', 'first'],
-      ranking: ['rank', 'best', 'top'],
-      latest: ['newest', 'recent'],
-    }
     const top = sources[0]
     const titleToks = new Set(top.title.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
     const ordered = searchQueryFor(question).split(' ').filter((w) => w.length > 1)
@@ -641,46 +741,11 @@ export function buildAnswer(
       lines.push(lang === 'fa' ? `منبع: ${sourceSiteName(top, lang)} — ${top.url}` : `Source: ${sourceSiteName(top, lang)} — ${top.url}`)
       return { lines, found: true }
     }
-    // A-01d WHOLE-WEB fallback: ONLY non-Wikipedia sources, in
-    // order — a Wikipedia secondary source can never be rescued by
-    // this pass (the France/Korea guard). Same shape as A-01c, but
-    // the topic token is taken from EACH web source's own title
-    // (else the longest subject token), and the sentence must match
-    // it AND another subject token or a light synonym. A winner or
-    // ranking is stated only when the fetched source's OWN sentence
-    // states it — never invented. At most 2 sentences + that
-    // source's site credit.
-    for (const ws of sources.filter((s) => !isWikiUrl(s.url))) {
-      const wTitleToks = new Set(ws.title.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
-      let wtopic = ordered.filter((t) => wTitleToks.has(t))
-      if (wtopic.length === 0) {
-        const longest = Math.max(...ordered.map((t) => t.length))
-        wtopic = [ordered.find((t) => t.length === longest) as string]
-      }
-      const wtopicSet = new Set(wtopic)
-      const wother = new Set<string>()
-      qTokens.forEach((t) => {
-        if (!wtopicSet.has(t)) wother.add(t)
-        ;(SYNONYMS[t] ?? []).forEach((s) => wother.add(s))
-      })
-      const wb = cands
-        .filter((c) => c.url === ws.url)
-        .filter((c) => {
-          const raw = new Set(c.text.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
-          // ZWNJ-joined words also count as their parts, so a
-          // sentence's «قوی‌ترین» matches the question token «قوی».
-          const toks = new Set<string>(raw)
-          raw.forEach((t) => t.split('\u200C').forEach((p) => { if (p) toks.add(p) }))
-          return wtopic.some((t) => toks.has(t)) && [...wother].some((t) => toks.has(t))
-        })
-        .sort((a, b) => a.order - b.order)
-        .slice(0, 2)
-      if (wb.length > 0) {
-        const lines = wb.map((c) => c.text)
-        lines.push(lang === 'fa' ? `منبع: ${sourceSiteName(ws, lang)} — ${ws.url}` : `Source: ${sourceSiteName(ws, lang)} — ${ws.url}`)
-        return { lines, found: true }
-      }
-    }
+    // A-01d WHOLE-WEB fallback (shared pass, defined above): ONLY
+    // non-Wikipedia sources — a Wikipedia secondary source can never
+    // be rescued by this pass (the France/Korea guard).
+    const webLines = webFallback()
+    if (webLines) return { lines: webLines, found: true }
     return { lines: [], found: false }
   }
   if (best.length === 0) return { lines: [], found: false }

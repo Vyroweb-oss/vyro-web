@@ -8,6 +8,7 @@ import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
   buildTemplate, buildResearchDoc, assembleResearch, parseSections, cleanWikiText,
   buildAnswer, searchQueryFor, normalizeDigits, splitSentences, sourceSiteName,
+  isRankingOrCurrentQuestion,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -349,6 +350,69 @@ describe('A-01d whole-web search (owner order 2026-11-03: any question from anyw
       extract: 'آشپزی خانگی غذایی سالم و خوشمزه به سفره می‌آورد. آشپزهای خانگی سبزی تازه و ادویه خوشبو به کار می‌برند و غذاهای سنتی می‌پزند.',
     }]
     expect(buildAnswer([...wiki, ...web], 'قیمت دلار امروز چند است؟', 'fa').found).toBe(false)
+  })
+  it('isRankingOrCurrentQuestion detects ranking/comparison/current questions only', () => {
+    expect(isRankingOrCurrentQuestion('کدام هوش مصنوعی در کدنویسی قوی‌تر است؟')).toBe(true)
+    expect(isRankingOrCurrentQuestion('What is the best AI for coding?')).toBe(true)
+    expect(isRankingOrCurrentQuestion('پایتخت فرانسه کجاست؟')).toBe(false)
+    expect(isRankingOrCurrentQuestion('نویسنده شاهنامه کیست؟')).toBe(false)
+    expect(isRankingOrCurrentQuestion('قیمت دلار امروز چند است؟')).toBe(false)
+  })
+})
+
+describe('A-01d2 ranking preference (live failure 2026-11-03: generic wiki match pre-empted the web answer)', () => {
+  const QUESTION = 'کدام هوش مصنوعی در کدنویسی قوی‌تر است؟'
+  const genericWiki = [{
+    title: 'کلاد', url: 'https://fa.wikipedia.org/wiki/Claude',
+    extract: 'کلاد یک چت‌بات هوش مصنوعی است که قابلیت نوشتن، کدنویسی و گفتگو دارد. کاربران از کلاد برای پرسش و پاسخ روزمره استفاده می‌کنند و پاسخ‌های طولانی دریافت می‌نمایند.',
+  }]
+  const webWinner = [{
+    title: 'بهترین هوش مصنوعی برای کدنویسی', url: 'https://example-blog.com/ai-coding', site: 'Example Blog',
+    extract: 'ابزار ایکس قوی‌ترین هوش مصنوعی در کدنویسی است و برنامه‌نویسان بسیاری از آن استفاده می‌کنند. این ابزار کدهای پیچیده را سریع و دقیق می‌نویسد و خطاها را هم پیدا می‌کند.',
+  }]
+  it('a generic Wikipedia match must NOT pre-empt the web answer for a ranking question', () => {
+    const ans = buildAnswer([...genericWiki, ...webWinner], QUESTION, 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('قوی‌ترین هوش مصنوعی در کدنویسی')
+    expect(ans.lines[ans.lines.length - 1]).toContain('Example Blog')
+    expect(ans.lines.join(' ')).not.toContain('ویکی‌پدیا')
+  })
+  it('a Wikipedia sentence that ITSELF states the ranking still wins over the web', () => {
+    const wikiRanking = [{
+      title: 'هوش مصنوعی', url: 'https://fa.wikipedia.org/wiki/AI',
+      extract: 'ابزار ایکس قوی‌ترین هوش مصنوعی در کدنویسی است و برنامه‌نویسان بسیاری از آن استفاده می‌کنند. هوش مصنوعی شاخه‌ای از علوم رایانه است که سامانه‌های هوشمند می‌سازد و داده‌ها را پردازش می‌کند.',
+    }]
+    const ans = buildAnswer([...wikiRanking, ...webWinner], QUESTION, 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('قوی‌ترین هوش مصنوعی در کدنویسی')
+    expect(ans.lines[ans.lines.length - 1]).toContain('منبع: ویکی‌پدیا')
+  })
+  it('EN mirror: generic wiki AI sentence loses to the web best-coding answer', () => {
+    const wiki = [{
+      title: 'Claude', url: 'https://en.wikipedia.org/wiki/Claude',
+      extract: 'Claude is an AI tool for coding and writing. Users ask Claude questions and receive long detailed answers every day.',
+    }]
+    const web = [{
+      title: 'Best AI coding tools', url: 'https://example-blog.com/best-ai-coding', site: 'Example Blog',
+      extract: 'Tool X is the best AI coding assistant, ranked first for developers. It writes complex code quickly and finds errors accurately for many programmers.',
+    }]
+    const ans = buildAnswer([...wiki, ...web], 'Which AI is best for coding?', 'en')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('best AI coding assistant')
+    expect(ans.lines[ans.lines.length - 1]).toContain('Example Blog')
+  })
+  it('with no web answer and no wiki ranking sentence, the generic sourced answer is kept — never blank', () => {
+    const ans = buildAnswer(genericWiki, QUESTION, 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('هوش مصنوعی')
+    expect(ans.lines[ans.lines.length - 1]).toContain('منبع: ویکی‌پدیا')
+  })
+  it('ranking preference does not rescue a France question from a Korea article', () => {
+    const korea = [{
+      title: 'پایتخت کره', url: 'https://fa.wikipedia.org/wiki/KoreaCapitals',
+      extract: 'پایتخت کره به پیشینه تاریخی آن سرزمین بستگی دارد که در طول تاریخ تغییر کرده است. کره شبه جزیره ای در شرق آسیا است که از دو کشور کره شمالی و کره جنوبی تشکیل شده است.',
+    }]
+    expect(buildAnswer(korea, 'پایتخت فرانسه کجاست؟', 'fa').found).toBe(false)
   })
   it('sourceSiteName: wikipedia URL → ویکی‌پدیا in FA, web URL → site field or bare hostname', () => {
     expect(sourceSiteName({ url: 'https://fa.wikipedia.org/wiki/X' }, 'fa')).toBe('ویکی‌پدیا')
