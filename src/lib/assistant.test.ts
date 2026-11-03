@@ -531,6 +531,24 @@ describe('A-01e question analysis (owner order 2026-11-03: analyze the question,
     expect(ans.found).toBe(true)
     expect(ans.lines.join(' ')).toContain('قوی‌ترین هوش مصنوعی در کدنویسی')
   })
+  it('A-01e6: web comparative gate — generic openings and time-phrase «اول» lose, a tool-naming superlative wins', () => {
+    // Modeled on the live 2026-11-04 Tavily payload for the owner's
+    // question: the first web source opens with generic sentences,
+    // carries a false-positive «اول» in a time phrase, and states
+    // its ranking later with a colloquially glued form («کدنویسیه»).
+    const web = [{
+      title: 'بهترین ابزارهای هوش مصنوعی برای برنامه‌نویسی', url: 'https://video.example.com/ai-coding', site: 'video.example.com',
+      extract: 'دستیارهای هوش مصنوعی در کدنویسی شناخته می‌شوند و به برنامه‌نویسان در تکمیل کد و رفع باگ‌ها کمک می‌کنند و یادگیری را سریع‌تر می‌سازند. در روزهای اول کار کردن با آن کمی سخت‌تر بود و کاربران تازه‌کار چندان راضی نبودند. تبنا یکی از قدیمی‌ترین دستیارهای هوش مصنوعی توی کدنویسیه که تمرکز خاصی بر مسائل امنیتی و حفظ حریم خصوصی کد دارد و برای سازمان‌ها گزینه مناسبی است.',
+    }]
+    const ans = buildAnswer(web, 'کدام هوش مصنوعی در کدنویسی قوی‌تر است', 'fa')
+    expect(ans.found).toBe(true)
+    const joined = ans.lines.join(' ')
+    expect(joined).toContain('تبنا')
+    expect(joined).toContain('قدیمی‌ترین')
+    expect(joined).not.toContain('روزهای اول')
+    expect(joined).not.toContain('تکمیل کد و رفع باگ')
+    expect(joined).toContain('video.example.com')
+  })
   it('Shahnameh author: a name-bearing sentence wins', () => {
     const src = [{
       title: 'شاهنامه', url: 'https://fa.wikipedia.org/wiki/Shahnameh',

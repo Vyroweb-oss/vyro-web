@@ -905,11 +905,18 @@ export function buildAnswer(
   }
   const orderedTokens = searchQueryFor(question).split(' ').filter((w) => w.length > 1)
   /** Sentence tokens with ZWNJ-joined words also counted as their
-   *  parts, so «قوی‌ترین» matches the question token «قوی». */
+   *  parts, so «قوی‌ترین» matches the question token «قوی». A-01e6:
+   *  colloquial glued forms also count — web/transcript text writes
+   *  «کدنویسیه» (کدنویسی + ه, the spoken است), which must match the
+   *  question token «کدنویسی»; a trailing ه variant is added for
+   *  tokens of 4+ chars. */
   const expandedToks = (text: string): Set<string> => {
     const raw = new Set(text.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
     const out = new Set<string>(raw)
-    raw.forEach((t) => t.split('\u200C').forEach((p) => { if (p) out.add(p) }))
+    raw.forEach((t) => {
+      t.split('\u200C').forEach((p) => { if (p) out.add(p) })
+      if (t.length >= 4 && t.endsWith('ه')) out.add(t.slice(0, -1))
+    })
     return out
   }
   // A-01e2: the question's analysis, computed once up front so every
@@ -947,9 +954,15 @@ export function buildAnswer(
   ])
   const hasComparativeSignal = (text: string): boolean => {
     const toks = expandedToks(text)
-    if ([...toks].some((t) => STRONG_RANK_MARKERS.has(t))) return true
+    // A-01e6: content matches are counted for BOTH marker classes
+    // now. A strong marker alone proved too weak an evidence bar:
+    // «در روزهای اول…» ("in the first days") carries the strong
+    // marker «اول» without ranking anything, and «تر» — the suffix
+    // fragment the question tokenizer splits off «قوی‌تر» — is not
+    // a subject word, so it never counts as content.
+    const contentMatches = [...qTokens].filter((t) => t !== 'تر' && !FUNCTION_WORDS.has(t) && toks.has(t)).length
+    if ([...toks].some((t) => STRONG_RANK_MARKERS.has(t))) return contentMatches >= 2
     if (![...toks].some((t) => WEAK_RANK_MARKERS.has(t))) return false
-    const contentMatches = [...qTokens].filter((t) => !FUNCTION_WORDS.has(t) && toks.has(t)).length
     return contentMatches >= 3
   }
   /** A-01d WHOLE-WEB fallback, as a reusable pass: ONLY
@@ -964,15 +977,19 @@ export function buildAnswer(
   const webFallback = (): string[] | null => {
     for (const ws of sources.filter((s) => !isWikiUrl(s.url))) {
       const wTitleToks = new Set(ws.title.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
-      let wtopic = orderedTokens.filter((t) => wTitleToks.has(t))
+      // A-01e6: topic/other matching uses CONTENT tokens only — a
+      // function word («در») previously satisfied the "other token"
+      // requirement by itself, letting generic sentences through.
+      const contentOrdered = orderedTokens.filter((t) => !FUNCTION_WORDS.has(t))
+      let wtopic = contentOrdered.filter((t) => wTitleToks.has(t))
       if (wtopic.length === 0) {
-        const longest = Math.max(...orderedTokens.map((t) => t.length))
-        wtopic = [orderedTokens.find((t) => t.length === longest) as string]
+        const longest = Math.max(...contentOrdered.map((t) => t.length))
+        wtopic = [contentOrdered.find((t) => t.length === longest) as string]
       }
       const wtopicSet = new Set(wtopic)
       const wother = new Set<string>()
       qTokens.forEach((t) => {
-        if (!wtopicSet.has(t)) wother.add(t)
+        if (!FUNCTION_WORDS.has(t) && !wtopicSet.has(t)) wother.add(t)
         ;(SYNONYMS[t] ?? []).forEach((s) => wother.add(s))
       })
       const wb = cands
@@ -981,10 +998,22 @@ export function buildAnswer(
           // A-01e2: type-gated questions need a sentence of their
           // own kind even from a web source — never a topical one.
           if (isTypeGated && !sentenceMatchesQuestionType(c.text, analysis)) return false
+          // A-01e6 (live failure 2026-11-04, with the keyed Tavily
+          // web leg flowing): a COMPARATIVE question needs a
+          // comparative sentence from the web too — the strict and
+          // A-01c passes already enforce hasComparativeSignal, but
+          // this pass did not, so the first web source's generic
+          // opening sentences («دستیارها به تکمیل کد و رفع باگ کمک
+          // می‌کنند») won in document order and the answer named no
+          // tool at all. Same gate, same rule, no new special case.
+          if (isComparativeQ && !hasComparativeSignal(c.text)) return false
           const toks = expandedToks(c.text)
           return wtopic.some((t) => toks.has(t)) && [...wother].some((t) => toks.has(t))
         })
-        .sort((a, b) => a.order - b.order)
+        // Comparative answers take the STRONGEST comparative
+        // sentences (score order), not the source's opening lines;
+        // every other question kind keeps document order.
+        .sort((a, b) => isComparativeQ ? (b.score - a.score || a.order - b.order) : (a.order - b.order))
         .slice(0, 2)
       if (wb.length > 0) {
         const lines = wb.map((c) => c.text)
