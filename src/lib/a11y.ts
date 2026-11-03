@@ -10,11 +10,11 @@
 // Phase 2, P2-34, with two more, and in Phase 2, P2-35, with two
 // more, and in Phase 2, P2-36, with two more, and in
 // Phase 2, P2-37, with two more, and in Phase 2, P2-38,
-// with two more).
+// with two more, and in Phase 2, P2-39, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// forty-two local, JSON-derivable rules — nothing is faked:
+// forty-four local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -345,6 +345,32 @@
 //       it is already imageAltMissing; the issue carries
 //       imageIndex and the trimmed altText; independent of
 //       all other alt branches, so co-firing is legitimate).
+//   (43) links whose TRIMMED visible text is a single-token
+//       filename ending in a known file extension
+//       (linkTextIsFilename — per link RUN, as defined below;
+//       the shared isFilenameText test below on the trimmed
+//       run text, so 'report.pdf' and 'REPORT.PDF' flag, while
+//       a bare domain like 'example.com' does NOT flag
+//       (com/net/org are deliberately not listed extensions),
+//       a sentence embedding a filename does NOT flag (it
+//       is not a single token), '.pdf' with no basename
+//       does NOT flag, and 'file.' with no extension does
+//       NOT flag; empty runs are NOT flagged here, they are
+//       already linkEmptyText; independent of all other link
+//       branches, so no branch suppresses another).
+//   (44) non-empty headings whose TRIMMED text is a
+//       single-token filename ending in a known file
+//       extension (headingTextIsFilename — the same shared
+//       isFilenameText test as rule (43), so 'report.pdf'
+//       and 'manual.docx' flag, while 'example.com' does
+//       NOT flag, a multi-token heading like 'Annual
+//       Report.docx' does NOT flag, and a sentence
+//       embedding a filename does NOT flag; empty headings
+//       are EXCLUDED, they are already headingEmpty;
+//       headingText carries the original, unnormalised text,
+//       and the issue also carries level; independent of
+//       all other heading rules, so co-firing is
+//       legitimate).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -414,6 +440,8 @@ export type A11yIssueKind =
   | 'headingTooShort'
   | 'linkTextTooShort'
   | 'imageAltAllCaps'
+  | 'linkTextIsFilename'
+  | 'headingTextIsFilename'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -433,7 +461,7 @@ export interface A11yIssue {
   linkIndex?: number
   /** Link target, for link issues ('' when the link mark has no href). */
   href?: string
-  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort issues. */
+  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort / linkTextIsFilename issues. */
   linkText?: string
   /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail / imageAltAllCaps issues. */
   altText?: string
@@ -490,6 +518,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   headingTooShort: 0,
   linkTextTooShort: 0,
   imageAltAllCaps: 0,
+  linkTextIsFilename: 0,
+  headingTextIsFilename: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -516,6 +546,19 @@ function normalizeDuplicateText(text: string): string {
  * YYYY-MM-DD date (8 digits, hyphens only) and a bare hyphenated
  * 7-digit string from flagging.
  */
+/**
+ * Filename test shared by rules (43) and (44) (P2-39): the input
+ * must already be trimmed. A single token (no whitespace) with a
+ * non-empty basename ending in a known file extension. com/net/org
+ * are deliberately NOT listed, so a bare domain like 'example.com'
+ * never flags; '.pdf' (no basename) and 'file.' (no extension)
+ * never flag either, because [^\s]+ before the dot must contain
+ * at least one character and the extension group must match.
+ */
+function isFilenameText(trimmed: string): boolean {
+  return /^[^\s]+\.(pdf|docx?|txt|rtf|odt|xlsx?|csv|pptx?|zip|rar|7z|png|jpe?g|gif|webp|svg|bmp|avif|mp3|wav|mp4|mov|html|json|md)$/i.test(trimmed)
+}
+
 function isPhoneNumberText(trimmed: string): boolean {
   const phoneDigits = trimmed.replace(/[\s().-]/g, '').replace(/^\+/, '')
   return /^\d{7,}$/.test(phoneDigits)
@@ -681,6 +724,22 @@ export function analyzeDoc(docJson: any): A11yResult {
     const trimmedLength = [...h.text.trim()].length
     if (trimmedLength >= 1 && trimmedLength <= 2) {
       push({ kind: 'headingTooShort', headingIndex: i + 1, headingText: h.text, level: h.level })
+    }
+  })
+  // Headings that are just a filename (P2-39, rule 44): a
+  // NON-empty heading whose TRIMMED text matches the shared
+  // isFilenameText test, so 'report.pdf' and 'manual.docx'
+  // flag, while 'example.com' (com not a listed extension),
+  // a multi-token heading like 'Annual Report.docx', and a
+  // sentence embedding a filename do NOT flag. Empty
+  // headings are excluded (already headingEmpty).
+  // headingText carries the original, unnormalised text.
+  // Independent of the other heading rules — no branch
+  // suppresses another, so co-firing is legitimate.
+  headings.forEach((h, i) => {
+    if (h.empty) return
+    if (isFilenameText(h.text.trim())) {
+      push({ kind: 'headingTextIsFilename', headingIndex: i + 1, headingText: h.text, level: h.level })
     }
   })
   // Duplicate heading text (P2-21): only later occurrences are flagged,
@@ -1187,6 +1246,20 @@ export function analyzeDoc(docJson: any): A11yResult {
           // legitimately also fires linkTextNoLetters.
           if ([...trimmed].length >= 1 && [...trimmed].length <= 2) {
             push({ kind: 'linkTextTooShort', linkIndex, href: runHref, linkText: trimmed })
+          }
+          // Links whose visible text is a filename (P2-39, rule
+          // 43): the trimmed run text matches the shared
+          // isFilenameText test, so 'report.pdf' and
+          // 'REPORT.PDF' flag, while 'example.com' (com not a
+          // listed extension), a sentence embedding a
+          // filename, a multi-token text, '.pdf' with no
+          // basename, and 'file.' with no extension do NOT
+          // flag. Empty runs are excluded by the branch
+          // above (already linkEmptyText). Independent of
+          // all other link branches — no branch suppresses
+          // another, so co-firing is legitimate.
+          if (isFilenameText(trimmed)) {
+            push({ kind: 'linkTextIsFilename', linkIndex, href: runHref, linkText: trimmed })
           }
         }
         runHref = null
