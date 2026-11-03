@@ -7,11 +7,12 @@
 // P2-27, with two more, and in Phase 2, P2-28, with two more, and in
 // Phase 2, P2-29, with two more, and in Phase 2, P2-30, with two more, and in
 // Phase 2, P2-32, with two more, and in Phase 2, P2-33, with two more, and in
-// Phase 2, P2-34, with two more).
+// Phase 2, P2-34, with two more, and in Phase 2, P2-35, with two
+// more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// thirty-four local, JSON-derivable rules — nothing is faked:
+// thirty-six local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -252,6 +253,31 @@
 //       they are already linkEmptyText; independent of the
 //       vague/URL-text/no-letters branches, so neither suppresses
 //       nor is suppressed by them).
+//   (35) headings whose TRIMMED text is an email address
+//       (headingTextIsEmail — the same regex as rule (34):
+//       /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i on the trimmed text, so
+//       an uppercase address and an address with surrounding
+//       spaces (trimmed first) both flag, while a bare domain
+//       without '@' and ordinary heading text do not; empty
+//       headings are EXCLUDED, they are already headingEmpty;
+//       headingText carries the original, unnormalised text, and
+//       the issue also carries level; independent of all other
+//       heading rules, so co-firing is legitimate).
+//   (36) links whose TRIMMED visible text is a phone number
+//       (linkTextIsPhoneNumber — per link RUN, as defined below;
+//       after stripping spaces, parentheses, hyphens, and dots
+//       from the trimmed text and an optional leading '+', the
+//       remaining text is all digits with at least 7 digits, AND
+//       the original trimmed text either starts with '+',
+//       contains a space or parenthesis, or has at least 10
+//       digits; that last condition is what keeps a YYYY-MM-DD
+//       date (8 digits, hyphens only) from flagging, and likewise
+//       a bare 7-digit string with hyphens only; empty runs are
+//       NOT flagged here, they are already linkEmptyText; the
+//       issue carries linkIndex, href, and the trimmed linkText;
+//       independent of all other link branches, so a phone-number
+//       link legitimately also fires linkTextNoLetters (its text
+//       contains no letters), and no branch suppresses another).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -313,6 +339,8 @@ export type A11yIssueKind =
   | 'headingAllCaps'
   | 'imageAltVeryShort'
   | 'linkTextIsEmail'
+  | 'headingTextIsEmail'
+  | 'linkTextIsPhoneNumber'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -332,7 +360,7 @@ export interface A11yIssue {
   linkIndex?: number
   /** Link target, for link issues ('' when the link mark has no href). */
   href?: string
-  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail issues. */
+  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber issues. */
   linkText?: string
   /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort issues. */
   altText?: string
@@ -381,6 +409,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   headingAllCaps: 0,
   imageAltVeryShort: 0,
   linkTextIsEmail: 0,
+  headingTextIsEmail: 0,
+  linkTextIsPhoneNumber: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -506,6 +536,21 @@ export function analyzeDoc(docJson: any): A11yResult {
       && trimmedHeading === trimmedHeading.toUpperCase()
       && trimmedHeading !== trimmedHeading.toLowerCase()) {
       push({ kind: 'headingAllCaps', headingIndex: i + 1, headingText: h.text, level: h.level })
+    }
+  })
+  // Headings that are exactly an email address (P2-35, rule 35):
+  // the TRIMMED text must match the same regex as rule (34) —
+  // /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i — so an uppercase address
+  // and an address with surrounding spaces (trimmed first) both
+  // flag, while a bare domain without '@' and ordinary heading
+  // text do not. Empty headings are excluded (already
+  // headingEmpty). headingText carries the original,
+  // unnormalised text. Independent of the other heading rules.
+  headings.forEach((h, i) => {
+    if (h.empty) return
+    const trimmedHeading = h.text.trim()
+    if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmedHeading)) {
+      push({ kind: 'headingTextIsEmail', headingIndex: i + 1, headingText: h.text, level: h.level })
     }
   })
   // Duplicate heading text (P2-21): only later occurrences are flagged,
@@ -851,7 +896,8 @@ export function analyzeDoc(docJson: any): A11yResult {
   // "click here for details" does not. Empty runs are NOT vague — they
   // are already linkEmptyText, and flush() evaluates all link rules per
   // run (empty, then vague / URL-text, then missing-href, then
-  // no-letters, then too-long, then email, in that order).
+  // no-letters, then too-long, then email, then phone, in that
+  // order).
   const VAGUE_LINK_TEXT = new Set([
     'click here', 'here', 'this', 'link', 'more', 'read more', 'click',
     'اینجا', 'اینجا کلیک کنید', 'کلیک کنید', 'لینک', 'بیشتر',
@@ -941,6 +987,29 @@ export function analyzeDoc(docJson: any): A11yResult {
           // suppresses another, so co-firing is legitimate.
           if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmed)) {
             push({ kind: 'linkTextIsEmail', linkIndex, href: runHref, linkText: trimmed })
+          }
+          // Link text that is a phone number (P2-35, rule 36):
+          // strip spaces, parentheses, hyphens, and dots, then an
+          // optional leading '+'; what remains must be all digits
+          // with at least 7 digits, AND the original trimmed text
+          // must either start with '+', contain a space or
+          // parenthesis, or have at least 10 digits — that last
+          // condition keeps a YYYY-MM-DD date (8 digits, hyphens
+          // only) and a bare hyphenated 7-digit string from
+          // flagging. Empty runs are excluded by the branch above
+          // (already linkEmptyText). Independent of the vague/
+          // URL-text/missing-href/no-letters/too-long/email
+          // branches above — no branch suppresses another, so a
+          // phone-number link legitimately also fires
+          // linkTextNoLetters (its text contains no letters).
+          {
+            const phoneDigits = trimmed.replace(/[\s().-]/g, '').replace(/^\+/, '')
+            if (/^\d{7,}$/.test(phoneDigits)
+              && (trimmed.startsWith('+')
+                || /[\s()]/.test(trimmed)
+                || phoneDigits.length >= 10)) {
+              push({ kind: 'linkTextIsPhoneNumber', linkIndex, href: runHref, linkText: trimmed })
+            }
           }
         }
         runHref = null

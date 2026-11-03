@@ -44,6 +44,8 @@ const GROUP_ORDER: { kind: A11yIssueKind; labelKey: I18nKey }[] = [
   { kind: 'headingAllCaps', labelKey: 'a11yHeadingAllCaps' },
   { kind: 'imageAltVeryShort', labelKey: 'a11yImageAltVeryShort' },
   { kind: 'linkTextIsEmail', labelKey: 'a11yLinkTextIsEmail' },
+  { kind: 'headingTextIsEmail', labelKey: 'a11yHeadingTextIsEmail' },
+  { kind: 'linkTextIsPhoneNumber', labelKey: 'a11yLinkTextIsPhoneNumber' },
 ]
 
 function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
@@ -163,6 +165,14 @@ function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
         ? `${t('a11yImage')} ${issue.imageIndex}: ${issue.altText}`
         : `${t('a11yImage')} ${issue.imageIndex}`
     case 'linkTextIsEmail':
+      return issue.linkText
+        ? `${t('a11yLink')} ${issue.linkIndex}: ${issue.linkText}`
+        : `${t('a11yLink')} ${issue.linkIndex}`
+    case 'headingTextIsEmail':
+      return issue.headingText && issue.headingText.trim() !== ''
+        ? `H${issue.level}: ${issue.headingText}`
+        : `${t('a11yHeading')} ${issue.headingIndex}`
+    case 'linkTextIsPhoneNumber':
       return issue.linkText
         ? `${t('a11yLink')} ${issue.linkIndex}: ${issue.linkText}`
         : `${t('a11yLink')} ${issue.linkIndex}`
