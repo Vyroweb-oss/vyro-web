@@ -801,16 +801,16 @@ input:focus,select:focus{border-color:var(--brand)}
 .auth-strength{margin:0;font-size:.85em;opacity:.85}
 .auth-actions{flex-wrap:wrap}
 
-/* Auth page (2026-11-03, owner design reference): full-screen sign-up /
-   sign-in. Two white cards on a soft lavender page; on narrow screens one
-   card shows at a time, chosen by the cards' data-view. Brand-fixed light
-   palette, exactly like the reference. */
+/* Auth page (2026-11-03, owner design reference + owner correction the
+   same day): ONE full-screen page — a single white card on a soft
+   lavender page; the sign-up form is the page, and the "already have an
+   account? Sign in" option below swaps the same card to the sign-in
+   form. Brand-fixed light palette, exactly like the reference. */
 .auth-page{min-height:100vh;box-sizing:border-box;padding:30px 20px 40px;position:relative;display:flex;flex-direction:column;align-items:center;gap:30px;background:radial-gradient(1100px 550px at 88% -10%,#e2daff 0%,rgba(226,218,255,0) 60%),radial-gradient(900px 500px at 8% 112%,#d7e7ff 0%,rgba(215,231,255,0) 55%),linear-gradient(160deg,#f7f5ff,#edf0ff);color:#241d3f}
 .auth-close{position:absolute;top:16px;inset-inline-end:18px;width:38px;height:38px;border-radius:50%;border:1px solid #ddd6f5;background:#fff;color:#5a5382;font-size:16px;cursor:pointer;box-shadow:0 4px 14px rgba(80,60,180,.12);z-index:2}
 .auth-close:hover{background:#f3f0ff}
-.auth-cards{display:grid;grid-template-columns:1fr 1fr;gap:28px;width:min(1060px,100%);align-items:stretch}
+.auth-cards{width:min(470px,100%)}
 .auth-card{background:#fff;border-radius:24px;box-shadow:0 24px 60px rgba(80,60,180,.14),0 2px 8px rgba(80,60,180,.06);padding:34px 38px 26px;display:flex;flex-direction:column;gap:12px;animation:authRise .45s ease both}
-.auth-card-signin{animation-delay:.07s}
 @keyframes authRise{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 .auth-card form{display:flex;flex-direction:column;gap:12px}
 .auth-logo{display:flex;align-items:center;justify-content:center;gap:10px}
@@ -851,9 +851,6 @@ input:focus,select:focus{border-color:var(--brand)}
 .auth-legal p{margin:0;font-size:14px;line-height:1.9;color:#4a4468}
 @media (max-width:920px){
   .auth-page{padding:22px 14px 30px;gap:22px}
-  .auth-cards{grid-template-columns:1fr;gap:20px}
-  .auth-cards[data-view='signin'] .auth-card-signup{display:none}
-  .auth-cards[data-view='signup'] .auth-card-signin{display:none}
   .auth-card{padding:26px 20px 20px}
   .auth-features{gap:24px}
 }

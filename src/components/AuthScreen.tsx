@@ -1,7 +1,9 @@
-// Auth page — full-screen sign-up / sign-in experience (owner design
-// reference, 2026-11-03): two cards side by side on a soft lavender page,
-// the Vyro mark on each card, icon fields, a working "remember me", a
-// terms gate on sign-up, and three feature highlights under the cards.
+// Auth page — ONE full-screen page (owner order 2026-11-03): the sign-up
+// form is the page; under it, "Already have an account? Sign in" swaps the
+// same single card to the sign-in form (and back), like other platforms.
+// (An earlier two-cards-side-by-side version from his design reference was
+// replaced on his explicit order — on a phone the two cards squeezed
+// together.) The sign-in view also hosts the password-reset form.
 //
 // All decisions (validation, password policy, error mapping) stay in the
 // pure authFlow library; this component only renders state and calls it.
@@ -13,7 +15,7 @@
 // Deliberate deviations from the reference image, both on the owner's own
 // standing rules: (1) no chosen-username field — usernames are generated
 // automatically by the database (R2-I decision) and shown in the profile,
-// so the sign-up card carries a short note saying so; (2) no Google /
+// so the sign-up form carries a short note saying so; (2) no Google /
 // GitHub / Apple buttons — no social provider is connected, and a button
 // that cannot work is never shipped.
 //
@@ -103,7 +105,7 @@ export default function AuthScreen({ lang, auth, onSignedIn, onClose }: Props) {
   const [view, setView] = useState<'signup' | 'signin'>('signup')
   const [legal, setLegal] = useState<'terms' | 'privacy' | null>(null)
   const [busy, setBusy] = useState<null | 'su' | 'si' | 'reset'>(null)
-  // Sign-up card state
+  // Sign-up form state
   const [suName, setSuName] = useState('')
   const [suEmail, setSuEmail] = useState('')
   const [suPassword, setSuPassword] = useState('')
@@ -111,7 +113,7 @@ export default function AuthScreen({ lang, auth, onSignedIn, onClose }: Props) {
   const [suTerms, setSuTerms] = useState(false)
   const [suErrors, setSuErrors] = useState<AuthErrorKey[]>([])
   const [suNotice, setSuNotice] = useState<I18nKey | null>(null)
-  // Sign-in card state (reset mode reuses this card)
+  // Sign-in form state (reset mode reuses this view)
   const [siEmail, setSiEmail] = useState('')
   const [siPassword, setSiPassword] = useState('')
   const [siRemember, setSiRemember] = useState(true)
@@ -140,7 +142,7 @@ export default function AuthScreen({ lang, auth, onSignedIn, onClose }: Props) {
     return (
       <div className="auth-page">
         {onClose && <button type="button" className="auth-close" aria-label={t('close')} onClick={onClose}>✕</button>}
-        <div className="auth-cards" data-view="signin">
+        <div className="auth-cards">
           <section className="auth-card">
             <LogoMark />
             <p className="auth-sub">{t('authLocalModeNote')}</p>
@@ -196,67 +198,69 @@ export default function AuthScreen({ lang, auth, onSignedIn, onClose }: Props) {
   return (
     <div className="auth-page">
       {onClose && <button type="button" className="auth-close" aria-label={t('close')} onClick={onClose}>✕</button>}
-      <div className="auth-cards" data-view={view}>
-        <section className="auth-card auth-card-signup" aria-label={t('authSignUpTitle')}>
-          <LogoMark />
-          <h2>{t('authSignUpTitle')}</h2>
-          <p className="auth-sub">{t('signUpSubtitle')}</p>
-          <form onSubmit={(e) => { e.preventDefault(); void submitSignUp() }}>
-            <TextField label={t('fullName')} value={suName} onChange={setSuName} placeholder={t('fullNamePlaceholder')} autoComplete="name" icon={IconUser} disabled={busy !== null} />
-            <TextField label={t('email')} type="email" value={suEmail} onChange={setSuEmail} placeholder="example@vyro.com" autoComplete="email" icon={IconMail} disabled={busy !== null} />
-            <PasswordField label={t('password')} value={suPassword} onChange={setSuPassword} placeholder={t('passwordHintSignup')} autoComplete="new-password" disabled={busy !== null} showLabel={t('showPassword')} hideLabel={t('hidePassword')} />
-            {suPassword.length > 0 && (
-              <div className="auth-strength-wrap">
-                <div className="auth-strengthbar"><span style={{ width: `${Math.max(12, strength * 33)}%` }} /></div>
-                <p className="auth-strength-text">{t('passwordStrength')}: {t(strengthKey)} ({MIN_PASSWORD_LENGTH}+)</p>
-              </div>
+      <div className="auth-cards">
+        {view === 'signup' ? (
+          <section key="signup" className="auth-card auth-card-signup" aria-label={t('authSignUpTitle')}>
+            <LogoMark />
+            <h2>{t('authSignUpTitle')}</h2>
+            <p className="auth-sub">{t('signUpSubtitle')}</p>
+            <form onSubmit={(e) => { e.preventDefault(); void submitSignUp() }}>
+              <TextField label={t('fullName')} value={suName} onChange={setSuName} placeholder={t('fullNamePlaceholder')} autoComplete="name" icon={IconUser} disabled={busy !== null} />
+              <TextField label={t('email')} type="email" value={suEmail} onChange={setSuEmail} placeholder="example@vyro.com" autoComplete="email" icon={IconMail} disabled={busy !== null} />
+              <PasswordField label={t('password')} value={suPassword} onChange={setSuPassword} placeholder={t('passwordHintSignup')} autoComplete="new-password" disabled={busy !== null} showLabel={t('showPassword')} hideLabel={t('hidePassword')} />
+              {suPassword.length > 0 && (
+                <div className="auth-strength-wrap">
+                  <div className="auth-strengthbar"><span style={{ width: `${Math.max(12, strength * 33)}%` }} /></div>
+                  <p className="auth-strength-text">{t('passwordStrength')}: {t(strengthKey)} ({MIN_PASSWORD_LENGTH}+)</p>
+                </div>
+              )}
+              <PasswordField label={t('confirmPassword')} value={suConfirm} onChange={setSuConfirm} placeholder={t('confirmPasswordPlaceholder')} autoComplete="new-password" disabled={busy !== null} showLabel={t('showPassword')} hideLabel={t('hidePassword')} />
+              <p className="auth-note">{t('usernameAutoNote')}</p>
+              <label className="auth-check">
+                <input type="checkbox" checked={suTerms} onChange={(e) => setSuTerms(e.target.checked)} disabled={busy !== null} />
+                <span>{t('acceptTermsStart')} <button type="button" className="auth-link" onClick={(e) => { e.preventDefault(); setLegal('terms') }}>{t('termsOfUse')}</button> {t('acceptTermsMid')} <button type="button" className="auth-link" onClick={(e) => { e.preventDefault(); setLegal('privacy') }}>{t('privacyPolicy')}</button> {t('acceptTermsEnd')}</span>
+              </label>
+              {errorBox(suErrors)}
+              {suNotice && <p className="auth-notice">{t(suNotice)}</p>}
+              <button type="submit" className="auth-btn" disabled={busy !== null || !suTerms}>{t('signUp')}</button>
+            </form>
+            <p className="auth-foot">{t('haveAccountQ')} <button type="button" className="auth-link" onClick={() => setView('signin')}>{t('signIn')}</button></p>
+          </section>
+        ) : (
+          <section key="signin" className="auth-card auth-card-signin" aria-label={t('authSignInTitle')}>
+            <LogoMark />
+            <h2>{resetMode ? t('resetPasswordTitle') : t('authSignInTitle')}</h2>
+            <p className="auth-sub">{resetMode ? t('resetPasswordHint') : t('signInSubtitle')}</p>
+            {resetMode ? (
+              <form onSubmit={(e) => { e.preventDefault(); void submitReset() }}>
+                <TextField label={t('email')} type="email" value={siEmail} onChange={setSiEmail} placeholder="example@vyro.com" autoComplete="email" icon={IconMail} disabled={busy !== null} />
+                {errorBox(siErrors)}
+                {siNotice && <p className="auth-notice">{t(siNotice)}</p>}
+                <button type="submit" className="auth-btn" disabled={busy !== null}>{t('sendResetLink')}</button>
+              </form>
+            ) : (
+              <form onSubmit={(e) => { e.preventDefault(); void submitSignIn() }}>
+                <TextField label={t('email')} type="email" value={siEmail} onChange={setSiEmail} placeholder="example@vyro.com" autoComplete="email" icon={IconMail} disabled={busy !== null} />
+                <PasswordField label={t('password')} value={siPassword} onChange={setSiPassword} placeholder={t('passwordPlaceholder')} autoComplete="current-password" disabled={busy !== null} showLabel={t('showPassword')} hideLabel={t('hidePassword')} />
+                <div className="auth-between">
+                  <label className="auth-check">
+                    <input type="checkbox" checked={siRemember} onChange={(e) => setSiRemember(e.target.checked)} disabled={busy !== null} />
+                    <span>{t('rememberMe')}</span>
+                  </label>
+                  <button type="button" className="auth-link" onClick={() => { setResetMode(true); setSiErrors([]); setSiNotice(null) }} disabled={busy !== null}>{t('forgotPassword')}</button>
+                </div>
+                {errorBox(siErrors)}
+                {siNotice && <p className="auth-notice">{t(siNotice)}</p>}
+                <button type="submit" className="auth-btn" disabled={busy !== null}>{t('signIn')}</button>
+              </form>
             )}
-            <PasswordField label={t('confirmPassword')} value={suConfirm} onChange={setSuConfirm} placeholder={t('confirmPasswordPlaceholder')} autoComplete="new-password" disabled={busy !== null} showLabel={t('showPassword')} hideLabel={t('hidePassword')} />
-            <p className="auth-note">{t('usernameAutoNote')}</p>
-            <label className="auth-check">
-              <input type="checkbox" checked={suTerms} onChange={(e) => setSuTerms(e.target.checked)} disabled={busy !== null} />
-              <span>{t('acceptTermsStart')} <button type="button" className="auth-link" onClick={(e) => { e.preventDefault(); setLegal('terms') }}>{t('termsOfUse')}</button> {t('acceptTermsMid')} <button type="button" className="auth-link" onClick={(e) => { e.preventDefault(); setLegal('privacy') }}>{t('privacyPolicy')}</button> {t('acceptTermsEnd')}</span>
-            </label>
-            {errorBox(suErrors)}
-            {suNotice && <p className="auth-notice">{t(suNotice)}</p>}
-            <button type="submit" className="auth-btn" disabled={busy !== null || !suTerms}>{t('signUp')}</button>
-          </form>
-          <p className="auth-foot">{t('haveAccountQ')} <button type="button" className="auth-link" onClick={() => setView('signin')}>{t('signIn')}</button></p>
-        </section>
-
-        <section className="auth-card auth-card-signin" aria-label={t('authSignInTitle')}>
-          <LogoMark />
-          <h2>{resetMode ? t('resetPasswordTitle') : t('authSignInTitle')}</h2>
-          <p className="auth-sub">{resetMode ? t('resetPasswordHint') : t('signInSubtitle')}</p>
-          {resetMode ? (
-            <form onSubmit={(e) => { e.preventDefault(); void submitReset() }}>
-              <TextField label={t('email')} type="email" value={siEmail} onChange={setSiEmail} placeholder="example@vyro.com" autoComplete="email" icon={IconMail} disabled={busy !== null} />
-              {errorBox(siErrors)}
-              {siNotice && <p className="auth-notice">{t(siNotice)}</p>}
-              <button type="submit" className="auth-btn" disabled={busy !== null}>{t('sendResetLink')}</button>
-            </form>
-          ) : (
-            <form onSubmit={(e) => { e.preventDefault(); void submitSignIn() }}>
-              <TextField label={t('email')} type="email" value={siEmail} onChange={setSiEmail} placeholder="example@vyro.com" autoComplete="email" icon={IconMail} disabled={busy !== null} />
-              <PasswordField label={t('password')} value={siPassword} onChange={setSiPassword} placeholder={t('passwordPlaceholder')} autoComplete="current-password" disabled={busy !== null} showLabel={t('showPassword')} hideLabel={t('hidePassword')} />
-              <div className="auth-between">
-                <label className="auth-check">
-                  <input type="checkbox" checked={siRemember} onChange={(e) => setSiRemember(e.target.checked)} disabled={busy !== null} />
-                  <span>{t('rememberMe')}</span>
-                </label>
-                <button type="button" className="auth-link" onClick={() => { setResetMode(true); setSiErrors([]); setSiNotice(null) }} disabled={busy !== null}>{t('forgotPassword')}</button>
-              </div>
-              {errorBox(siErrors)}
-              {siNotice && <p className="auth-notice">{t(siNotice)}</p>}
-              <button type="submit" className="auth-btn" disabled={busy !== null}>{t('signIn')}</button>
-            </form>
-          )}
-          <p className="auth-foot">
-            {resetMode
-              ? <button type="button" className="auth-link" onClick={() => { setResetMode(false); setSiErrors([]); setSiNotice(null) }}>{t('backToSignIn')}</button>
-              : <>{t('noAccountQ')} <button type="button" className="auth-link" onClick={() => setView('signup')}>{t('signUp')}</button></>}
-          </p>
-        </section>
+            <p className="auth-foot">
+              {resetMode
+                ? <button type="button" className="auth-link" onClick={() => { setResetMode(false); setSiErrors([]); setSiNotice(null) }}>{t('backToSignIn')}</button>
+                : <>{t('noAccountQ')} <button type="button" className="auth-link" onClick={() => setView('signup')}>{t('signUp')}</button></>}
+            </p>
+          </section>
+        )}
       </div>
       {features}
       {legalModal}
