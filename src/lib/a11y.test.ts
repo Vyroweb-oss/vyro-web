@@ -77,7 +77,7 @@ describe('a11y analyzeDoc', () => {
     ))
     expect(r.total).toBe(0)
     expect(r.issues).toEqual([])
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
   })
 
   it('empty doc and null input have no issues', () => {
@@ -271,8 +271,13 @@ describe('a11y analyzeDoc', () => {
       { type: 'text', text: 'x', marks: [{ type: 'link' }] },
     ))
     expect(() => analyzeDoc(missingHrefDoc)).not.toThrow()
+    // P2-38: the single-letter link text 'x' also legitimately fires
+    // linkTextTooShort (1 code point), independent of linkMissingHref.
     expect(analyzeDoc(missingHrefDoc).issues)
-      .toEqual([{ kind: 'linkMissingHref', linkIndex: 1, href: '', linkText: 'x' }])
+      .toEqual([
+        { kind: 'linkMissingHref', linkIndex: 1, href: '', linkText: 'x' },
+        { kind: 'linkTextTooShort', linkIndex: 1, href: '', linkText: 'x' },
+      ])
     // A link mark with no href and empty text is still an empty link.
     expect(analyzeDoc(doc(paraNodes({ type: 'text', text: '', marks: [{ type: 'link' }] }))).issues)
       .toEqual([{ kind: 'linkEmptyText', linkIndex: 1, href: '' }])
@@ -304,7 +309,7 @@ describe('a11y analyzeDoc', () => {
       paraNodes(linked('', 'https://x.example')),
     ))
     // First heading H2 + empty H4 + skip H2->H4 + image + table + empty link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
     expect(r.total).toBe(6)
   })
 
@@ -398,7 +403,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // First heading H2 + empty H4 + skip H2->H4 + missing alt + long alt
     // + table without header + empty link + vague link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
     expect(r.total).toBe(8)
   })
 
@@ -411,7 +416,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // Empty heading + skip (H1->H3 on the empty heading) + image + table.
     // First heading is H1 and there are no links, so the two new rules add 0.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
     expect(r.total).toBe(4)
   })
 
@@ -419,7 +424,7 @@ describe('a11y analyzeDoc', () => {
     for (const bad of [null, undefined, {}, 'garbage', 42]) {
       const r = analyzeDoc(bad)
       expect(r.total).toBe(0)
-      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
     }
   })
 
@@ -1101,7 +1106,7 @@ describe('a11y analyzeDoc', () => {
       image('Photo: sunset'),
     ))
     expect(r.total).toBe(2)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 1, imageAltRedundantPrefix: 1, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 1, imageAltRedundantPrefix: 1, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
   })
 
   it('a mixed doc with both new rules reports full counts over 20 kinds', () => {
@@ -1112,7 +1117,7 @@ describe('a11y analyzeDoc', () => {
       table([[cell('Name', true)], [cell('A')]]),
     ))
     expect(r.total).toBe(2)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 1, headingTooLong: 1, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 1, headingTooLong: 1, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
   })
 
   // P2-27, rule 21: tables with empty cells.
@@ -1264,7 +1269,7 @@ describe('a11y analyzeDoc', () => {
       paraNodes(linked('Manual', 'https://example.com')),
     ))
     expect(r.total).toBe(2)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 1, linkSameTargetDifferentText: 1, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 1, linkSameTargetDifferentText: 1, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
   })
 
   // P2-28, rule 23: tables whose header row is not the first row.
@@ -1531,7 +1536,7 @@ describe('a11y analyzeDoc', () => {
     // paragraph: imageAltMatchesNearbyText. Nothing else fires (the
     // heading has content, the alt is not vague/filename/redundant).
     expect(r.total).toBe(3)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 1, imageAltMatchesNearbyText: 1, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 1, imageAltMatchesNearbyText: 1, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
   })
 
   // P2-30, rule 27: headings with no letters.
@@ -1663,7 +1668,7 @@ describe('a11y analyzeDoc', () => {
     // headingNoLetters; the second table's rows differ in width:
     // tableInconsistentColumns. Nothing else fires.
     expect(r.total).toBe(5)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 1, imageAltMatchesNearbyText: 1, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 1, tableInconsistentColumns: 1, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 1, imageAltMatchesNearbyText: 1, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 1, tableInconsistentColumns: 1, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
   })
 
   // P2-32, rule 29: link text with no letters.
@@ -1784,7 +1789,7 @@ describe('a11y analyzeDoc', () => {
     // headings have content, the link has a destination, and the link
     // text is not the URL itself).
     expect(r.total).toBe(2)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 1, headingTextIsUrl: 1, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 1, headingTextIsUrl: 1, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
   })
 
   // P2-33, rule 31: link text longer than 100 code points.
@@ -1899,7 +1904,7 @@ describe('a11y analyzeDoc', () => {
     // have content, the link has a destination, and the link text is
     // neither vague nor the URL itself).
     expect(r.total).toBe(2)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 1, headingAllCaps: 1, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 1, headingAllCaps: 1, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
   })
 
   // P2-34, rule 33: alt text of 1–2 code points.
@@ -2025,7 +2030,7 @@ describe('a11y analyzeDoc', () => {
     // the link has a destination and its text is neither vague nor
     // its own URL).
     expect(r.total).toBe(2)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 1, linkTextIsEmail: 1, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 1, linkTextIsEmail: 1, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
   })
 
   // P2-35, rule 35: a heading that is exactly an email address.
@@ -2180,7 +2185,7 @@ describe('a11y analyzeDoc', () => {
     // heading has content, the link has a destination, and the
     // link text is neither vague, its own URL, nor an email).
     expect(r.total).toBe(3)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 1, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 1, linkTextIsPhoneNumber: 1, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 1, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 1, linkTextIsPhoneNumber: 1, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
   })
 
   // P2-36, rule 37: headings that are a phone number.
@@ -2322,7 +2327,7 @@ describe('a11y analyzeDoc', () => {
     // else fires (the heading has body content, the alt matches no
     // nearby text, and neither value is an email, URL, or filename).
     expect(r.total).toBe(4)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 1, headingNoLetters: 1, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 1, imageAltIsPhoneNumber: 1, imageAltIsEmail: 0, headingTooShort: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 1, headingNoLetters: 1, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 1, imageAltIsPhoneNumber: 1, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 0, imageAltAllCaps: 0 })
   })
 
   // P2-37, rule 39: image alt text that is an email address.
@@ -2409,6 +2414,118 @@ describe('a11y analyzeDoc', () => {
     // no nearby text, and neither value is a URL, phone
     // number, filename, or very short).
     expect(r.total).toBe(2)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 1, headingTooShort: 1 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 1, headingTooShort: 1, linkTextTooShort: 0, imageAltAllCaps: 0 })
+  })
+
+  // P2-38, rule 41: links whose trimmed visible text is 1–2 code points.
+  it('flags 1-code-point and 2-code-point links', () => {
+    const one = analyzeDoc(doc(paraNodes(linked('a', 'https://example.com/a'))))
+    expect(one.issues.filter((i) => i.kind === 'linkTextTooShort')).toEqual([
+      { kind: 'linkTextTooShort', linkIndex: 1, href: 'https://example.com/a', linkText: 'a' },
+    ])
+    const two = analyzeDoc(doc(paraNodes(linked('ab', 'https://example.com/a'))))
+    expect(two.issues.filter((i) => i.kind === 'linkTextTooShort')).toEqual([
+      { kind: 'linkTextTooShort', linkIndex: 1, href: 'https://example.com/a', linkText: 'ab' },
+    ])
+  })
+
+  it('a 3-code-point link passes the too-short rule', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('abc', 'https://example.com/a'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextTooShort')).toEqual([])
+    expect(r.counts.linkTextTooShort).toBe(0)
+  })
+
+  it('a single emoji link flags (1 code point, not UTF-16 units)', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('😀', 'https://example.com/a'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextTooShort')).toEqual([
+      { kind: 'linkTextTooShort', linkIndex: 1, href: 'https://example.com/a', linkText: '😀' },
+    ])
+  })
+
+  it('an empty link run does NOT flag as too short (linkEmptyText only)', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('', 'https://example.com/a'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextTooShort')).toEqual([])
+    expect(r.counts.linkTextTooShort).toBe(0)
+    expect(r.counts.linkEmptyText).toBe(1)
+  })
+
+  it('a link split across same-href text nodes counts once for the too-short rule', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('a', 'https://example.com/a'), linked('b', 'https://example.com/a'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextTooShort')).toEqual([
+      { kind: 'linkTextTooShort', linkIndex: 1, href: 'https://example.com/a', linkText: 'ab' },
+    ])
+  })
+
+  it('a 1-digit link also fires linkTextNoLetters (documented co-firing)', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('7', 'https://example.com/a'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextTooShort')).toEqual([
+      { kind: 'linkTextTooShort', linkIndex: 1, href: 'https://example.com/a', linkText: '7' },
+    ])
+    expect(r.issues.filter((i) => i.kind === 'linkTextNoLetters')).toEqual([
+      { kind: 'linkTextNoLetters', linkIndex: 1, href: 'https://example.com/a', linkText: '7' },
+    ])
+  })
+
+  // P2-38, rule 42: image alt text in all capital letters.
+  it('flags all-caps alt text', () => {
+    const r = analyzeDoc(doc(image('MOUNTAIN VIEW')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltAllCaps')).toEqual([
+      { kind: 'imageAltAllCaps', imageIndex: 1, altText: 'MOUNTAIN VIEW' },
+    ])
+  })
+
+  it('mixed-case and lowercase alt text pass the all-caps rule', () => {
+    const mixed = analyzeDoc(doc(image('Mountain View')))
+    expect(mixed.issues.filter((i) => i.kind === 'imageAltAllCaps')).toEqual([])
+    expect(mixed.counts.imageAltAllCaps).toBe(0)
+    const lower = analyzeDoc(doc(image('mountain view')))
+    expect(lower.issues.filter((i) => i.kind === 'imageAltAllCaps')).toEqual([])
+    expect(lower.counts.imageAltAllCaps).toBe(0)
+  })
+
+  it('Persian/Dari alt text never flags as all-caps (caseless script)', () => {
+    const r = analyzeDoc(doc(image('کوهستان زیبا')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltAllCaps')).toEqual([])
+    expect(r.counts.imageAltAllCaps).toBe(0)
+  })
+
+  it('all-caps alt with digits and punctuation flags (it has a letter)', () => {
+    const r = analyzeDoc(doc(image('HELLO 2024!')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltAllCaps')).toEqual([
+      { kind: 'imageAltAllCaps', imageIndex: 1, altText: 'HELLO 2024!' },
+    ])
+  })
+
+  it('missing/empty/whitespace alt is excluded from the all-caps rule (already imageAltMissing)', () => {
+    const r = analyzeDoc(doc(image(), image(''), image('   '), image(null)))
+    expect(r.issues.filter((i) => i.kind === 'imageAltAllCaps')).toEqual([])
+    expect(r.counts.imageAltAllCaps).toBe(0)
+    expect(r.counts.imageAltMissing).toBe(4)
+  })
+
+  it('a 1-letter all-caps alt also fires imageAltVeryShort (documented co-firing)', () => {
+    const r = analyzeDoc(doc(image('A')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltAllCaps')).toEqual([
+      { kind: 'imageAltAllCaps', imageIndex: 1, altText: 'A' },
+    ])
+    expect(r.issues.filter((i) => i.kind === 'imageAltVeryShort')).toEqual([
+      { kind: 'imageAltVeryShort', imageIndex: 1, altText: 'A' },
+    ])
+  })
+
+  it('a mixed doc with both P2-38 rules reports full counts over 42 kinds', () => {
+    const r = analyzeDoc(doc(
+      paraNodes(linked('go', 'https://example.com/guide')),
+      para('Body text.'),
+      image('HELLO WORLD'),
+    ))
+    // The 2-code-point link fires linkTextTooShort; the all-caps
+    // alt fires imageAltAllCaps. Nothing else fires (the link
+    // contains letters and is neither vague, a URL, an email,
+    // nor a phone number; the alt matches no nearby text and
+    // is neither a URL, email, phone number, filename, nor
+    // very short).
+    expect(r.total).toBe(2)
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0, linkTextTooLong: 0, headingAllCaps: 0, imageAltVeryShort: 0, linkTextIsEmail: 0, headingTextIsEmail: 0, linkTextIsPhoneNumber: 0, headingTextIsPhoneNumber: 0, imageAltIsPhoneNumber: 0, imageAltIsEmail: 0, headingTooShort: 0, linkTextTooShort: 1, imageAltAllCaps: 1 })
   })
 })

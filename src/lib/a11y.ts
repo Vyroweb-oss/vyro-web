@@ -9,11 +9,12 @@
 // Phase 2, P2-32, with two more, and in Phase 2, P2-33, with two more, and in
 // Phase 2, P2-34, with two more, and in Phase 2, P2-35, with two
 // more, and in Phase 2, P2-36, with two more, and in
-// Phase 2, P2-37, with two more).
+// Phase 2, P2-37, with two more, and in Phase 2, P2-38,
+// with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// forty local, JSON-derivable rules — nothing is faked:
+// forty-two local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -323,6 +324,27 @@
 //       other heading rules, so a digit-only short heading
 //       legitimately also fires headingNoLetters, and no
 //       branch suppresses another).
+//   (41) links whose TRIMMED visible text is 1–2 code points
+//       long (linkTextTooShort — per link RUN, as defined below;
+//       counted in code points of the trimmed text, so a single
+//       emoji counts as 1 and flags, and a 3-code-point link
+//       passes; empty runs are NOT flagged here, they are
+//       already linkEmptyText; the issue carries linkIndex,
+//       href, and the trimmed linkText; independent of all
+//       other link branches, so a 1-digit link legitimately
+//       also fires linkTextNoLetters, and no branch
+//       suppresses another).
+//   (42) images whose TRIMMED alt text is in ALL CAPITAL
+//       letters (imageAltAllCaps — exactly the headingAllCaps
+//       test (rule 32): the trimmed alt has at least one
+//       Unicode letter (/\p{L}/u), and trimmed ===
+//       trimmed.toUpperCase() AND trimmed !==
+//       trimmed.toLowerCase(), so Persian/Dari/Arabic
+//       caseless alt never flags and lowercase/mixed-case
+//       never flags; missing/empty alt is NOT flagged here,
+//       it is already imageAltMissing; the issue carries
+//       imageIndex and the trimmed altText; independent of
+//       all other alt branches, so co-firing is legitimate).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -390,6 +412,8 @@ export type A11yIssueKind =
   | 'imageAltIsPhoneNumber'
   | 'imageAltIsEmail'
   | 'headingTooShort'
+  | 'linkTextTooShort'
+  | 'imageAltAllCaps'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -409,9 +433,9 @@ export interface A11yIssue {
   linkIndex?: number
   /** Link target, for link issues ('' when the link mark has no href). */
   href?: string
-  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber issues. */
+  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort issues. */
   linkText?: string
-  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail issues. */
+  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail / imageAltAllCaps issues. */
   altText?: string
 }
 
@@ -464,6 +488,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   imageAltIsPhoneNumber: 0,
   imageAltIsEmail: 0,
   headingTooShort: 0,
+  linkTextTooShort: 0,
+  imageAltAllCaps: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -855,6 +881,21 @@ export function analyzeDoc(docJson: any): A11yResult {
         if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmedAlt)) {
           push({ kind: 'imageAltIsEmail', imageIndex, altText: trimmedAlt })
         }
+        // All-caps alt text (P2-38, rule 42): exactly the
+        // headingAllCaps test (rule 32) — the trimmed alt has
+        // at least one Unicode letter, and trimmed ===
+        // trimmed.toUpperCase() AND trimmed !==
+        // trimmed.toLowerCase(), so Persian/Dari/Arabic
+        // caseless alt never flags and lowercase/mixed-case
+        // never flags. Missing/empty alt is excluded above
+        // (already imageAltMissing). Independent of all
+        // other alt branches — no branch suppresses
+        // another, so co-firing is legitimate.
+        if (/\p{L}/u.test(trimmedAlt)
+          && trimmedAlt === trimmedAlt.toUpperCase()
+          && trimmedAlt !== trimmedAlt.toLowerCase()) {
+          push({ kind: 'imageAltAllCaps', imageIndex, altText: trimmedAlt })
+        }
       }
     } else if (node.type === 'table') {
       tableIndex += 1
@@ -1025,8 +1066,8 @@ export function analyzeDoc(docJson: any): A11yResult {
   // "click here for details" does not. Empty runs are NOT vague — they
   // are already linkEmptyText, and flush() evaluates all link rules per
   // run (empty, then vague / URL-text, then missing-href, then
-  // no-letters, then too-long, then email, then phone, in that
-  // order).
+  // no-letters, then too-long, then email, then phone, then
+  // too-short, in that order).
   const VAGUE_LINK_TEXT = new Set([
     'click here', 'here', 'this', 'link', 'more', 'read more', 'click',
     'اینجا', 'اینجا کلیک کنید', 'کلیک کنید', 'لینک', 'بیشتر',
@@ -1133,6 +1174,19 @@ export function analyzeDoc(docJson: any): A11yResult {
           // linkTextNoLetters (its text contains no letters).
           if (isPhoneNumberText(trimmed)) {
             push({ kind: 'linkTextIsPhoneNumber', linkIndex, href: runHref, linkText: trimmed })
+          }
+          // Links with very short visible text (P2-38, rule
+          // 41): the trimmed run text is 1–2 code points
+          // long, so a single emoji counts as 1 and flags,
+          // and a 3-code-point link passes. Empty runs are
+          // excluded by the branch above (already
+          // linkEmptyText). Independent of the vague/
+          // URL-text/missing-href/no-letters/too-long/
+          // email/phone branches above — no branch
+          // suppresses another, so a 1-digit link
+          // legitimately also fires linkTextNoLetters.
+          if ([...trimmed].length >= 1 && [...trimmed].length <= 2) {
+            push({ kind: 'linkTextTooShort', linkIndex, href: runHref, linkText: trimmed })
           }
         }
         runHref = null
