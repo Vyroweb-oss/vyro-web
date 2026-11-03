@@ -77,7 +77,7 @@ describe('a11y analyzeDoc', () => {
     ))
     expect(r.total).toBe(0)
     expect(r.issues).toEqual([])
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0 })
   })
 
   it('empty doc and null input have no issues', () => {
@@ -296,7 +296,7 @@ describe('a11y analyzeDoc', () => {
       paraNodes(linked('', 'https://x.example')),
     ))
     // First heading H2 + empty H4 + skip H2->H4 + image + table + empty link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0 })
     expect(r.total).toBe(6)
   })
 
@@ -390,7 +390,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // First heading H2 + empty H4 + skip H2->H4 + missing alt + long alt
     // + table without header + empty link + vague link.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 1, firstHeadingNotH1: 1, linkVagueText: 1, imageAltTooLong: 1, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0 })
     expect(r.total).toBe(8)
   })
 
@@ -403,7 +403,7 @@ describe('a11y analyzeDoc', () => {
     ))
     // Empty heading + skip (H1->H3 on the empty heading) + image + table.
     // First heading is H1 and there are no links, so the two new rules add 0.
-    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 1, headingSkip: 1, headingEmpty: 1, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0 })
     expect(r.total).toBe(4)
   })
 
@@ -411,7 +411,7 @@ describe('a11y analyzeDoc', () => {
     for (const bad of [null, undefined, {}, 'garbage', 42]) {
       const r = analyzeDoc(bad)
       expect(r.total).toBe(0)
-      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0 })
+      expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0 })
     }
   })
 
@@ -1093,7 +1093,7 @@ describe('a11y analyzeDoc', () => {
       image('Photo: sunset'),
     ))
     expect(r.total).toBe(2)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 1, imageAltRedundantPrefix: 1, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 1, imageAltRedundantPrefix: 1, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0 })
   })
 
   it('a mixed doc with both new rules reports full counts over 20 kinds', () => {
@@ -1104,7 +1104,7 @@ describe('a11y analyzeDoc', () => {
       table([[cell('Name', true)], [cell('A')]]),
     ))
     expect(r.total).toBe(2)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 1, headingTooLong: 1, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 1, headingTooLong: 1, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0 })
   })
 
   // P2-27, rule 21: tables with empty cells.
@@ -1256,7 +1256,7 @@ describe('a11y analyzeDoc', () => {
       paraNodes(linked('Manual', 'https://example.com')),
     ))
     expect(r.total).toBe(2)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 1, linkSameTargetDifferentText: 1, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 1, linkSameTargetDifferentText: 1, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0 })
   })
 
   // P2-28, rule 23: tables whose header row is not the first row.
@@ -1416,7 +1416,101 @@ describe('a11y analyzeDoc', () => {
     ])
   })
 
-  it('a mixed doc with both P2-28 rules reports full counts over 24 kinds', () => {
+  // P2-29, rule 25: alt text that is a URL.
+  it('flags http and https alt URLs', () => {
+    const r = analyzeDoc(doc(image('http://example.com/cat.png'), image('https://example.com/dog.png')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltIsUrl')).toEqual([
+      { kind: 'imageAltIsUrl', imageIndex: 1, altText: 'http://example.com/cat.png' },
+      { kind: 'imageAltIsUrl', imageIndex: 2, altText: 'https://example.com/dog.png' },
+    ])
+    expect(r.counts.imageAltIsUrl).toBe(2)
+  })
+
+  it('flags www alt URLs, including trailing paths', () => {
+    const r = analyzeDoc(doc(image('www.example.com'), image('www.example.com/photos/cat.png')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltIsUrl')).toEqual([
+      { kind: 'imageAltIsUrl', imageIndex: 1, altText: 'www.example.com' },
+      { kind: 'imageAltIsUrl', imageIndex: 2, altText: 'www.example.com/photos/cat.png' },
+    ])
+  })
+
+  it('trims surrounding whitespace before the URL check', () => {
+    const r = analyzeDoc(doc(image('  https://example.com/cat.png  ')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltIsUrl')).toEqual([
+      { kind: 'imageAltIsUrl', imageIndex: 1, altText: 'https://example.com/cat.png' },
+    ])
+  })
+
+  it('non-URL text, a sentence-embedded URL, and a bare domain pass', () => {
+    const r = analyzeDoc(doc(
+      image('A red apple'),
+      image('See https://example.com for details'),
+      image('example.com'),
+    ))
+    expect(r.issues.filter((i) => i.kind === 'imageAltIsUrl')).toEqual([])
+    expect(r.counts.imageAltIsUrl).toBe(0)
+  })
+
+  it('a URL alt with an uppercase scheme still flags', () => {
+    const r = analyzeDoc(doc(image('HTTPS://EXAMPLE.COM/CAT.PNG')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltIsUrl')).toEqual([
+      { kind: 'imageAltIsUrl', imageIndex: 1, altText: 'HTTPS://EXAMPLE.COM/CAT.PNG' },
+    ])
+  })
+
+  it('missing/empty alt never flags as a URL (already imageAltMissing)', () => {
+    const r = analyzeDoc(doc(image(), image(''), image('   '), image(null)))
+    expect(r.issues.filter((i) => i.kind === 'imageAltIsUrl')).toEqual([])
+    expect(r.counts.imageAltIsUrl).toBe(0)
+    expect(r.counts.imageAltMissing).toBe(4)
+  })
+
+  // P2-29, rule 26: alt text with no letters.
+  it('flags digits-only, punctuation-only, and mixed digits-plus-punctuation alts', () => {
+    const r = analyzeDoc(doc(image('12345'), image('!!!'), image('12-34!')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltNoLetters')).toEqual([
+      { kind: 'imageAltNoLetters', imageIndex: 1, altText: '12345' },
+      { kind: 'imageAltNoLetters', imageIndex: 2, altText: '!!!' },
+      { kind: 'imageAltNoLetters', imageIndex: 3, altText: '12-34!' },
+    ])
+    expect(r.counts.imageAltNoLetters).toBe(3)
+  })
+
+  it('a Latin letter anywhere in the alt passes', () => {
+    const r = analyzeDoc(doc(image('Room 101'), image('a1!')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltNoLetters')).toEqual([])
+    expect(r.counts.imageAltNoLetters).toBe(0)
+  })
+
+  it('a Persian/Dari-letter alt passes', () => {
+    const r = analyzeDoc(doc(image('کوهستان'), image('عکس ۱۲۳')))
+    expect(r.issues.filter((i) => i.kind === 'imageAltNoLetters')).toEqual([])
+    expect(r.counts.imageAltNoLetters).toBe(0)
+  })
+
+  it('missing/empty alt never flags as no-letters (already imageAltMissing)', () => {
+    const r = analyzeDoc(doc(image(), image(''), image('   '), image(null)))
+    expect(r.issues.filter((i) => i.kind === 'imageAltNoLetters')).toEqual([])
+    expect(r.counts.imageAltNoLetters).toBe(0)
+    expect(r.counts.imageAltMissing).toBe(4)
+  })
+
+  it('a URL alt and a no-letters alt co-fire independently with correct indexes', () => {
+    const r = analyzeDoc(doc(
+      image('A red apple'),
+      image('https://example.com/cat'),
+      image('12345'),
+    ))
+    expect(r.issues.filter((i) => i.kind === 'imageAltIsUrl')).toEqual([
+      { kind: 'imageAltIsUrl', imageIndex: 2, altText: 'https://example.com/cat' },
+    ])
+    expect(r.issues.filter((i) => i.kind === 'imageAltNoLetters')).toEqual([
+      { kind: 'imageAltNoLetters', imageIndex: 3, altText: '12345' },
+    ])
+    expect(r.total).toBe(2)
+  })
+
+  it('a mixed doc with both P2-29 rules reports full counts over 26 kinds', () => {
     const r = analyzeDoc(doc(
       heading(1, 'Title'),
       para('Sunset'),
@@ -1429,6 +1523,259 @@ describe('a11y analyzeDoc', () => {
     // paragraph: imageAltMatchesNearbyText. Nothing else fires (the
     // heading has content, the alt is not vague/filename/redundant).
     expect(r.total).toBe(3)
-    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 1, imageAltMatchesNearbyText: 1 })
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 1, imageAltMatchesNearbyText: 1, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 0, headingTextIsUrl: 0 })
+  })
+
+  // P2-30, rule 27: headings with no letters.
+  it('flags digits-only, punctuation-only, and digits-plus-punctuation headings with correct indexes', () => {
+    const r = analyzeDoc(doc(
+      heading(1, 'Introduction'),
+      para('Body text.'),
+      heading(2, '12345'),
+      para('More text.'),
+      heading(2, '!!!'),
+      para('Even more text.'),
+      heading(2, '12-34!'),
+      para('Last text.'),
+    ))
+    expect(r.issues.filter((i) => i.kind === 'headingNoLetters')).toEqual([
+      { kind: 'headingNoLetters', headingIndex: 2, headingText: '12345', level: 2 },
+      { kind: 'headingNoLetters', headingIndex: 3, headingText: '!!!', level: 2 },
+      { kind: 'headingNoLetters', headingIndex: 4, headingText: '12-34!', level: 2 },
+    ])
+    expect(r.counts.headingNoLetters).toBe(3)
+  })
+
+  it('a Latin-letter heading passes, and headingText carries the original unnormalised text', () => {
+    const r = analyzeDoc(doc(heading(1, 'Room 101'), para('Body text.')))
+    expect(r.issues.filter((i) => i.kind === 'headingNoLetters')).toEqual([])
+    expect(r.counts.headingNoLetters).toBe(0)
+    const padded = analyzeDoc(doc(heading(1, '  12345  '), para('Body text.')))
+    expect(padded.issues.filter((i) => i.kind === 'headingNoLetters')).toEqual([
+      { kind: 'headingNoLetters', headingIndex: 1, headingText: '  12345  ', level: 1 },
+    ])
+  })
+
+  it('a Persian/Dari-letter heading passes', () => {
+    const r = analyzeDoc(doc(heading(1, 'کوهستان'), para('متن بدنه.')))
+    expect(r.issues.filter((i) => i.kind === 'headingNoLetters')).toEqual([])
+    expect(r.counts.headingNoLetters).toBe(0)
+    const mixed = analyzeDoc(doc(heading(1, 'تیتر ۱۲۳'), para('متن بدنه.')))
+    expect(mixed.issues.filter((i) => i.kind === 'headingNoLetters')).toEqual([])
+  })
+
+  it('empty headings do NOT flag as no-letters (already headingEmpty)', () => {
+    const r = analyzeDoc(doc(heading(1, ''), para('Body text.')))
+    expect(r.issues.filter((i) => i.kind === 'headingNoLetters')).toEqual([])
+    expect(r.counts.headingNoLetters).toBe(0)
+    expect(r.counts.headingEmpty).toBe(1)
+    const ws = analyzeDoc(doc(heading(1, '   '), para('Body text.')))
+    expect(ws.issues.filter((i) => i.kind === 'headingNoLetters')).toEqual([])
+    expect(ws.counts.headingEmpty).toBe(1)
+  })
+
+  // P2-30, rule 28: tables with inconsistent column counts.
+  it('a 3-column row plus a 2-column row flags exactly once', () => {
+    const r = analyzeDoc(doc(table([
+      [cell('A', true), cell('B', true), cell('C', true)],
+      [cell('X'), cell('Y')],
+    ])))
+    expect(r.issues.filter((i) => i.kind === 'tableInconsistentColumns')).toEqual([
+      { kind: 'tableInconsistentColumns', tableIndex: 1 },
+    ])
+    expect(r.counts.tableInconsistentColumns).toBe(1)
+  })
+
+  it('a uniform table passes', () => {
+    const r = analyzeDoc(doc(table([
+      [cell('Name', true), cell('Value', true)],
+      [cell('A'), cell('B')],
+    ])))
+    expect(r.issues.filter((i) => i.kind === 'tableInconsistentColumns')).toEqual([])
+    expect(r.counts.tableInconsistentColumns).toBe(0)
+  })
+
+  it('colspan-arithmetic-equal rows pass (colspan=2 + 1 cell vs 3 plain cells)', () => {
+    const r = analyzeDoc(doc(table([
+      [mergedCell('A', false, { colspan: 2 }), cell('B')],
+      [cell('X'), cell('Y'), cell('Z')],
+    ])))
+    expect(r.issues.filter((i) => i.kind === 'tableInconsistentColumns')).toEqual([])
+    expect(r.counts.tableInconsistentColumns).toBe(0)
+    // The merged cell itself still fires its own rule (independence).
+    expect(r.counts.tableMergedCells).toBe(1)
+  })
+
+  it('a single-row table passes, and malformed/non-tableRow rows are ignored', () => {
+    const single = analyzeDoc(doc(table([[cell('A', true), cell('B', true), cell('C', true)]])))
+    expect(single.issues.filter((i) => i.kind === 'tableInconsistentColumns')).toEqual([])
+    expect(single.counts.tableInconsistentColumns).toBe(0)
+    const malformed = analyzeDoc(doc({
+      type: 'table',
+      content: [
+        { type: 'tableRow', content: [cell('A', true), cell('B', true)] },
+        { type: 'notARow', content: [cell('X'), cell('Y'), cell('Z')] },
+        { type: 'tableRow', content: [cell('P'), cell('Q')] },
+      ],
+    }))
+    expect(malformed.issues.filter((i) => i.kind === 'tableInconsistentColumns')).toEqual([])
+    expect(malformed.counts.tableInconsistentColumns).toBe(0)
+  })
+
+  it('a second table flagged independently gets its own tableIndex', () => {
+    const r = analyzeDoc(doc(
+      table([
+        [cell('H', true), cell('I', true)],
+        [cell('A'), cell('B')],
+      ]),
+      table([
+        [cell('P', true), cell('Q', true), cell('R', true)],
+        [cell('S'), cell('T')],
+      ]),
+    ))
+    expect(r.issues.filter((i) => i.kind === 'tableInconsistentColumns')).toEqual([
+      { kind: 'tableInconsistentColumns', tableIndex: 2 },
+    ])
+    expect(r.counts.tableInconsistentColumns).toBe(1)
+  })
+
+  it('a mixed doc with both P2-30 rules reports full counts over 28 kinds', () => {
+    const r = analyzeDoc(doc(
+      heading(1, 'Title'),
+      para('Sunset'),
+      image('Sunset'),
+      heading(2, '12345'),
+      para('More text.'),
+      table([[cell('A'), cell('B')], [cell('Name', true), cell('X')]]),
+      table([[cell('P', true), cell('Q', true), cell('R', true)], [cell('S'), cell('T')]]),
+    ))
+    // Headerless-first table with a later header: tableNoHeader +
+    // tableHeaderNotFirstRow; the image alt matches its preceding
+    // paragraph: imageAltMatchesNearbyText; the digits heading:
+    // headingNoLetters; the second table's rows differ in width:
+    // tableInconsistentColumns. Nothing else fires.
+    expect(r.total).toBe(5)
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 1, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 1, imageAltMatchesNearbyText: 1, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 1, tableInconsistentColumns: 1, linkTextNoLetters: 0, headingTextIsUrl: 0 })
+  })
+
+  // P2-32, rule 29: link text with no letters.
+  it('flags a digits-only link run', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('12345', 'https://example.com'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextNoLetters')).toEqual([
+      { kind: 'linkTextNoLetters', linkIndex: 1, href: 'https://example.com', linkText: '12345' },
+    ])
+    expect(r.counts.linkTextNoLetters).toBe(1)
+  })
+
+  it('flags a punctuation-only link run', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('!!!', 'https://example.com'), linked('12-34!', 'https://example.org'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextNoLetters')).toEqual([
+      { kind: 'linkTextNoLetters', linkIndex: 1, href: 'https://example.com', linkText: '!!!' },
+      { kind: 'linkTextNoLetters', linkIndex: 2, href: 'https://example.org', linkText: '12-34!' },
+    ])
+  })
+
+  it('a link with a Latin letter anywhere in its text passes', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('Room 101', 'https://example.com'), linked('a1!', 'https://example.org'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextNoLetters')).toEqual([])
+    expect(r.counts.linkTextNoLetters).toBe(0)
+  })
+
+  it('a link with Persian/Arabic letters passes', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('کوهستان', 'https://example.com'), linked('متن ۱۲۳', 'https://example.org'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextNoLetters')).toEqual([])
+    expect(r.counts.linkTextNoLetters).toBe(0)
+  })
+
+  it('empty and whitespace-only link runs are excluded (already linkEmptyText)', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('', 'https://example.com'), linked('   ', 'https://example.com'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextNoLetters')).toEqual([])
+    expect(r.counts.linkTextNoLetters).toBe(0)
+    expect(r.counts.linkEmptyText).toBe(1)
+  })
+
+  it('a no-letter link split across same-href text nodes counts once', () => {
+    const r = analyzeDoc(doc(paraNodes(linked('12', 'https://example.com'), linked('34', 'https://example.com'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextNoLetters')).toEqual([
+      { kind: 'linkTextNoLetters', linkIndex: 1, href: 'https://example.com', linkText: '1234' },
+    ])
+    expect(r.counts.linkTextNoLetters).toBe(1)
+  })
+
+  it('a no-letter link with no href fires both linkTextNoLetters and linkMissingHref', () => {
+    const r = analyzeDoc(doc(paraNodes(linkedNoHref('123'))))
+    expect(r.issues.filter((i) => i.kind === 'linkTextNoLetters')).toEqual([
+      { kind: 'linkTextNoLetters', linkIndex: 1, href: '', linkText: '123' },
+    ])
+    expect(r.issues.filter((i) => i.kind === 'linkMissingHref')).toEqual([
+      { kind: 'linkMissingHref', linkIndex: 1, href: '', linkText: '123' },
+    ])
+  })
+
+  // P2-32, rule 30: a heading that is exactly a URL.
+  it('flags http and https headings, and headingText carries the original text', () => {
+    const r = analyzeDoc(doc(
+      heading(1, 'http://example.com'),
+      para('Body text.'),
+      heading(2, 'https://example.com/a'),
+      para('More text.'),
+    ))
+    expect(r.issues.filter((i) => i.kind === 'headingTextIsUrl')).toEqual([
+      { kind: 'headingTextIsUrl', headingIndex: 1, headingText: 'http://example.com', level: 1 },
+      { kind: 'headingTextIsUrl', headingIndex: 2, headingText: 'https://example.com/a', level: 2 },
+    ])
+    expect(r.counts.headingTextIsUrl).toBe(2)
+    const padded = analyzeDoc(doc(heading(1, '  https://example.com  '), para('Body text.')))
+    expect(padded.issues.filter((i) => i.kind === 'headingTextIsUrl')).toEqual([
+      { kind: 'headingTextIsUrl', headingIndex: 1, headingText: '  https://example.com  ', level: 1 },
+    ])
+  })
+
+  it('flags www headings, including trailing paths', () => {
+    const r = analyzeDoc(doc(
+      heading(1, 'www.example.com'),
+      para('Body text.'),
+      heading(2, 'www.example.com/photos'),
+      para('More text.'),
+    ))
+    expect(r.issues.filter((i) => i.kind === 'headingTextIsUrl')).toEqual([
+      { kind: 'headingTextIsUrl', headingIndex: 1, headingText: 'www.example.com', level: 1 },
+      { kind: 'headingTextIsUrl', headingIndex: 2, headingText: 'www.example.com/photos', level: 2 },
+    ])
+  })
+
+  it('a heading with a URL embedded in a sentence passes', () => {
+    const r = analyzeDoc(doc(heading(1, 'See https://example.com for details'), para('Body text.')))
+    expect(r.issues.filter((i) => i.kind === 'headingTextIsUrl')).toEqual([])
+    expect(r.counts.headingTextIsUrl).toBe(0)
+  })
+
+  it('a bare-domain heading passes', () => {
+    const r = analyzeDoc(doc(heading(1, 'example.com'), para('Body text.')))
+    expect(r.issues.filter((i) => i.kind === 'headingTextIsUrl')).toEqual([])
+    expect(r.counts.headingTextIsUrl).toBe(0)
+  })
+
+  it('empty headings do NOT flag as URL headings (already headingEmpty)', () => {
+    const r = analyzeDoc(doc(heading(1, ''), para('Body text.')))
+    expect(r.issues.filter((i) => i.kind === 'headingTextIsUrl')).toEqual([])
+    expect(r.counts.headingTextIsUrl).toBe(0)
+    expect(r.counts.headingEmpty).toBe(1)
+  })
+
+  it('a mixed doc with both P2-32 rules reports full counts over 30 kinds', () => {
+    const r = analyzeDoc(doc(
+      heading(1, 'Title'),
+      para('Body text.'),
+      paraNodes(linked('12345', 'https://example.com')),
+      heading(2, 'https://example.com'),
+      para('More text.'),
+    ))
+    // The digits-only link run fires linkTextNoLetters; the bare-URL
+    // heading fires headingTextIsUrl. Nothing else fires (both
+    // headings have content, the link has a destination, and the link
+    // text is not the URL itself).
+    expect(r.total).toBe(2)
+    expect(r.counts).toEqual({ imageAltMissing: 0, headingSkip: 0, headingEmpty: 0, tableNoHeader: 0, linkEmptyText: 0, firstHeadingNotH1: 0, linkVagueText: 0, imageAltTooLong: 0, headingDuplicateText: 0, imageAltDuplicate: 0, imageAltIsFilename: 0, linkTextIsUrl: 0, imageAltVague: 0, headingNoContent: 0, tableMergedCells: 0, linkSameTextDifferentTarget: 0, linkMissingHref: 0, headingTooLong: 0, headingMultipleH1: 0, imageAltRedundantPrefix: 0, tableEmptyCells: 0, linkSameTargetDifferentText: 0, tableHeaderNotFirstRow: 0, imageAltMatchesNearbyText: 0, imageAltIsUrl: 0, imageAltNoLetters: 0, headingNoLetters: 0, tableInconsistentColumns: 0, linkTextNoLetters: 1, headingTextIsUrl: 1 })
   })
 })

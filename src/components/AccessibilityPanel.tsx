@@ -34,6 +34,12 @@ const GROUP_ORDER: { kind: A11yIssueKind; labelKey: I18nKey }[] = [
   { kind: 'linkSameTargetDifferentText', labelKey: 'a11yLinkSameTargetDifferentText' },
   { kind: 'tableHeaderNotFirstRow', labelKey: 'a11yTableHeaderNotFirstRow' },
   { kind: 'imageAltMatchesNearbyText', labelKey: 'a11yImageAltMatchesNearbyText' },
+  { kind: 'imageAltIsUrl', labelKey: 'a11yImageAltIsUrl' },
+  { kind: 'imageAltNoLetters', labelKey: 'a11yImageAltNoLetters' },
+  { kind: 'headingNoLetters', labelKey: 'a11yHeadingNoLetters' },
+  { kind: 'tableInconsistentColumns', labelKey: 'a11yTableInconsistentColumns' },
+  { kind: 'linkTextNoLetters', labelKey: 'a11yLinkTextNoLetters' },
+  { kind: 'headingTextIsUrl', labelKey: 'a11yHeadingTextIsUrl' },
 ]
 
 function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
@@ -50,7 +56,17 @@ function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
       return `${t('a11yTable')} ${issue.tableIndex}`
     case 'tableHeaderNotFirstRow':
       return `${t('a11yTable')} ${issue.tableIndex}`
+    case 'tableInconsistentColumns':
+      return `${t('a11yTable')} ${issue.tableIndex}`
     case 'imageAltMatchesNearbyText':
+      return issue.altText
+        ? `${t('a11yImage')} ${issue.imageIndex}: ${issue.altText}`
+        : `${t('a11yImage')} ${issue.imageIndex}`
+    case 'imageAltIsUrl':
+      return issue.altText
+        ? `${t('a11yImage')} ${issue.imageIndex}: ${issue.altText}`
+        : `${t('a11yImage')} ${issue.imageIndex}`
+    case 'imageAltNoLetters':
       return issue.altText
         ? `${t('a11yImage')} ${issue.imageIndex}: ${issue.altText}`
         : `${t('a11yImage')} ${issue.imageIndex}`
@@ -110,7 +126,19 @@ function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
       return issue.headingText && issue.headingText.trim() !== ''
         ? `H${issue.level}: ${issue.headingText}`
         : `${t('a11yHeading')} ${issue.headingIndex}`
+    case 'headingNoLetters':
+      return issue.headingText && issue.headingText.trim() !== ''
+        ? `H${issue.level}: ${issue.headingText}`
+        : `${t('a11yHeading')} ${issue.headingIndex}`
     case 'headingMultipleH1':
+      return issue.headingText && issue.headingText.trim() !== ''
+        ? `H${issue.level}: ${issue.headingText}`
+        : `${t('a11yHeading')} ${issue.headingIndex}`
+    case 'linkTextNoLetters':
+      return issue.linkText
+        ? `${t('a11yLink')} ${issue.linkIndex}: ${issue.linkText}`
+        : `${t('a11yLink')} ${issue.linkIndex}`
+    case 'headingTextIsUrl':
       return issue.headingText && issue.headingText.trim() !== ''
         ? `H${issue.level}: ${issue.headingText}`
         : `${t('a11yHeading')} ${issue.headingIndex}`

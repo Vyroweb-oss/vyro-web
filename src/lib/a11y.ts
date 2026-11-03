@@ -4,11 +4,13 @@
 // and in Phase 2, P2-22, with two more, and in Phase 2, P2-23, with two
 // more, and in Phase 2, P2-24, with two more, and in Phase 2, P2-25,
 // with two more, and in Phase 2, P2-26, with two more, and in Phase 2,
-// P2-27, with two more, and in Phase 2, P2-28, with two more).
+// P2-27, with two more, and in Phase 2, P2-28, with two more, and in
+// Phase 2, P2-29, with two more, and in Phase 2, P2-30, with two more, and in
+// Phase 2, P2-32, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// twenty-four local, JSON-derivable rules — nothing is faked:
+// thirty local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -155,6 +157,66 @@
 //       the alt itself, since image nodes carry no text, so the
 //       own-block comparison is safe; malformed docs with no content
 //       array never fire).
+//   (25) images whose trimmed alt text IS a URL (imageAltIsUrl —
+//       matches /^https?:\/\/\S+$/i OR /^www\.[^\s]+\.[^\s]{2,}$/i
+//       on the trimmed alt, so 'https://example.com/a.png' and
+//       'www.example.com' flag but a sentence embedding a URL or a
+//       bare domain without a scheme does not; missing/empty/
+//       whitespace alt is NOT flagged here, it is imageAltMissing;
+//       independent of the long/duplicate/filename/vague/redundant/
+//       matching-nearby branches, so co-firing is legitimate and no
+//       branch suppresses another).
+//   (26) images whose trimmed alt text contains NO Unicode letter at
+//       all (imageAltNoLetters — /\p{L}/u does not match the trimmed
+//       alt, so '12345' and '!!!' flag but any alt containing even
+//       one letter passes; Persian/Arabic letters count as letters
+//       under \p{L}, so a Dari alt like 'کوهستان' never flags;
+//       missing/empty alt is NOT flagged here, it is
+//       imageAltMissing; independent of all other branches).
+//   (27) non-empty headings whose trimmed text contains NO Unicode
+//       letter at all (headingNoLetters — /\p{L}/u does not match the
+//       trimmed text, so '12345' and '!!!' flag but any heading
+//       containing even one letter passes; Persian/Arabic letters
+//       count as letters under \p{L}, so a Dari heading never
+//       flags; empty headings are EXCLUDED, they are already
+//       headingEmpty; headingText carries the original,
+//       unnormalised text; independent of all other heading rules,
+//       so co-firing with e.g. headingDuplicateText is legitimate).
+//   (28) tables whose counted rows have differing effective column
+//       counts (tableInconsistentColumns — one issue per table,
+//       carrying tableIndex only; the effective count of a row is
+//       the sum over its tableCell/tableHeader cells of (numeric
+//       attrs.colspan > 0 ? colspan : 1), rowspan ignored for
+//       width; only tableRow rows with at least one cell count, so
+//       a table with fewer than 2 counted rows never flags and
+//       malformed/non-tableRow rows are ignored; a merged-cell
+//       table whose colspan arithmetic makes rows equal does NOT
+//       flag; independent of tableNoHeader / tableMergedCells /
+//       tableEmptyCells / tableHeaderNotFirstRow, so co-firing is
+//       legitimate).
+//   (29) links whose trimmed visible text contains NO Unicode letter
+//       at all (linkTextNoLetters — per link RUN, as defined below;
+//       /\p{L}/u does not match the trimmed text, so '12345' and
+//       '!!!' flag but any run containing even one letter passes;
+//       Persian/Arabic letters count as letters under \p{L}, so a
+//       Dari link never flags; empty runs are EXCLUDED, they are
+//       already linkEmptyText; the issue carries linkIndex and the
+//       trimmed linkText; independent of all other link branches,
+//       so a no-letter link with no href legitimately also fires
+//       linkMissingHref, and a no-letter link whose text equals its
+//       href may also fire linkTextIsUrl — no branch suppresses
+//       another).
+//   (30) headings whose TRIMMED text is exactly a URL
+//       (headingTextIsUrl — the same URL test as rule (25):
+//       /^https?:\/\/\S+$/i or /^www\.[^\s]+\.[^\s]{2,}$/i on the
+//       trimmed text, so 'https://example.com' and
+//       'www.example.com' flag but a URL embedded in a longer
+//       heading sentence does NOT flag, and a bare domain without a
+//       scheme or www. (e.g. 'example.com') does NOT flag either;
+//       empty headings are EXCLUDED, they are already headingEmpty;
+//       headingText carries the original, unnormalised text, and the
+//       issue also carries level; independent of all other heading
+//       rules, so co-firing is legitimate).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -206,6 +268,12 @@ export type A11yIssueKind =
   | 'linkSameTargetDifferentText'
   | 'tableHeaderNotFirstRow'
   | 'imageAltMatchesNearbyText'
+  | 'imageAltIsUrl'
+  | 'imageAltNoLetters'
+  | 'headingNoLetters'
+  | 'tableInconsistentColumns'
+  | 'linkTextNoLetters'
+  | 'headingTextIsUrl'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -225,9 +293,9 @@ export interface A11yIssue {
   linkIndex?: number
   /** Link target, for link issues ('' when the link mark has no href). */
   href?: string
-  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl issues. */
+  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters issues. */
   linkText?: string
-  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague issues. */
+  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters issues. */
   altText?: string
 }
 
@@ -264,6 +332,12 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   linkSameTargetDifferentText: 0,
   tableHeaderNotFirstRow: 0,
   imageAltMatchesNearbyText: 0,
+  imageAltIsUrl: 0,
+  imageAltNoLetters: 0,
+  headingNoLetters: 0,
+  tableInconsistentColumns: 0,
+  linkTextNoLetters: 0,
+  headingTextIsUrl: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -342,6 +416,35 @@ export function analyzeDoc(docJson: any): A11yResult {
       push({ kind: 'headingMultipleH1', headingIndex: i + 1, headingText: h.text, level: 1 })
     } else {
       seenH1 = true
+    }
+  })
+  // Headings with no letters (P2-30, rule 27): a NON-EMPTY heading
+  // whose trimmed text contains no Unicode letter at all flags;
+  // /\p{L}/u covers Latin, Persian, and Arabic letters alike, so a
+  // Dari heading never flags. Empty headings are excluded (already
+  // headingEmpty). headingText carries the original, unnormalised
+  // text. Independent of the other heading rules — a no-letters
+  // heading may legitimately also fire headingDuplicateText /
+  // headingNoContent / headingSkip.
+  headings.forEach((h, i) => {
+    if (h.empty) return
+    if (!/\p{L}/u.test(h.text.trim())) {
+      push({ kind: 'headingNoLetters', headingIndex: i + 1, headingText: h.text, level: h.level })
+    }
+  })
+  // Headings that are exactly a URL (P2-32, rule 30): the TRIMMED
+  // text must match the same URL test as rule (25) — an http(s) URL
+  // with no whitespace, or a www. host with a TLD of at least 2
+  // characters. A URL embedded in a longer heading sentence does NOT
+  // flag, and a bare domain without a scheme or www. (e.g.
+  // 'example.com') does NOT flag either. Empty headings are excluded
+  // (already headingEmpty). headingText carries the original,
+  // unnormalised text. Independent of the other heading rules.
+  headings.forEach((h, i) => {
+    if (h.empty) return
+    const trimmedHeading = h.text.trim()
+    if (/^https?:\/\/\S+$/i.test(trimmedHeading) || /^www\.[^\s]+\.[^\s]{2,}$/i.test(trimmedHeading)) {
+      push({ kind: 'headingTextIsUrl', headingIndex: i + 1, headingText: h.text, level: h.level })
     }
   })
   // Duplicate heading text (P2-21): only later occurrences are flagged,
@@ -487,6 +590,27 @@ export function analyzeDoc(docJson: any): A11yResult {
             push({ kind: 'imageAltRedundantPrefix', imageIndex, altText: trimmedAlt })
           }
         }
+        // URL alt text (P2-29, rule 25): the trimmed alt IS a URL —
+        // an http(s) URL with no whitespace, or a www. host with a
+        // TLD of at least 2 characters. A sentence embedding a URL
+        // does not match (neither regex is anchored to a substring),
+        // and a bare domain without a scheme or www. does not match
+        // either. Missing/empty alt is excluded above (already
+        // imageAltMissing). Independent of the long/duplicate/
+        // filename/vague/redundant/matching-nearby branches — no
+        // branch suppresses another, so co-firing is legitimate.
+        if (/^https?:\/\/\S+$/i.test(trimmedAlt) || /^www\.[^\s]+\.[^\s]{2,}$/i.test(trimmedAlt)) {
+          push({ kind: 'imageAltIsUrl', imageIndex, altText: trimmedAlt })
+        }
+        // No-letters alt text (P2-29, rule 26): the trimmed alt
+        // contains no Unicode letter at all (digits, punctuation, or
+        // symbols only). \p{L} covers Latin, Persian, and Arabic
+        // letters alike, so a Dari alt like 'کوهستان' never flags.
+        // Missing/empty alt is excluded above (already
+        // imageAltMissing). Independent of all other branches.
+        if (!/\p{L}/u.test(trimmedAlt)) {
+          push({ kind: 'imageAltNoLetters', imageIndex, altText: trimmedAlt })
+        }
       }
     } else if (node.type === 'table') {
       tableIndex += 1
@@ -553,6 +677,33 @@ export function analyzeDoc(docJson: any): A11yResult {
             push({ kind: 'tableHeaderNotFirstRow', tableIndex })
           }
         }
+      }
+      // Inconsistent column counts (P2-30, rule 28): one issue per
+      // table, carrying tableIndex only, independent of the header,
+      // merged-cell, empty-cell, and header-not-first rules above —
+      // neither branch suppresses the others. A row's effective
+      // column count is the sum over its tableCell/tableHeader cells
+      // of (numeric attrs.colspan > 0 ? colspan : 1); rowspan is
+      // ignored for width, and a non-numeric or missing colspan
+      // counts as 1. Only tableRow rows with at least one cell
+      // count: a table with fewer than 2 counted rows never flags,
+      // malformed/non-tableRow rows are ignored, and a merged-cell
+      // table whose colspan arithmetic makes rows equal does not
+      // flag (e.g. a colspan=2 cell plus one plain cell equals
+      // three plain cells).
+      const countedWidths: number[] = []
+      for (const row of tableRows) {
+        if (!row || typeof row !== 'object' || row.type !== 'tableRow' || !Array.isArray(row.content)) continue
+        const cells = row.content.filter((c: any) =>
+          c && typeof c === 'object' && (c.type === 'tableCell' || c.type === 'tableHeader'))
+        if (cells.length === 0) continue
+        countedWidths.push(cells.reduce((sum: number, c: any) => {
+          const span = c.attrs?.colspan
+          return sum + (typeof span === 'number' && span > 0 ? span : 1)
+        }, 0))
+      }
+      if (countedWidths.length >= 2 && countedWidths.some((w) => w !== countedWidths[0])) {
+        push({ kind: 'tableInconsistentColumns', tableIndex })
       }
     }
     if (Array.isArray(node.content)) node.content.forEach(walk)
@@ -629,7 +780,8 @@ export function analyzeDoc(docJson: any): A11yResult {
   // "CLICK  HERE" and "کلیک کنید" with Arabic letters both match, while
   // "click here for details" does not. Empty runs are NOT vague — they
   // are already linkEmptyText, and flush() evaluates all link rules per
-  // run (empty, then vague, then URL-text, in that order).
+  // run (empty, then vague / URL-text, then missing-href, then
+  // no-letters, in that order).
   const VAGUE_LINK_TEXT = new Set([
     'click here', 'here', 'this', 'link', 'more', 'read more', 'click',
     'اینجا', 'اینجا کلیک کنید', 'کلیک کنید', 'لینک', 'بیشتر',
@@ -684,6 +836,18 @@ export function analyzeDoc(docJson: any): A11yResult {
           // above (already linkEmptyText).
           if (runHref.trim() === '') {
             push({ kind: 'linkMissingHref', linkIndex, href: '', linkText: trimmed })
+          }
+          // Links with no letters in their visible text (P2-32,
+          // rule 29): the trimmed run text contains no Unicode letter
+          // at all (digits, punctuation, or symbols only). \p{L}
+          // covers Latin, Persian, and Arabic letters alike, so a
+          // Dari link never flags. Empty runs are excluded by the
+          // branch above (already linkEmptyText). Independent of the
+          // vague/URL-text/missing-href branches above — no branch
+          // suppresses another, so a no-letter link with no href
+          // legitimately fires both this and linkMissingHref.
+          if (!/\p{L}/u.test(trimmed)) {
+            push({ kind: 'linkTextNoLetters', linkIndex, href: runHref, linkText: trimmed })
           }
         }
         runHref = null
