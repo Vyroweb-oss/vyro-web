@@ -1001,3 +1001,15 @@ img.avatar-graphic{object-fit:cover}
   .lp-doc.front,.lp-chip,.lp-hero-text,.lp-scene{animation:none}
   .lp-benefit{transition:none}
 }
+
+/* Landing mobile tip (owner order 2026-11-03): on phones, the welcome
+   page tells visitors to switch their browser to Desktop site so Vyro
+   shows fully and comprehensively. Hidden on wide screens. */
+.lp-tip{display:none}
+@media (max-width:920px){
+  .lp-tip{display:flex;gap:11px;align-items:flex-start;margin-top:18px;background:#fff8e6;border:1.5px solid #f3d67b;border-radius:14px;padding:13px 15px;box-shadow:0 8px 20px rgba(160,120,20,.12);text-align:start}
+  .lp-tip-ic{flex:none;width:38px;height:38px;border-radius:11px;background:#fde68a;color:#92400e;display:flex;align-items:center;justify-content:center}
+  .lp-tip-text{display:flex;flex-direction:column;gap:2px}
+  .lp-tip-text strong{font-size:14.5px;color:#713f12}
+  .lp-tip-text span{font-size:13.5px;line-height:1.9;color:#857024}
+}

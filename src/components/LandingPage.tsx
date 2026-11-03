@@ -85,6 +85,10 @@ export default function LandingPage({ lang, onStart, onSignIn, onContinueLocal, 
               <button type="button" className="lp-btn ghost big" onClick={onSignIn}>{t('signIn')}</button>
             </div>
             <button type="button" className="lp-local" onClick={onContinueLocal}>{t('landingContinueLocal')}</button>
+            <aside className="lp-tip">
+              <span className="lp-tip-ic" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="13" rx="2" /><path d="M8 21h8M12 17v4" /></svg></span>
+              <span className="lp-tip-text"><strong>{t('landingDesktopTipTitle')}</strong><span>{t('landingDesktopTipDesc')}</span></span>
+            </aside>
           </div>
           <div className="lp-scene" aria-hidden="true">
             <div className="lp-doc back" />

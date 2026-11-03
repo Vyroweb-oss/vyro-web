@@ -25,6 +25,8 @@ describe('landing page + dashboard cleanup contract', () => {
     expect(landing).toContain('lp-scene')
     expect(landing).toContain("t('landingStepsTitle')")
     expect(landing).toContain('onLangChange')
+    expect(landing).toContain("t('landingDesktopTipTitle')")
+    expect(landing).toContain('lp-tip')
   })
   it('the old sidebar and its profile card are gone; filter chips carry the navigation', () => {
     expect(app).not.toContain('className="sidebar"')
