@@ -6,11 +6,11 @@
 // with two more, and in Phase 2, P2-26, with two more, and in Phase 2,
 // P2-27, with two more, and in Phase 2, P2-28, with two more, and in
 // Phase 2, P2-29, with two more, and in Phase 2, P2-30, with two more, and in
-// Phase 2, P2-32, with two more).
+// Phase 2, P2-32, with two more, and in Phase 2, P2-33, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// thirty local, JSON-derivable rules — nothing is faked:
+// thirty-two local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -217,6 +217,24 @@
 //       headingText carries the original, unnormalised text, and the
 //       issue also carries level; independent of all other heading
 //       rules, so co-firing is legitimate).
+//   (31) links whose trimmed visible text is longer than 100 code
+//       points (linkTextTooLong — per link RUN, as defined below;
+//       counted in code points of the trimmed text, so exactly 100
+//       passes and 101 flags; empty runs are NOT flagged here, they
+//       are already linkEmptyText; the issue carries linkIndex, href,
+//       and the trimmed linkText; independent of all other link
+//       branches, so co-firing is legitimate and no branch suppresses
+//       another).
+//   (32) non-empty headings whose trimmed text is in ALL CAPITAL
+//       letters (headingAllCaps — the trimmed text has at least one
+//       Unicode letter, and trimmed === trimmed.toUpperCase() AND
+//       trimmed !== trimmed.toLowerCase(), so Persian/Dari/Arabic
+//       text (no case distinction) never flags, and mixed-case or
+//       lowercase text never flags; empty headings are EXCLUDED,
+//       they are already headingEmpty; headingText carries the
+//       original, unnormalised text, and the issue also carries
+//       level; independent of all other heading rules, so co-firing
+//       is legitimate).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -274,6 +292,8 @@ export type A11yIssueKind =
   | 'tableInconsistentColumns'
   | 'linkTextNoLetters'
   | 'headingTextIsUrl'
+  | 'linkTextTooLong'
+  | 'headingAllCaps'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -293,7 +313,7 @@ export interface A11yIssue {
   linkIndex?: number
   /** Link target, for link issues ('' when the link mark has no href). */
   href?: string
-  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters issues. */
+  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong issues. */
   linkText?: string
   /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters issues. */
   altText?: string
@@ -338,6 +358,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   tableInconsistentColumns: 0,
   linkTextNoLetters: 0,
   headingTextIsUrl: 0,
+  linkTextTooLong: 0,
+  headingAllCaps: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -445,6 +467,24 @@ export function analyzeDoc(docJson: any): A11yResult {
     const trimmedHeading = h.text.trim()
     if (/^https?:\/\/\S+$/i.test(trimmedHeading) || /^www\.[^\s]+\.[^\s]{2,}$/i.test(trimmedHeading)) {
       push({ kind: 'headingTextIsUrl', headingIndex: i + 1, headingText: h.text, level: h.level })
+    }
+  })
+  // Headings in all capital letters (P2-33, rule 32): a NON-EMPTY
+  // heading whose trimmed text has at least one Unicode letter, and
+  // where trimmed === trimmed.toUpperCase() AND trimmed !==
+  // trimmed.toLowerCase(). The second condition is what keeps
+  // caseless scripts out: Persian/Dari/Arabic text uppercases and
+  // lowercases to itself, so it never flags, and mixed-case or
+  // lowercase text never flags either. Empty headings are excluded
+  // (already headingEmpty). headingText carries the original,
+  // unnormalised text. Independent of the other heading rules.
+  headings.forEach((h, i) => {
+    if (h.empty) return
+    const trimmedHeading = h.text.trim()
+    if (/\p{L}/u.test(trimmedHeading)
+      && trimmedHeading === trimmedHeading.toUpperCase()
+      && trimmedHeading !== trimmedHeading.toLowerCase()) {
+      push({ kind: 'headingAllCaps', headingIndex: i + 1, headingText: h.text, level: h.level })
     }
   })
   // Duplicate heading text (P2-21): only later occurrences are flagged,
@@ -781,7 +821,7 @@ export function analyzeDoc(docJson: any): A11yResult {
   // "click here for details" does not. Empty runs are NOT vague — they
   // are already linkEmptyText, and flush() evaluates all link rules per
   // run (empty, then vague / URL-text, then missing-href, then
-  // no-letters, in that order).
+  // no-letters, then too-long, in that order).
   const VAGUE_LINK_TEXT = new Set([
     'click here', 'here', 'this', 'link', 'more', 'read more', 'click',
     'اینجا', 'اینجا کلیک کنید', 'کلیک کنید', 'لینک', 'بیشتر',
@@ -848,6 +888,16 @@ export function analyzeDoc(docJson: any): A11yResult {
           // legitimately fires both this and linkMissingHref.
           if (!/\p{L}/u.test(trimmed)) {
             push({ kind: 'linkTextNoLetters', linkIndex, href: runHref, linkText: trimmed })
+          }
+          // Links with very long visible text (P2-33, rule 31): the
+          // trimmed run text is longer than 100 code points, so
+          // exactly 100 passes and 101 flags. Empty runs are excluded
+          // by the branch above (already linkEmptyText). Independent
+          // of the vague/URL-text/missing-href/no-letters branches
+          // above — no branch suppresses another, so a long link
+          // may legitimately fire several of them.
+          if ([...trimmed].length > 100) {
+            push({ kind: 'linkTextTooLong', linkIndex, href: runHref, linkText: trimmed })
           }
         }
         runHref = null
