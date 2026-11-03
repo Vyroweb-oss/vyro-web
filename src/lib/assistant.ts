@@ -708,6 +708,9 @@ export function assembleResearch(
   const add = (n: JsonNode) => { nodes.push(n); words += countWords(nodeText(n)) }
   if (sources.length === 0) return { nodes, words, targetWords }
   const seen = new Set<string>()
+  // A-03: section headings ACTUALLY emitted below, in order, for the
+  // long-document table of contents (deduplicated by exact text).
+  const tocHeadings: string[] = []
   const main = sources[0]
   add(head(1, main.title))
 
@@ -768,7 +771,10 @@ export function assembleResearch(
       const fresh = picked.filter((s) => !seen.has(fingerprint(s)))
       if (fresh.length === 0) return
       const heading = section.heading ?? (si > 0 ? src.title : null)
-      if (heading) add(head(2, heading))
+      if (heading) {
+        add(head(2, heading))
+        if (!tocHeadings.includes(heading)) tocHeadings.push(heading)
+      }
       emitSentences(fresh, sectionBudget)
     })
   })
@@ -785,6 +791,23 @@ export function assembleResearch(
         emitSentences(leftover)
       }
     }
+  }
+
+  // A-03: long-document structure — a table of contents for LONG
+  // research only (requested pages >= 3, or an assembled body of >=
+  // 3 pages' worth of words), listing exactly the section headings
+  // actually emitted above, in order, deduplicated. The title itself
+  // and the credits heading are never TOC items, and with no emitted
+  // section heading there is no TOC at all. It is inserted right
+  // after the title node, before the lead/body, and its words join
+  // the reported count so words stays the true count of all nodes.
+  // The credits block below is UNCHANGED — it already is the full
+  // sources list, so no second sources block is invented.
+  const bodyWords = words - countWords(main.title)
+  if (((opts.pages ?? 0) >= 3 || bodyWords >= 3 * WORDS_PER_PAGE) && tocHeadings.length > 0) {
+    const toc = [head(2, lang === 'fa' ? 'فهرست' : 'Contents'), bullet(tocHeadings)]
+    nodes.splice(1, 0, ...toc)
+    for (const n of toc) words += countWords(nodeText(n))
   }
 
   // A-01d: credits are generalized — every source is credited by

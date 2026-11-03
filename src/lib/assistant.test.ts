@@ -777,3 +777,93 @@ describe('A-01f thinking brain (owner order 2026-11-03: a reasoning layer, gener
     expect(findNumericConflict(a, 'جمعیت فرانسه چقدر است؟', 'fa')).toBeNull()
   })
 })
+
+describe('A-03 long-document structure (TOC for long research only)', () => {
+  // Recursive node text (bullet lists nest listItem > paragraph >
+  // text, so a one-level read would miss TOC items entirely).
+  const nodeTextAll = (n: any): string => {
+    const own = typeof n.text === 'string' ? n.text : ''
+    const kids = Array.isArray(n.content) ? (n.content as any[]).map(nodeTextAll).join(' ') : ''
+    return [own, kids].filter(Boolean).join(' ')
+  }
+  const headingTexts = (nodes: any[]) =>
+    nodes.filter((n) => n.type === 'heading').map((n) => nodeTextAll(n))
+  const tocOf = (nodes: any[]) => {
+    const list = nodes.find((n) => n.type === 'bulletList')
+    if (!list) return null
+    return (list.content as any[]).map((li) => nodeTextAll(li))
+  }
+  // The index sits EARLY in each sentence so distinct sentences stay
+  // distinct under the engine's 36-char fingerprint.
+  const faSent = (tag: string, i: number) =>
+    `جمله شماره ${i} درباره ${tag} است و اطلاعات مهم و دقیقی درباره آن ارائه می کند و شرح می دهد و توضیح می دهد.`
+  const enSent = (tag: string, i: number) =>
+    `Sentence number ${i} about ${tag} presents important and precise information and explains it clearly and thoroughly.`
+  const faExtract = [
+    `${faSent('مقدمه', 1)} ${faSent('مقدمه', 2)} ${faSent('مقدمه', 3)}`,
+    '== تاریخچه ==',
+    Array.from({ length: 40 }, (_, i) => faSent('تاریخچه', i)).join(' '),
+    '== کاربردها ==',
+    Array.from({ length: 40 }, (_, i) => faSent('کاربردها', i)).join(' '),
+  ].join('\n')
+  const faSrc = { title: 'موضوع', url: 'https://fa.wikipedia.org/wiki/X', extract: faExtract }
+
+  it('(a) 3-page research with real sections gets a TOC as the second node, listing exactly the emitted headings in order, credits intact', () => {
+    const out = assembleResearch([faSrc], 'fa', { pages: 3 })
+    expect(out.nodes[0].type).toBe('heading')
+    expect(nodeTextAll(out.nodes[1])).toBe('فهرست')
+    expect(out.nodes[2].type).toBe('bulletList')
+    expect(tocOf(out.nodes)).toEqual(['تاریخچه', 'کاربردها'])
+    // The TOC items are exactly the section headings emitted later
+    // in the same draft (title and credits never appear in it).
+    const heads = headingTexts(out.nodes)
+    expect(heads).toContain('تاریخچه')
+    expect(heads).toContain('کاربردها')
+    expect(heads[0]).toBe('موضوع')
+    // Credits still close the draft with the source URL, and the
+    // reported word count still covers every node, TOC included.
+    const last = nodeTextAll(out.nodes[out.nodes.length - 1])
+    expect(last).toContain('منبع: ویکی‌پدیا')
+    expect(last).toContain('https://fa.wikipedia.org/wiki/X')
+    const actual = out.nodes.map((n) => nodeTextAll(n)).join(' ')
+      .split(/[^\p{L}\p{N}\u200C]+/u).filter((t) => t.length > 0).length
+    expect(out.words).toBe(actual)
+  })
+  it('(b) 1-page research with the same sections gets NO TOC', () => {
+    const out = assembleResearch([faSrc], 'fa', { pages: 1 })
+    expect(nodeTextAll(out.nodes[1])).not.toBe('فهرست')
+    expect(out.nodes.some((n) => n.type === 'bulletList')).toBe(false)
+    // The sections themselves are still emitted — only the TOC is absent.
+    expect(headingTexts(out.nodes)).toContain('تاریخچه')
+    expect(headingTexts(out.nodes)).toContain('کاربردها')
+  })
+  it('(c) a long research where the same heading appears twice lists it only once in the TOC', () => {
+    const dup = [
+      `${faSent('مقدمه', 1)} ${faSent('مقدمه', 2)}`,
+      '== تاریخچه ==',
+      Array.from({ length: 40 }, (_, i) => faSent('تاریخچه نخست', i)).join(' '),
+      '== تاریخچه ==',
+      Array.from({ length: 40 }, (_, i) => faSent('تاریخچه دوم', i)).join(' '),
+    ].join('\n')
+    const out = assembleResearch([{ title: 'موضوع', url: 'https://fa.wikipedia.org/wiki/X', extract: dup }], 'fa', { pages: 3 })
+    expect(nodeTextAll(out.nodes[1])).toBe('فهرست')
+    expect(tocOf(out.nodes)).toEqual(['تاریخچه'])
+    // Both sections were emitted (the heading occurs twice in the body)…
+    expect(headingTexts(out.nodes).filter((h) => h === 'تاریخچه').length).toBe(2)
+  })
+  it('(d) EN 3-page research gets a Contents TOC', () => {
+    const enExtract = [
+      `${enSent('introduction', 1)} ${enSent('introduction', 2)} ${enSent('introduction', 3)}`,
+      '== History ==',
+      Array.from({ length: 40 }, (_, i) => enSent('history', i)).join(' '),
+      '== Applications ==',
+      Array.from({ length: 40 }, (_, i) => enSent('applications', i)).join(' '),
+    ].join('\n')
+    const out = assembleResearch([{ title: 'Topic', url: 'https://en.wikipedia.org/wiki/X', extract: enExtract }], 'en', { pages: 3 })
+    expect(nodeTextAll(out.nodes[1])).toBe('Contents')
+    expect(tocOf(out.nodes)).toEqual(['History', 'Applications'])
+    const last = nodeTextAll(out.nodes[out.nodes.length - 1])
+    expect(last).toContain('Source: Wikipedia')
+    expect(last).toContain('https://en.wikipedia.org/wiki/X')
+  })
+})
