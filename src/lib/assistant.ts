@@ -555,6 +555,57 @@ export function buildAnswer(
     .sort((a, b) => b.score - a.score || a.order - b.order)
     .slice(0, 3)
     .sort((a, b) => a.order - b.order)
+  if (best.length === 0 && qTokens.size >= 2) {
+    // A-01c fallback (live failure 2026-11-03: «نویسنده شاهنامه
+    // کیست؟»): the true sentence «شاهنامه اثر فردوسی است» matches
+    // only ONE subject token, because the article phrases the
+    // relation differently (نویسنده → اثر). When the strict pass
+    // finds nothing, fall back — TOP source only, never a secondary
+    // source — to sentences that match the topic token (a subject
+    // token present in the top source's title, else the longest
+    // subject token) AND at least one other subject token or its
+    // light synonym. The France/Korea guard survives: a Korea
+    // article's sentences match «پایتخت» but never «فرانسه» or any
+    // of its synonyms, so the fallback still returns not-found.
+    const SYNONYMS: Record<string, string[]> = {
+      'نویسنده': ['اثر', 'مولف', 'سراینده'],
+      'اثر': ['نویسنده'],
+      author: ['written', 'wrote', 'writer'],
+      writer: ['author', 'wrote'],
+      written: ['author'],
+      wrote: ['author', 'written', 'writer'],
+    }
+    const top = sources[0]
+    const titleToks = new Set(top.title.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
+    const ordered = searchQueryFor(question).split(' ').filter((w) => w.length > 1)
+    let topic = ordered.filter((t) => titleToks.has(t))
+    if (topic.length === 0) {
+      const longest = Math.max(...ordered.map((t) => t.length))
+      topic = [ordered.find((t) => t.length === longest) as string]
+    }
+    const topicSet = new Set(topic)
+    const otherToks = new Set<string>()
+    qTokens.forEach((t) => {
+      if (!topicSet.has(t)) otherToks.add(t)
+      ;(SYNONYMS[t] ?? []).forEach((s) => otherToks.add(s))
+    })
+    const fb = cands
+      .filter((c) => c.url === top.url)
+      .filter((c) => {
+        const toks = new Set(c.text.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
+        const hasTopic = topic.some((t) => toks.has(t))
+        const hasOther = [...otherToks].some((t) => toks.has(t))
+        return hasTopic && hasOther
+      })
+      .sort((a, b) => a.order - b.order)
+      .slice(0, 2)
+    if (fb.length > 0) {
+      const lines = fb.map((c) => c.text)
+      lines.push(lang === 'fa' ? `منبع: ویکی‌پدیا — ${top.url}` : `Source: Wikipedia — ${top.url}`)
+      return { lines, found: true }
+    }
+    return { lines: [], found: false }
+  }
   if (best.length === 0) return { lines: [], found: false }
   const lines = best.map((c) => c.text)
   for (const url of [...new Set(best.map((c) => c.url))].slice(0, 2)) {

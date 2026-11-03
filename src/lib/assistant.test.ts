@@ -208,6 +208,24 @@ describe('assistant web research (owner order 2026-11-03)', () => {
     expect(ans.lines.join(' ')).toContain('فرانسه')
     expect(ans.lines.join(' ')).not.toContain('کره')
   })
+  it('A-01c fallback: Shahnameh author answered via the top source + نویسنده/اثر synonym', () => {
+    const shahnameh = [{
+      title: 'شاهنامه', url: 'https://fa.wikipedia.org/wiki/Shahnameh',
+      extract: 'شاهنامه اثر حکیم ابوالقاسم فردوسی توسی است و از بزرگ‌ترین آثار حماسی جهان به شمار می‌رود. شاهنامه کتابی حماسی است که داستان‌های پهلوانان ایران را روایت می‌کند.',
+    }]
+    const ans = buildAnswer(shahnameh, 'نویسنده شاهنامه کیست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('فردوسی')
+    expect(ans.lines[ans.lines.length - 1]).toContain('منبع: ویکی‌پدیا')
+    // EN mirror: wrote/written synonym, top source only.
+    const hamlet = [{
+      title: 'Hamlet', url: 'https://en.wikipedia.org/wiki/Hamlet',
+      extract: 'Hamlet is a tragedy written by William Shakespeare. It is one of the most famous plays in English literature.',
+    }]
+    const en = buildAnswer(hamlet, 'Who wrote Hamlet?', 'en')
+    expect(en.found).toBe(true)
+    expect(en.lines[0]).toContain('Shakespeare')
+  })
   it('assembleResearch balances sections — a huge lead cannot eat the whole document', () => {
     const s = (tag: string) => `این جمله درباره ${tag} است و اطلاعات مهم و دقیقی درباره آن ارائه می کند و شرح می دهد.`
     const extract = [
