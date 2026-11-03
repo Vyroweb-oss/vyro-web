@@ -319,8 +319,21 @@ export function sentenceMatchesQuestionType(sentence: string, analysis: Question
     case 'definition':
       return analysis.subjectTokens.some((t) => toks.has(t)) &&
         ['است', 'هست', 'می باشد', 'می‌باشد', 'is', 'are'].some((t) => toks.has(t) || norm.includes(t))
-    case 'reason':
-      return ['چون', 'زیرا', 'because', 'due', 'علت', 'دلیل'].some((t) => toks.has(t))
+    case 'reason': {
+      // A-02 (general, from the benchmark's loose-secondary probe):
+      // the old explicit-marker rule stays (any چون/زیرا/… counts),
+      // PLUS a mechanism shape with no marker at all — the topic
+      // itself does something that produces the effect («ماه نور
+      // خورشید را منعکس می‌کند») — which counts when a mechanism
+      // verb and a subject token are both present in the sentence.
+      // The loose-secondary exclusion itself lives in buildAnswer's
+      // analysis pass (top-source preference), not here, so this
+      // gate never newly rejects a real چون explanation.
+      if (['چون', 'زیرا', 'because', 'due', 'علت', 'دلیل'].some((t) => toks.has(t))) return true
+      const MECHANISM = ['منعکس', 'بازتاب', 'باعث', 'موجب', 'ایجاد', 'تولید', 'منجر',
+        'reflect', 'reflects', 'reflection', 'cause', 'causes', 'caused', 'produce', 'produces']
+      return MECHANISM.some((t) => toks.has(t)) && analysis.subjectTokens.some((t) => toks.has(t))
+    }
     case 'procedure':
       return ['طریق', 'مراحل', 'steps', 'step', 'روش'].some((t) => toks.has(t))
     case 'enumeration':
@@ -639,6 +652,10 @@ export function cleanWikiText(raw: string): string {
     .replace(/'''([^']+)'''/g, '$1')
     .replace(/''([^']+)''/g, '$1')
     .replace(/\[[\d۰-۹]+\]/g, '')
+    // A-02: transcript timestamp fragments ([12:34], [1:02:03],
+    // Persian-digit forms) are not content — strip them like [n]
+    // references so they never surface inside an answer sentence.
+    .replace(/\[[\d۰-۹]{1,2}:[\d۰-۹]{2}(?::[\d۰-۹]{2})?\]/g, '')
     .replace(/<[^>]+>/g, ' ')
 }
 
@@ -1088,7 +1105,7 @@ export function buildAnswer(
       if (!aTopicSet.has(t)) aOther.add(t)
       ;(SYNONYMS[t] ?? []).forEach((s) => aOther.add(s))
     })
-    const aMatched = cands
+    const aRanked = cands
       .filter((c) => {
         if (!sentenceMatchesQuestionType(c.text, analysis)) return false
         const toks = expandedToks(c.text)
@@ -1096,9 +1113,18 @@ export function buildAnswer(
         if (qTokens.size === 1) return true
         if (c.score >= 2) return true
         if ([...aOther].some((t) => toks.has(t))) return true
-        return analysis.answerKind === 'quantity' || analysis.answerKind === 'date' || analysis.answerKind === 'recent'
+        return analysis.answerKind === 'quantity' || analysis.answerKind === 'date' || analysis.answerKind === 'recent' || analysis.answerKind === 'reason'
       })
       .sort((a, b) => b.score - a.score || a.order - b.order)
+    // A-02 (general, from the benchmark's loose-secondary probe):
+    // this pass's topic is defined by the TOP source's title, so
+    // when the top source itself has a type-matching sentence, it
+    // answers alone — a secondary source's merely topical sentence
+    // (high word overlap, different subject) must not ride along
+    // and displace or dilute it. When the top source has nothing
+    // qualifying, other sources' sentences still answer as before.
+    const aFromTop = aRanked.filter((c) => c.url === sources[0].url)
+    const aMatched = (aFromTop.length > 0 ? aFromTop : aRanked)
       .slice(0, 2)
       .sort((a, b) => a.order - b.order)
     if (aMatched.length > 0) {
