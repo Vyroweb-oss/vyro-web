@@ -402,11 +402,9 @@ describe('A-01d2 ranking preference (live failure 2026-11-03: generic wiki match
     expect(ans.lines.join(' ')).toContain('best AI coding assistant')
     expect(ans.lines[ans.lines.length - 1]).toContain('Example Blog')
   })
-  it('with no web answer and no wiki ranking sentence, the generic sourced answer is kept — never blank', () => {
+  it('SUPERSEDED BY A-01e2: with no web answer and no comparative sentence, a ranking question is honestly not-found — a generic definition is NOT an answer (the A-01e live failure was exactly this Claude-definition shape returning for the owner\'s question)', () => {
     const ans = buildAnswer(genericWiki, QUESTION, 'fa')
-    expect(ans.found).toBe(true)
-    expect(ans.lines.join(' ')).toContain('هوش مصنوعی')
-    expect(ans.lines[ans.lines.length - 1]).toContain('منبع: ویکی‌پدیا')
+    expect(ans.found).toBe(false)
   })
   it('ranking preference does not rescue a France question from a Korea article', () => {
     const korea = [{
@@ -583,5 +581,57 @@ describe('A-01e question analysis (owner order 2026-11-03: analyze the question,
       extract: 'پایتخت کره به پیشینه تاریخی آن سرزمین بستگی دارد که در طول تاریخ تغییر کرده است. کره شبه جزیره ای در شرق آسیا است که از دو کشور کره شمالی و کره جنوبی تشکیل شده است.',
     }]
     expect(buildAnswer(korea, 'پایتخت فرانسه کجاست؟', 'fa').found).toBe(false)
+  })
+})
+
+describe('A-01e2 fix the A-01e live gaps (general method only — no per-question branches)', () => {
+  const QUESTION = 'کدام هوش مصنوعی در کدنویسی قوی‌تر است؟'
+  it('A-01e live regression CLOSED: a weak-marker generic wiki sentence (2-token match) must NOT win in the strict pass or A-01c', () => {
+    const wiki = [{
+      title: 'هوش مصنوعی', url: 'https://fa.wikipedia.org/wiki/AI',
+      extract: 'کتابهای هوش مصنوعی پیشرو جهان بسیار خوانده میشوند.',
+    }]
+    expect(buildAnswer(wiki, QUESTION, 'fa').found).toBe(false)
+  })
+  it('A-01d3 rule preserved: a weak-marker sentence with ≥3 subject-token matches still wins', () => {
+    const wiki = [{
+      title: 'هوش مصنوعی', url: 'https://fa.wikipedia.org/wiki/AI',
+      extract: 'ابزارهای هوش مصنوعی پیشرو در کدنویسی کاربرد گسترده دارند.',
+    }]
+    const ans = buildAnswer(wiki, QUESTION, 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('پیشرو')
+  })
+  it('nonsense place question: topical Saturn facts are honestly not-found, never served', () => {
+    const src = [{
+      title: 'زحل', url: 'https://fa.wikipedia.org/wiki/Saturn',
+      extract: 'زحل ششمین سیاره منظومه شمسی است و حلقه های زیبایی دارد. زحل سیاره ای گازی است که قمرهای بسیاری دارد.',
+    }]
+    expect(buildAnswer(src, 'پایتخت سیاره زحل کجاست؟', 'fa').found).toBe(false)
+  })
+  it('fresh unseen person question: Masnavi names the author explicitly with full name', () => {
+    const src = [{
+      title: 'مثنوی معنوی', url: 'https://fa.wikipedia.org/wiki/Masnavi',
+      extract: 'مثنوی معنوی کتابی منظوم است که در ادبیات فارسی جایگاه ویژه ای دارد. مثنوی معنوی اثر مولانا جلال الدین محمد بلخی است و شش دفتر دارد.',
+    }]
+    const ans = buildAnswer(src, 'نویسنده مثنوی معنوی کیست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('مولانا')
+    expect(ans.lines[0]).toContain('بلخی')
+  })
+  it('person evidence, unit level: cue + work title + copula-closed name counts; cue + آن + generic noun does not', () => {
+    const person = analyzeQuestion('نویسنده مثنوی معنوی کیست؟')
+    expect(sentenceMatchesQuestionType('نویسنده مثنوی معنوی، مولانا است.', person)).toBe(true)
+    expect(sentenceMatchesQuestionType('نویسنده آن داستان های پهلوانان ایران را روایت می کند.', person)).toBe(false)
+    expect(sentenceMatchesQuestionType('مولانا شاعر پارسی گوی بزرگی است.', person)).toBe(false)
+  })
+  it('quantity with a count unit (میلیون نفر) still answers — type gating must not drop real counts', () => {
+    const src = [{
+      title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France',
+      extract: 'فرانسه کشوری در اروپای غربی است. جمعیت فرانسه حدود ۶۸ میلیون نفر است و این کشور در اروپا قرار دارد.',
+    }]
+    const ans = buildAnswer(src, 'جمعیت فرانسه چقدر است؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('میلیون')
   })
 })

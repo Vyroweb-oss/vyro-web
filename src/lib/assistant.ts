@@ -226,6 +226,9 @@ const YEAR_RE = /(1[0-9]{3}|20[0-9]{2})/
 const QUANTITY_UNITS = new Set([
   'متر', 'کیلومتر', 'ثانیه', 'دقیقه', 'ساعت', 'کیلوگرم', 'گرم', 'سانتی', 'میلی',
   'm', 'km', 'cm', 'mm', 'kg', 'm/s', 'km/s', 'ms', 'دلار', 'تومان', 'ریال', 'درصد',
+  // A-01e2: counts people answer too («۶۸ میلیون نفر») — without
+  // these, gating quantity answers by type would wrongly drop them.
+  'میلیون', 'میلیارد', 'هزار', 'نفر',
 ])
 
 /** Does this sentence (the source's own words) actually ANSWER a
@@ -242,14 +245,29 @@ export function sentenceMatchesQuestionType(sentence: string, analysis: Question
   switch (analysis.answerKind) {
     case 'any': return true
     case 'name': {
-      // «اثر فردوسی» / «مولف …» / «written by Shakespeare»: the
-      // marker must be followed by a token that is NOT one of the
-      // question's subject tokens — otherwise «نویسنده آن» style
-      // generic sentences would pass.
-      const words = norm.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+      // A-01e2 (author-relation evidence, general): a name-bearing
+      // sentence must show the author relation, not merely mention
+      // a person near the work. Two general shapes count: (a) an
+      // author cue (اثر/مولف/سراینده/نویسنده/نوشته/سروده) directly
+      // followed by a non-subject, non-stopword token — «شاهنامه
+      // اثر فردوسی است», and NOT «نویسنده آن» (آن is a stopword);
+      // (b) the cue, then the work title, then a name closed by a
+      // copula — «نویسنده مثنوی معنوی، مولانا است». (b) must NOT
+      // accept the first content word after the cue («نویسنده آن
+      // داستان‌های…» would falsely pass): only a token followed by
+      // است/بود/می‌باشد/باشد counts. Loose mentions with no author
+      // cue at all («مولانا، شاعر پارسی‌گوی…») do NOT pass.
+      const NAME_STOP = new Set(['آن', 'این', 'او', 'را', 'است', 'بود', 'که', 'و', 'در', 'به', 'از', 'یک', 'هم', 'نیز', 'با', 'برای', 'تا', 'خود', 'وی'])
+      const COPULA = new Set(['است', 'بود', 'می‌باشد', 'باشد'])
+      const words = norm.replace(/\u200C/g, ' ').split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+      const CUES = ['اثر', 'مولف', 'سراینده', 'نویسنده', 'نوشته', 'سروده']
       for (let i = 0; i < words.length; i++) {
-        if (['اثر', 'مولف', 'سراینده'].includes(words[i]) && words[i + 1] &&
-            !analysis.subjectTokens.includes(words[i + 1])) return true
+        if (!CUES.includes(words[i])) continue
+        if (words[i + 1] && !analysis.subjectTokens.includes(words[i + 1]) && !NAME_STOP.has(words[i + 1])) return true
+        for (let j = i + 1; j < Math.min(words.length, i + 8); j++) {
+          if (analysis.subjectTokens.includes(words[j]) || NAME_STOP.has(words[j])) continue
+          if (COPULA.has(words[j + 1])) return true
+        }
       }
       if (/written by|authored by/.test(norm)) return true
       if (/\bwrote\b/.test(norm) && /\b[A-Z][a-z]+ [A-Z][a-z]+\b/.test(sentence)) return true
@@ -257,7 +275,7 @@ export function sentenceMatchesQuestionType(sentence: string, analysis: Question
         /written|author|wrote/.test(norm)
     }
     case 'place':
-      return ['پایتخت', 'capital', 'شهر', 'city', 'located'].some((t) => toks.has(t))
+      return ['پایتخت', 'capital', 'شهر', 'city', 'located', 'واقع', 'قرار', 'situated'].some((t) => toks.has(t))
     case 'date':
       return YEAR_RE.test(norm)
     case 'quantity': {
@@ -856,6 +874,34 @@ export function buildAnswer(
     raw.forEach((t) => t.split('\u200C').forEach((p) => { if (p) out.add(p) }))
     return out
   }
+  // A-01e2: the question's analysis, computed once up front so every
+  // pass below (ranking, analysis, strict, A-01c, web) can be gated
+  // by it. A comparative question's answer must itself state a
+  // comparison; place/date/person/quantity questions must be
+  // answered by a sentence of their own kind — never by a merely
+  // topical paragraph (the A-01e Saturn failure).
+  const analysis = analyzeQuestion(question)
+  const isComparativeQ = analysis.answerKind === 'comparative'
+  const TYPE_GATED_KINDS = new Set<AnswerKind>(['place', 'date', 'name', 'quantity'])
+  const isTypeGated = TYPE_GATED_KINDS.has(analysis.answerKind)
+  // A-01d3 rank markers, hoisted so the strict and A-01c passes can
+  // share the wiki-ranking rule: a strong marker states a ranking
+  // on its own; a weak marker («پیشرو»/leading, recency words)
+  // describes fields and editions as often as winners, so it counts
+  // only with ≥3 question-token matches.
+  const STRONG_RANK_MARKERS = new Set([
+    'قوی', 'ترین', 'بهترین', 'برتر', 'اول', 'رتبه', 'مقایسه',
+    'strongest', 'best', 'top', 'first', 'fastest', 'ranked', 'ranking', 'compare', 'comparison', 'versus',
+  ])
+  const WEAK_RANK_MARKERS = new Set([
+    'پیشرو', 'جدیدترین', 'آخرین',
+    'leading', 'newest', 'latest',
+  ])
+  const hasComparativeSignal = (text: string, score: number): boolean => {
+    const toks = expandedToks(text)
+    if ([...toks].some((t) => STRONG_RANK_MARKERS.has(t))) return true
+    return score >= 3 && [...toks].some((t) => WEAK_RANK_MARKERS.has(t))
+  }
   /** A-01d WHOLE-WEB fallback, as a reusable pass: ONLY
    *  non-Wikipedia sources, in order — a Wikipedia secondary source
    *  can never be rescued by this pass (the France/Korea guard).
@@ -882,6 +928,9 @@ export function buildAnswer(
       const wb = cands
         .filter((c) => c.url === ws.url)
         .filter((c) => {
+          // A-01e2: type-gated questions need a sentence of their
+          // own kind even from a web source — never a topical one.
+          if (isTypeGated && !sentenceMatchesQuestionType(c.text, analysis)) return false
           const toks = expandedToks(c.text)
           return wtopic.some((t) => toks.has(t)) && [...wother].some((t) => toks.has(t))
         })
@@ -916,27 +965,11 @@ export function buildAnswer(
     // A-01d3 (live failure 2026-11-03: the owner's coding-AI question
     // was "answered" by a Wikipedia sentence whose only ranking word
     // was «پیشرو» in «کتاب‌های هوش مصنوعی پیشرو» — leading textbooks,
-    // not a ranked winner). Weak markers («پیشرو»/leading, newest/
-    // latest-style recency words) describe fields and editions as
-    // often as winners, so a weak-marker sentence wins only when it
-    // also matches ≥3 question tokens — a real ranking sentence
-    // about the asked subject does; a 2-token generic match does not.
-    // Strong markers (بهترین/قوی‌ترین/best/strongest/…) keep minScore.
-    const STRONG_RANK_MARKERS = new Set([
-      'قوی', 'ترین', 'بهترین', 'برتر', 'اول', 'رتبه', 'مقایسه',
-      'strongest', 'best', 'top', 'first', 'fastest', 'ranked', 'ranking', 'compare', 'comparison', 'versus',
-    ])
-    const WEAK_RANK_MARKERS = new Set([
-      'پیشرو', 'جدیدترین', 'آخرین',
-      'leading', 'newest', 'latest',
-    ])
+    // not a ranked winner). The shared hasComparativeSignal rule
+    // above owns the strong/weak distinction now.
     const wikiRanking = cands
       .filter((c) => isWikiUrl(c.url) && c.score >= minScore)
-      .filter((c) => {
-        const toks = expandedToks(c.text)
-        if ([...toks].some((t) => STRONG_RANK_MARKERS.has(t))) return true
-        return c.score >= 3 && [...toks].some((t) => WEAK_RANK_MARKERS.has(t))
-      })
+      .filter((c) => hasComparativeSignal(c.text, c.score))
       .sort((a, b) => b.score - a.score || a.order - b.order)
       .slice(0, 3)
       .sort((a, b) => a.order - b.order)
@@ -963,7 +996,6 @@ export function buildAnswer(
   // quantity/date/recent answer's number or year IS the answer).
   // When nothing qualifies, execution falls through to the legacy
   // strict / A-01c / web passes unchanged — never blank by default.
-  const analysis = analyzeQuestion(question)
   if (analysis.answerKind !== 'any') {
     const topTitleToks = new Set(sources[0].title.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
     let aTopic = orderedTokens.filter((t) => topTitleToks.has(t))
@@ -999,8 +1031,17 @@ export function buildAnswer(
       return { lines, found: true }
     }
   }
+  // A-01e2: the strict pass is no longer a generic escape hatch.
+  // A comparative question's strict answer must itself state a
+  // comparison (the A-01e live regression: a «پیشرو» definition
+  // sentence won here after the ranking branch correctly refused
+  // it); a type-gated question's strict answer must be a sentence
+  // of its own kind — otherwise the chain falls through to A-01c /
+  // web / honest not-found instead of serving topical facts.
   const best = cands
     .filter((c) => c.score >= minScore)
+    .filter((c) => !isComparativeQ || hasComparativeSignal(c.text, c.score))
+    .filter((c) => !isTypeGated || sentenceMatchesQuestionType(c.text, analysis))
     .sort((a, b) => b.score - a.score || a.order - b.order)
     .slice(0, 3)
     .sort((a, b) => a.order - b.order)
@@ -1033,6 +1074,11 @@ export function buildAnswer(
     const fb = cands
       .filter((c) => c.url === top.url)
       .filter((c) => {
+        // A-01e2: the same gates as the strict pass — a comparative
+        // question needs a comparative sentence, a type-gated
+        // question a sentence of its own kind, even here.
+        if (isComparativeQ && !hasComparativeSignal(c.text, c.score)) return false
+        if (isTypeGated && !sentenceMatchesQuestionType(c.text, analysis)) return false
         const toks = new Set(c.text.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
         const hasTopic = topic.some((t) => toks.has(t))
         const hasOther = [...otherToks].some((t) => toks.has(t))
