@@ -193,6 +193,35 @@ describe('assistant web research (owner order 2026-11-03)', () => {
     const none = buildAnswer(src, 'قیمت دلار امروز چند است؟', 'fa')
     expect(none.found).toBe(false)
   })
+  it('buildAnswer NEVER answers a France question from a Korea article (live failure 2026-11-03)', () => {
+    const korea = [{
+      title: 'پایتخت کره', url: 'https://fa.wikipedia.org/wiki/KoreaCapitals',
+      extract: 'پایتخت کره به پیشینه تاریخی آن سرزمین بستگی دارد که در طول تاریخ تغییر کرده است. کره شبه جزیره ای در شرق آسیا است که از دو کشور کره شمالی و کره جنوبی تشکیل شده است.',
+    }]
+    expect(buildAnswer(korea, 'پایتخت فرانسه کجاست؟', 'fa').found).toBe(false)
+    const france = [{
+      title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France',
+      extract: 'فرانسه کشوری در اروپای غربی است و پایتخت آن شهر پاریس می باشد. این کشور از اعضای بنیانگذار اتحادیه اروپا به شمار می رود و نقش مهمی در تاریخ اروپا داشته است.',
+    }]
+    const ans = buildAnswer([...korea, ...france], 'پایتخت فرانسه کجاست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('فرانسه')
+    expect(ans.lines.join(' ')).not.toContain('کره')
+  })
+  it('assembleResearch balances sections — a huge lead cannot eat the whole document', () => {
+    const s = (tag: string) => `این جمله درباره ${tag} است و اطلاعات مهم و دقیقی درباره آن ارائه می کند و شرح می دهد.`
+    const extract = [
+      Array.from({ length: 40 }, (_, i) => s(`مقدمه ${i}`)).join(' '),
+      '== بخش الف ==',
+      Array.from({ length: 10 }, (_, i) => s(`الف ${i}`)).join(' '),
+      '== بخش ب ==',
+      Array.from({ length: 10 }, (_, i) => s(`ب ${i}`)).join(' '),
+    ].join('\n')
+    const out = assembleResearch([{ title: 'موضوع', url: 'https://fa.wikipedia.org/wiki/X', extract }], 'fa', { pages: 2 })
+    const headings = out.nodes.filter((n) => n.type === 'heading')
+    expect(headings.length).toBeGreaterThanOrEqual(2)
+    expect(JSON.stringify(out.nodes)).toContain('بخش الف')
+  })
   it('buildResearchDoc assembles title, lead, body — and ALWAYS the source line', () => {
     const extract = 'آلودگی هوا یک مشکل بزرگ است. دود کارخانه ها هوا را خراب می کند. مردم مریض می شوند. دولت ها باید قانون بگذارند. در شهرهای بزرگ ترافیک زیاد است. کودکان بیشتر آسیب می بینند. انرژی پاک یک راه حل است.'
     const nodes = buildResearchDoc({ title: 'آلودگی هوا', extract, url: 'https://fa.wikipedia.org/wiki/X' }, 'fa', 2)

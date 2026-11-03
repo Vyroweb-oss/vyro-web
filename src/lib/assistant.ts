@@ -426,8 +426,12 @@ export function assembleResearch(
   add(head(1, main.title))
 
   // Emit one section's best sentences as paragraphs, honouring the
-  // remaining room; returns how many sentences were used.
-  const emitSentences = (sentences: string[]) => {
+  // remaining room AND a per-section budget: the (often huge) lead
+  // must never swallow the whole document — a professional draft is
+  // balanced across the article's real sections (v2.4, from the live
+  // check where a long lead ate the full two pages and no section
+  // heading survived).
+  const emitSentences = (sentences: string[], budgetWords = Number.POSITIVE_INFINITY) => {
     let buf: string[] = []
     let bufWords = 0
     const flush = () => {
@@ -435,27 +439,34 @@ export function assembleResearch(
       add(para(buf.join(' ')))
       buf = []; bufWords = 0
     }
+    let sectionWords = 0
     for (const sentence of sentences) {
       const fp = fingerprint(sentence)
       if (seen.has(fp)) continue
       const w = countWords(sentence)
       if (words + bufWords + w > targetWords + 30 && buf.length > 0) break
+      if (sectionWords + w > budgetWords && sectionWords > 0) break
       seen.add(fp)
-      buf.push(sentence); bufWords += w
+      buf.push(sentence); bufWords += w; sectionWords += w
       if (bufWords >= WORDS_PER_PARAGRAPH) flush()
     }
     flush()
   }
 
+  const allSections = sources.map((src) => parseSections(src.extract))
+  const totalSections = allSections.reduce((acc, arr) => acc + arr.length, 0)
+  const leadBudget = totalSections <= 1 ? Number.POSITIVE_INFINITY : Math.max(120, Math.floor(targetWords * 0.3))
+  const sectionBudget = totalSections <= 1 ? Number.POSITIVE_INFINITY : Math.max(150, Math.floor(targetWords * 0.45))
+
   sources.forEach((src, si) => {
-    const sections = parseSections(src.extract)
+    const sections = allSections[si]
     sections.forEach((section, idx) => {
       if (words >= targetWords) return
       const sentences = splitSentences(section.text).filter(usableSentence)
       if (sentences.length === 0) return
       if (si === 0 && idx === 0) {
         // The lead: its first two sentences are the introduction;
-        // the rest flows on as unheaded body text.
+        // the rest flows on as unheaded body text, within budget.
         const lead = sentences.slice(0, 2)
         if (lead.length > 0) {
           lead.forEach((s) => seen.add(fingerprint(s)))
@@ -463,7 +474,7 @@ export function assembleResearch(
         }
         const rest = summarizeText(sentences.slice(2).join(' '), Math.max(6, Math.ceil((targetWords - words) / 16)))
           .filter(usableSentence)
-        emitSentences(rest)
+        emitSentences(rest, Math.max(0, leadBudget - (words - countWords(main.title))))
         return
       }
       const picked = summarizeText(sentences.join(' '), Math.max(6, Math.ceil((targetWords - words) / 16)))
@@ -472,9 +483,23 @@ export function assembleResearch(
       if (fresh.length === 0) return
       const heading = section.heading ?? (si > 0 ? src.title : null)
       if (heading) add(head(2, heading))
-      emitSentences(fresh)
+      emitSentences(fresh, sectionBudget)
     })
   })
+
+  // Top-up pass: the section budgets guarantee balance, not
+  // under-fill — when every section had its turn and room remains,
+  // fill the rest from the sections' leftover sentences, in order.
+  if (words < targetWords * 0.92) {
+    for (const sections of allSections) {
+      if (words >= targetWords) break
+      for (const section of sections) {
+        if (words >= targetWords) break
+        const leftover = splitSentences(section.text).filter(usableSentence)
+        emitSentences(leftover)
+      }
+    }
+  }
 
   if (sources.length === 1) {
     add(para(lang === 'fa' ? `منبع: ویکی‌پدیا — ${main.url}` : `Source: Wikipedia — ${main.url}`))
@@ -519,8 +544,14 @@ export function buildAnswer(
       }
     }
   }
+  // Strictness (v2.4, from the live France/Korea failure): when the
+  // question names two or more subject words, an answer sentence
+  // must match at least TWO of them — matching only a generic word
+  // like «پایتخت» in an article about another country is not an
+  // answer. Otherwise the honest result is "not found".
+  const minScore = qTokens.size >= 2 ? 2 : 1
   const best = cands
-    .filter((c) => c.score > 0)
+    .filter((c) => c.score >= minScore)
     .sort((a, b) => b.score - a.score || a.order - b.order)
     .slice(0, 3)
     .sort((a, b) => a.order - b.order)

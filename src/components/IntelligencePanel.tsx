@@ -214,7 +214,7 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/assistant-search`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: searchQueryFor(action.question), lang, pages: 1 }),
+        body: JSON.stringify({ query: searchQueryFor(action.question), lang, pages: 1, mode: 'answer' }),
       })
       if (!res.ok) { setMessage(t('assistantSearchFailed')); return }
       const data = (await res.json()) as { found?: boolean; sources?: ResearchData[] } & Partial<ResearchData>
