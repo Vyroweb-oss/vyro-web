@@ -12,11 +12,12 @@
 // Phase 2, P2-37, with two more, and in Phase 2, P2-38,
 // with two more, and in Phase 2, P2-39, with two more, and in
 // Phase 2, P2-40, with two more, and in
-// Phase 2, P2-41, with two more).
+// Phase 2, P2-41, with two more, and in
+// Phase 2, P2-42, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// forty-eight local, JSON-derivable rules — nothing is faked:
+// fifty local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -426,6 +427,39 @@
 //       imageIndex and the trimmed alt; independent of
 //       all other alt branches, so co-firing is
 //       legitimate).
+//   (49) links whose TRIMMED visible text CONTAINS a
+//       URL substring but is NOT exactly a URL
+//       (linkContainsUrl — per link RUN, as defined
+//       below; the same contains test as rule (47),
+//       reused via containsUrlText, so 'See
+//       https://example.com for details' and 'Visit
+//       www.example.com today' flag, while a run that
+//       IS exactly a URL does NOT flag here (it is
+//       already linkTextIsUrl, rule 12, when it
+//       matches its href), a bare domain without a
+//       scheme or www. does NOT flag, and a www.
+//       host without a TLD does NOT flag; empty runs
+//       are EXCLUDED, they are already linkEmptyText;
+//       the issue carries linkIndex, href, and the
+//       trimmed linkText; independent of all other
+//       link branches, so co-firing is legitimate).
+//   (50) non-empty headings whose TRIMMED text CONTAINS
+//       an email substring but is NOT exactly an
+//       email address (headingContainsEmail — the
+//       trimmed text matches the unanchored
+//       /[^\s@]+@[^\s@]+\.[^\s@]{2,}/ somewhere
+//       inside it, so 'Contact info@example.com'
+//       and 'تماس با info@example.com' flag, while
+//       a heading that IS exactly an email address
+//       does NOT flag here (it is already
+//       headingTextIsEmail, rule 35), and a bare
+//       domain without '@' does NOT flag; empty
+//       headings are EXCLUDED, they are already
+//       headingEmpty; headingText carries the
+//       original, unnormalised text, and the issue
+//       also carries level; independent of all
+//       other heading rules, so co-firing is
+//       legitimate).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -501,6 +535,8 @@ export type A11yIssueKind =
   | 'headingEndsWithPeriod'
   | 'headingContainsUrl'
   | 'imageAltContainsUrl'
+  | 'linkContainsUrl'
+  | 'headingContainsEmail'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -520,7 +556,7 @@ export interface A11yIssue {
   linkIndex?: number
   /** Link target, for link issues ('' when the link mark has no href). */
   href?: string
-  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort / linkTextIsFilename / linkTextAllCaps issues. */
+  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort / linkTextIsFilename / linkTextAllCaps / linkContainsUrl issues. */
   linkText?: string
   /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail / imageAltAllCaps / imageAltContainsUrl issues. */
   altText?: string
@@ -583,6 +619,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   headingEndsWithPeriod: 0,
   headingContainsUrl: 0,
   imageAltContainsUrl: 0,
+  linkContainsUrl: 0,
+  headingContainsEmail: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -637,6 +675,19 @@ function isUrlText(trimmed: string): boolean {
 
 function containsUrlText(trimmed: string): boolean {
   return /https?:\/\/\S+|www\.[^\s]+\.[^\s]{2,}/i.test(trimmed)
+}
+
+/**
+ * Email-substring test for rule (50) (P2-42): the input must
+ * already be trimmed. The unanchored version of the exact-email
+ * regex of rules (34)/(35)/(39) — /[^\s@]+@[^\s@]+\.[^\s@]{2,}/
+ * somewhere inside the text — so an email embedded in a longer
+ * sentence matches, while a bare domain without '@' does not.
+ * The exact-email exclusion lives in the rule (50) pass itself,
+ * which also checks the anchored regex before flagging.
+ */
+function containsEmailText(trimmed: string): boolean {
+  return /[^\s@]+@[^\s@]+\.[^\s@]{2,}/.test(trimmed)
 }
 
 function isPhoneNumberText(trimmed: string): boolean {
@@ -855,6 +906,25 @@ export function analyzeDoc(docJson: any): A11yResult {
     const trimmedHeading = h.text.trim()
     if (!isUrlText(trimmedHeading) && containsUrlText(trimmedHeading)) {
       push({ kind: 'headingContainsUrl', headingIndex: i + 1, headingText: h.text, level: h.level })
+    }
+  })
+  // Headings containing an email address (P2-42, rule 50): a
+  // NON-empty heading whose TRIMMED text CONTAINS an email
+  // substring but is NOT exactly an email address, so
+  // 'Contact info@example.com' and 'تماس با
+  // info@example.com' flag, while a heading that IS exactly
+  // an email address does NOT flag here (it is already
+  // headingTextIsEmail, rule 35), and a bare domain
+  // without '@' does NOT flag. Empty headings are
+  // excluded (already headingEmpty). headingText carries
+  // the original, unnormalised text. Independent of the
+  // other heading rules — no branch suppresses another,
+  // so co-firing is legitimate.
+  headings.forEach((h, i) => {
+    if (h.empty) return
+    const trimmedHeading = h.text.trim()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmedHeading) && containsEmailText(trimmedHeading)) {
+      push({ kind: 'headingContainsEmail', headingIndex: i + 1, headingText: h.text, level: h.level })
     }
   })
   // Duplicate heading text (P2-21): only later occurrences are flagged,
@@ -1408,6 +1478,25 @@ export function analyzeDoc(docJson: any): A11yResult {
             && trimmed === trimmed.toUpperCase()
             && trimmed !== trimmed.toLowerCase()) {
             push({ kind: 'linkTextAllCaps', linkIndex, href: runHref, linkText: trimmed })
+          }
+          // Links whose visible text contains a URL (P2-42,
+          // rule 49): the trimmed run text CONTAINS a URL
+          // substring but is NOT exactly a URL, reusing
+          // containsUrlText / isUrlText, so 'See
+          // https://example.com for details' and 'Visit
+          // www.example.com today' flag, while a run that
+          // IS exactly a URL does NOT flag here (it is
+          // already linkTextIsUrl, rule 12, when it
+          // matches its href), a bare domain without a
+          // scheme or www. does NOT flag, and a www.
+          // host without a TLD does NOT flag. Empty
+          // runs are excluded by the branch above
+          // (already linkEmptyText). Independent of
+          // all other link branches — no branch
+          // suppresses another, so co-firing is
+          // legitimate.
+          if (!isUrlText(trimmed) && containsUrlText(trimmed)) {
+            push({ kind: 'linkContainsUrl', linkIndex, href: runHref, linkText: trimmed })
           }
         }
         runHref = null
