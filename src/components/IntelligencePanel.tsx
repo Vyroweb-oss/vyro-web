@@ -5,9 +5,10 @@ import { usePanelFocusReturn } from './useDialogFocus'
 import { truncatePreview } from '../lib/intelligence'
 import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
-  buildTemplate, type AssistantAction,
+  buildTemplate, buildResearchDoc, type AssistantAction, type ResearchData,
 } from '../lib/assistant'
 import { computeDocumentStats } from '../lib/stats'
+import { supabase } from '../lib/supabase'
 
 // Vyro Assistant panel (دستیار وایرو) — owner order 2026-11-03,
 // replacing the Mission-2 architecture-only shell. The assistant is
@@ -24,6 +25,7 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
   const t = (k: I18nKey) => tr(lang, k)
   usePanelFocusReturn()
   const [command, setCommand] = useState('')
+  const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [result, setResult] = useState<{ title: string; lines: string[]; asList: boolean } | null>(null)
 
@@ -138,12 +140,45 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
       case 'unknown':
         setResult(null)
         return setMessage(t('assistantUnknown'))
+      case 'research':
+        return // handled by doResearch (async)
+    }
+  }
+
+  // Web research (owner order 2026-11-03): our own Supabase function
+  // searches Wikipedia; the draft is assembled locally from the
+  // article's own sentences, source credited at the end of the draft.
+  const doResearch = async (action: Extract<AssistantAction, { kind: 'research' }>) => {
+    if (!supabase) { setMessage(t('assistantSearchOffline')); return }
+    setBusy(true)
+    setResult(null)
+    setMessage(t('assistantSearching'))
+    try {
+      const { data: sess } = await supabase.auth.getSession()
+      const token = sess.session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/assistant-search`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: action.topic, lang }),
+      })
+      if (!res.ok) { setMessage(t('assistantSearchFailed')); return }
+      const data = (await res.json()) as { found?: boolean } & Partial<ResearchData>
+      if (!data.found || !data.title || !data.extract || !data.url) { setMessage(t('assistantSearchNotFound')); return }
+      const nodes = buildResearchDoc({ title: data.title, extract: data.extract, url: data.url }, lang, action.paragraphs)
+      editor.chain().focus().insertContent(nodes as object[]).run()
+      setMessage(t('assistantResearchDone'))
+    } catch {
+      setMessage(t('assistantSearchFailed'))
+    } finally {
+      setBusy(false)
     }
   }
 
   const runCommand = (raw: string) => {
-    if (!raw.trim()) return
-    execute(parseAssistantCommand(raw))
+    if (!raw.trim() || busy) return
+    const action = parseAssistantCommand(raw)
+    if (action.kind === 'research') void doResearch(action)
+    else execute(action)
     setCommand('')
   }
 
@@ -193,11 +228,11 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
       </div>
       <form className="assistant-form" onSubmit={(e) => { e.preventDefault(); runCommand(command) }}>
         <input
-          className="assistant-input" dir="auto" value={command}
+          className="assistant-input" dir="auto" value={command} disabled={busy}
           placeholder={t('assistantPlaceholder')} aria-label={t('assistantPlaceholder')}
           onChange={(e) => setCommand(e.target.value)}
         />
-        <button type="submit" className="rbtn small">{t('assistantRun')}</button>
+        <button type="submit" className="rbtn small" disabled={busy}>{t('assistantRun')}</button>
       </form>
       <div className="find-row">
         <span className="find-preview-label">{t('assistantExamples')}</span>

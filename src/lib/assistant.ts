@@ -21,6 +21,7 @@ export type AssistantAction =
   | { kind: 'insert-template'; template: AssistantTemplateKind; topic?: string }
   | { kind: 'insert-page-break' }
   | { kind: 'insert-date' }
+  | { kind: 'research'; topic: string; paragraphs: number }
   | { kind: 'selection-heading'; level: 1 | 2 | 3 }
   | { kind: 'selection-bold' }
   | { kind: 'selection-cleanup' }
@@ -48,6 +49,22 @@ export function normalizeCommand(raw: string): string {
     .replace(/[‌]/g, ' ')
     .toLowerCase()
     .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const RESEARCH_STOP = new Set([
+  'در', 'از', 'اینترنت', 'وب', 'آنلاین', 'جستجو', 'سرچ', 'تحقیق', 'بگرد', 'بنویس', 'بساز',
+  'درباره', 'باره', 'مقاله', 'انشا', 'متن', 'یک', 'و', 'را', 'کن', 'پاراگراف', 'سایت',
+  'essay', 'write', 'search', 'research', 'internet', 'web', 'online', 'the', 'for',
+  'about', 'make', 'an', 'a', 'article', 'text', 'find', 'paragraph', 'paragraphs', 'and',
+])
+
+/** The topic left after the command words are removed. */
+export function extractResearchTopic(normalized: string): string {
+  return normalized
+    .split(' ')
+    .filter((w) => w && !RESEARCH_STOP.has(w) && !/^\d+$/.test(w))
+    .join(' ')
     .trim()
 }
 
@@ -91,6 +108,21 @@ export function parseAssistantCommand(raw: string): AssistantAction {
   if (has('نکات کلیدی', 'نکات مهم', 'نکته های مهم', 'key point')) return { kind: 'document-keypoints' }
   if (has('چند کلمه', 'چند حرف', 'آمار', 'word count', 'statistics', 'چند پاراگراف')) {
     return { kind: 'document-stats' }
+  }
+
+  // Web research (owner order 2026-11-03): the user explicitly asks
+  // the assistant to search/research the internet and write from it.
+  // The panel calls our own Supabase function; the draft is assembled
+  // from the source's own sentences WITH the source credited.
+  const tokens = s.split(' ')
+  if (tokens.includes('اینترنت') || tokens.includes('وب') || tokens.includes('search') ||
+      has('internet', 'online', 'آنلاین') ||
+      /(تحقیق کن|سرچ کن|جستجو کن|search for|research)/.test(s)) {
+    const topic = extractResearchTopic(s)
+    if (topic.length >= 2) {
+      const pNum = s.match(/(\d+)\s*(پاراگراف|paragraph)/)
+      return { kind: 'research', topic, paragraphs: clamp(pNum ? parseInt(pNum[1], 10) : 3, 1, 6) }
+    }
   }
 
   // Table: «جدول ۳×۴ بساز» / «یک جدول بساز» / "table 4x5"
@@ -225,6 +257,36 @@ const bullet = (items: string[]): JsonNode => ({
   type: 'bulletList',
   content: items.map((i) => ({ type: 'listItem', content: [para(i)] })),
 })
+
+export interface ResearchData {
+  title: string
+  extract: string
+  url: string
+}
+
+/** Assemble a research draft from a fetched article (owner order
+ *  2026-11-03): title, the article's lead as the introduction, its
+ *  strongest sentences (its OWN words, original order) grouped into
+ *  body paragraphs — and ALWAYS a closing source line crediting where
+ *  the text came from. The source line is part of the honesty
+ *  contract: it is built here, in the engine, and cannot be dropped
+ *  by the UI. */
+export function buildResearchDoc(data: ResearchData, lang: 'fa' | 'en', paragraphCount = 3): JsonNode[] {
+  const sentences = splitSentences(data.extract)
+  const lead = sentences.slice(0, 2)
+  const rest = sentences.slice(2).join(' ')
+  const picked = rest ? summarizeText(rest, Math.max(3, paragraphCount * 3)) : []
+  const nodes: JsonNode[] = [head(1, data.title)]
+  if (lead.length > 0) nodes.push(para(lead.join(' ')))
+  if (picked.length > 0) {
+    const perPara = Math.max(1, Math.ceil(picked.length / paragraphCount))
+    for (let i = 0; i < picked.length; i += perPara) {
+      nodes.push(para(picked.slice(i, i + perPara).join(' ')))
+    }
+  }
+  nodes.push(para(lang === 'fa' ? `منبع: ویکی‌پدیا — ${data.url}` : `Source: Wikipedia — ${data.url}`))
+  return nodes
+}
 
 /** Ready-made document structures in the app's own document format.
  *  Placeholder lines are the user's to fill — the assistant builds the

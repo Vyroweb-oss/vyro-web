@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
-  buildTemplate, normalizeDigits, splitSentences,
+  buildTemplate, buildResearchDoc, normalizeDigits, splitSentences,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -68,6 +68,32 @@ describe('assistant command parsing — selection & document ops', () => {
   it('returns unknown for things it cannot do — honestly, no fake action', () => {
     expect(parseAssistantCommand('آب و هوا امروز چطور است').kind).toBe('unknown')
     expect(parseAssistantCommand('').kind).toBe('unknown')
+  })
+})
+
+describe('assistant web research (owner order 2026-11-03)', () => {
+  it('parses a Persian research command and extracts the topic', () => {
+    const a = parseAssistantCommand('درباره آلودگی هوا در اینترنت بگرد و بنویس')
+    expect(a.kind).toBe('research')
+    if (a.kind === 'research') { expect(a.topic).toBe('آلودگی هوا'); expect(a.paragraphs).toBe(3) }
+  })
+  it('parses an English research command and a paragraph count', () => {
+    const a = parseAssistantCommand('search the web for climate change and write 5 paragraphs')
+    expect(a.kind).toBe('research')
+    if (a.kind === 'research') { expect(a.topic).toBe('climate change'); expect(a.paragraphs).toBe(5) }
+  })
+  it('a plain essay request without the web stays a local template', () => {
+    expect(parseAssistantCommand('مقاله درباره آلودگی هوا بنویس').kind).toBe('insert-template')
+  })
+  it('buildResearchDoc assembles title, lead, body — and ALWAYS the source line', () => {
+    const extract = 'آلودگی هوا یک مشکل بزرگ است. دود کارخانه ها هوا را خراب می کند. مردم مریض می شوند. دولت ها باید قانون بگذارند. در شهرهای بزرگ ترافیک زیاد است. کودکان بیشتر آسیب می بینند. انرژی پاک یک راه حل است.'
+    const nodes = buildResearchDoc({ title: 'آلودگی هوا', extract, url: 'https://fa.wikipedia.org/wiki/X' }, 'fa', 2)
+    const all = JSON.stringify(nodes)
+    expect(nodes[0].type).toBe('heading')
+    expect(all).toContain('منبع: ویکی‌پدیا')
+    expect(all).toContain('https://fa.wikipedia.org/wiki/X')
+    // every body sentence comes from the source extract — nothing invented
+    expect(all).toContain('آلودگی هوا یک مشکل بزرگ است')
   })
 })
 
