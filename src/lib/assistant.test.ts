@@ -54,6 +54,18 @@ describe('assistant command parsing — create/build', () => {
   it('parses a literal write command verbatim', () => {
     expect(parseAssistantCommand('بنویس: سلام دنیا')).toEqual({ kind: 'insert-text', text: 'سلام دنیا' })
   })
+  it('routes free-form questions WITHOUT «؟» to answer (A-01e5: the ASCII-\\b hole)', () => {
+    expect(parseAssistantCommand('کدام هوش مصنوعی در کدنویسی قوی‌تر است').kind).toBe('answer')
+    expect(parseAssistantCommand('هوش مصنوعی قوی‌تر در کدنویسی کدام است').kind).toBe('answer')
+    expect(parseAssistantCommand('پایتخت فرانسه چیست').kind).toBe('answer')
+    expect(parseAssistantCommand('نویسنده شاهنامه کیست').kind).toBe('answer')
+    expect(parseAssistantCommand('What is the capital of France').kind).toBe('answer')
+    expect(parseAssistantCommand('آب و هوا امروز چطور است').kind).toBe('answer')
+    // Known commands are matched earlier and still win.
+    expect(parseAssistantCommand('یک جدول ۳×۴ بساز').kind).toBe('insert-table')
+    // A plain statement with no question word or mark stays unknown.
+    expect(parseAssistantCommand('رنگ مورد علاقه من آبی است').kind).toBe('unknown')
+  })
 })
 
 describe('assistant command parsing — selection & document ops', () => {
@@ -70,7 +82,11 @@ describe('assistant command parsing — selection & document ops', () => {
     expect(parseAssistantCommand('کمک')).toEqual({ kind: 'help' })
   })
   it('returns unknown for things it cannot do — honestly, no fake action', () => {
-    expect(parseAssistantCommand('آب و هوا امروز چطور است').kind).toBe('unknown')
+    // A-01e5: «آب و هوا امروز چطور است» used to sit here as 'unknown',
+    // but that only documented the ASCII-\b hole — under the owner's
+    // any-question order it is a question and routes to 'answer'
+    // (pinned in the A-01e5 test above). A bare statement stays unknown.
+    expect(parseAssistantCommand('رنگ مورد علاقه من آبی است').kind).toBe('unknown')
     expect(parseAssistantCommand('').kind).toBe('unknown')
   })
 })

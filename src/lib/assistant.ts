@@ -489,8 +489,19 @@ export function parseAssistantCommand(raw: string): AssistantAction {
   // ANY free-form question (owner order 2026-11-03: «هر نوع سوالی را
   // جواب بدهد» — not just preset commands): the assistant searches
   // the web itself and answers from sources, in seconds.
-  const QUESTION_START = /^(چیست|چه|چرا|چگونه|چطور|کی|کجا|کجاست|کدام|چند|آیا|what|why|how|when|where|who|which|is|are|can|does|do)\b/
-  if (/[؟?]$/.test(s) || QUESTION_START.test(s)) {
+  // A-01e5 (owner's live failure 2026-11-04: his exact question typed
+  // WITHOUT «؟» fell through to 'unknown' and the assistant replied
+  // «این فرمان را نمی‌دانم»): two holes are fixed generally, by
+  // question TYPE not by this one string — (1) JS \b is ASCII-only,
+  // so the old start-anchored test could NEVER match a Persian
+  // question word (proven: the same regex matches 'what' but not
+  // «کدام»); question words are now matched as whole space-separated
+  // tokens ANYWHERE in the input, Persian via lookahead boundaries;
+  // (2) a ؟ anywhere (not only at the end) marks a question. Known
+  // commands are all matched ABOVE this block, so nothing here can
+  // hijack a command — it only rescues questions that used to die.
+  const QUESTION_WORD = /(?:^|\s)(?:چیست|کیست|چه|چرا|چگونه|چطور|کی|کجا|کجاست|کدام|چند|چقدر|آیا)(?=\s|$)|(?:^|\s)(?:what|why|how|when|where|who|which|is|are|can|does|do)(?=\s|$)/
+  if (/[؟?]/.test(s) || QUESTION_WORD.test(s)) {
     return { kind: 'answer', question: input }
   }
 
