@@ -635,3 +635,39 @@ describe('A-01e2 fix the A-01e live gaps (general method only — no per-questio
     expect(ans.lines.join(' ')).toContain('میلیون')
   })
 })
+
+describe('A-01e2 live-check fixes (diagnosed by replaying the 2026-11-03 live check against the new code)', () => {
+  const QUESTION = 'کدام هوش مصنوعی در کدنویسی قوی‌تر است؟'
+  it('H1: a weak-marker definition scores only CONTENT tokens — هوش+مصنوعی+در is 2, not 3, so the live پیشرو definition is rejected', () => {
+    const wiki = [{
+      title: 'هوش مصنوعی', url: 'https://fa.wikipedia.org/wiki/AI',
+      extract: 'کتاب‌های هوش مصنوعی پیشرو، این شاخه را به عنوان شاخه مطالعه بر روی عوامل هوشمند تعریف می‌کنند: هر سامانه‌ای که محیط خود را درک کرده و کنش‌هایی را انجام می‌دهد که شانسش را در دستیابی به اهدافش بیشینه می‌سازد.',
+    }]
+    expect(buildAnswer(wiki, QUESTION, 'fa').found).toBe(false)
+  })
+  it('H2: «در ردیف ششم قرار دارد» is NOT place-bearing, and the live Saturn sentence is honestly not-found', () => {
+    const place = analyzeQuestion('پایتخت سیاره زحل کجاست؟')
+    expect(sentenceMatchesQuestionType('زحل دومین سیاره بیرونی و دومین سیاره بزرگ سامانه خورشیدی است که در ردیف ششم سیاره‌های این سامانه قرار دارد.', place)).toBe(false)
+    const src = [
+      { title: 'زحل', url: 'https://fa.wikipedia.org/wiki/Saturn', extract: 'زحل ششمین سیاره منظومه شمسی است و حلقه های زیبایی دارد.' },
+      { title: 'سیاره‌های بیرونی', url: 'https://fa.wikipedia.org/wiki/OuterPlanets', extract: 'زحل دومین سیاره بیرونی و دومین سیاره بزرگ سامانه خورشیدی است که در ردیف ششم سیاره‌های این سامانه قرار دارد.' },
+    ]
+    expect(buildAnswer(src, 'پایتخت سیاره زحل کجاست؟', 'fa').found).toBe(false)
+  })
+  it('H3: the real Masnavi lead («کتاب شعری از مولانا…») names the author explicitly via the از-pattern', () => {
+    const person = analyzeQuestion('نویسنده مثنوی معنوی کیست؟')
+    expect(sentenceMatchesQuestionType('مثنوی، مشهور به مثنوی معنوی، نام کتاب شعری از مولانا جلال‌الدین محمد بلخی شاعر و عارف ایرانی است.', person)).toBe(true)
+    const src = [{
+      title: 'مثنوی معنوی', url: 'https://fa.wikipedia.org/wiki/Masnavi',
+      extract: 'مثنوی، مشهور به مثنوی معنوی (یا مثنوی مولوی)، نام کتاب شعری از مولانا جلال‌الدین محمد بلخی شاعر و عارف ایرانی است. این کتاب حدودا از ۲۶ هزار بیت و ۶ دفتر تشکیل شده است.',
+    }]
+    const ans = buildAnswer(src, 'نویسنده مثنوی معنوی کیست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('مولانا')
+    expect(ans.lines[0]).toContain('بلخی')
+  })
+  it('H3 guard: bare «از X» with no role/copula confirmation is still not name-bearing', () => {
+    const person = analyzeQuestion('نویسنده شاهنامه کیست؟')
+    expect(sentenceMatchesQuestionType('این کتاب از تهران به دست ما رسیده است.', person)).toBe(false)
+  })
+})

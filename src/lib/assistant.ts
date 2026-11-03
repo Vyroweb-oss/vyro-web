@@ -247,7 +247,7 @@ export function sentenceMatchesQuestionType(sentence: string, analysis: Question
     case 'name': {
       // A-01e2 (author-relation evidence, general): a name-bearing
       // sentence must show the author relation, not merely mention
-      // a person near the work. Two general shapes count: (a) an
+      // a person near the work. Three general shapes count: (a) an
       // author cue (اثر/مولف/سراینده/نویسنده/نوشته/سروده) directly
       // followed by a non-subject, non-stopword token — «شاهنامه
       // اثر فردوسی است», and NOT «نویسنده آن» (آن is a stopword);
@@ -255,10 +255,16 @@ export function sentenceMatchesQuestionType(sentence: string, analysis: Question
       // copula — «نویسنده مثنوی معنوی، مولانا است». (b) must NOT
       // accept the first content word after the cue («نویسنده آن
       // داستان‌های…» would falsely pass): only a token followed by
-      // است/بود/می‌باشد/باشد counts. Loose mentions with no author
-      // cue at all («مولانا، شاعر پارسی‌گوی…») do NOT pass.
+      // است/بود/می‌باشد/باشد counts. (c) LIVE FIX (Masnavi lead:
+      // «نام کتاب شعری از مولانا جلال‌الدین محمد بلخی شاعر…»):
+      // «از» + a name confirmed within a few words by a person-role
+      // word (شاعر/عارف/…) or a copula. (c) deliberately has NO
+      // adjacent rule — bare «از X» («از تهران») is not evidence.
+      // Loose mentions with no author cue at all («مولانا، شاعر
+      // پارسی‌گوی…») do NOT pass.
       const NAME_STOP = new Set(['آن', 'این', 'او', 'را', 'است', 'بود', 'که', 'و', 'در', 'به', 'از', 'یک', 'هم', 'نیز', 'با', 'برای', 'تا', 'خود', 'وی'])
       const COPULA = new Set(['است', 'بود', 'می‌باشد', 'باشد'])
+      const ROLE_WORDS = new Set(['شاعر', 'عارف', 'نویسنده', 'مولف', 'سراینده', 'فیلسوف', 'دانشمند', 'ادیب', 'مورخ', 'پزشک'])
       const words = norm.replace(/\u200C/g, ' ').split(/[^\p{L}\p{N}]+/u).filter(Boolean)
       const CUES = ['اثر', 'مولف', 'سراینده', 'نویسنده', 'نوشته', 'سروده']
       for (let i = 0; i < words.length; i++) {
@@ -269,13 +275,34 @@ export function sentenceMatchesQuestionType(sentence: string, analysis: Question
           if (COPULA.has(words[j + 1])) return true
         }
       }
+      // (c) refined: a bare copula far away («از تهران … است»)
+      // must NOT confirm — the name run after از must reach a role
+      // word, or end in a copula with NO function word in between
+      // («از مولانا جلال‌الدین محمد بلخی است» counts; «از تهران به
+      // دست ما رسیده است» does not, because به breaks the run).
+      const SCAN_FUNCTION = new Set(['به', 'در', 'از', 'با', 'برای', 'که', 'را', 'و', 'این', 'آن', 'تا', 'هم', 'نیز', 'بر', 'بی', 'چون', 'اگر', 'اما', 'یا'])
+      for (let i = 0; i < words.length; i++) {
+        if (words[i] !== 'از') continue
+        const nxt = words[i + 1]
+        if (!nxt || analysis.subjectTokens.includes(nxt) || NAME_STOP.has(nxt)) continue
+        if (COPULA.has(words[i + 2])) return true
+        for (let j = i + 2; j < Math.min(words.length, i + 7); j++) {
+          if (SCAN_FUNCTION.has(words[j])) break
+          if (ROLE_WORDS.has(words[j])) return true
+          if (COPULA.has(words[j])) return true
+        }
+      }
       if (/written by|authored by/.test(norm)) return true
       if (/\bwrote\b/.test(norm) && /\b[A-Z][a-z]+ [A-Z][a-z]+\b/.test(sentence)) return true
       return /\b[A-Z][a-z]+ [A-Z][a-z]+\b/.test(sentence) &&
         /written|author|wrote/.test(norm)
     }
     case 'place':
-      return ['پایتخت', 'capital', 'شهر', 'city', 'located', 'واقع', 'قرار', 'situated'].some((t) => toks.has(t))
+      // A-01e2 LIVE FIX: 'قرار' was REMOVED — «در ردیف ششم قرار
+      // دارد» (is positioned/ranked sixth) is not a place statement,
+      // and it let a Saturn sentence pass as a place answer. 'واقع'
+      // (is located) still covers real place sentences.
+      return ['پایتخت', 'capital', 'شهر', 'city', 'located', 'واقع', 'situated'].some((t) => toks.has(t))
     case 'date':
       return YEAR_RE.test(norm)
     case 'quantity': {
@@ -897,10 +924,22 @@ export function buildAnswer(
     'پیشرو', 'جدیدترین', 'آخرین',
     'leading', 'newest', 'latest',
   ])
-  const hasComparativeSignal = (text: string, score: number): boolean => {
+  // A-01e2 LIVE FIX: the weak-marker ≥3 rule counted FUNCTION words
+  // as subject matches — the live «کتاب‌های هوش مصنوعی پیشرو…»
+  // definition scored 3 via هوش + مصنوعی + در, so a definition won
+  // as a "ranking" sentence. Weak markers now need ≥3 CONTENT-token
+  // matches (prepositions and function words excluded); strong
+  // markers are unchanged.
+  const FUNCTION_WORDS = new Set([
+    'در', 'از', 'به', 'با', 'برای', 'که', 'و', 'را', 'این', 'آن', 'تا', 'هم', 'نیز',
+    'بر', 'بی', 'چون', 'اگر', 'اما', 'یا', 'نه', 'of', 'in', 'on', 'to', 'and', 'the',
+  ])
+  const hasComparativeSignal = (text: string): boolean => {
     const toks = expandedToks(text)
     if ([...toks].some((t) => STRONG_RANK_MARKERS.has(t))) return true
-    return score >= 3 && [...toks].some((t) => WEAK_RANK_MARKERS.has(t))
+    if (![...toks].some((t) => WEAK_RANK_MARKERS.has(t))) return false
+    const contentMatches = [...qTokens].filter((t) => !FUNCTION_WORDS.has(t) && toks.has(t)).length
+    return contentMatches >= 3
   }
   /** A-01d WHOLE-WEB fallback, as a reusable pass: ONLY
    *  non-Wikipedia sources, in order — a Wikipedia secondary source
@@ -969,7 +1008,7 @@ export function buildAnswer(
     // above owns the strong/weak distinction now.
     const wikiRanking = cands
       .filter((c) => isWikiUrl(c.url) && c.score >= minScore)
-      .filter((c) => hasComparativeSignal(c.text, c.score))
+      .filter((c) => hasComparativeSignal(c.text))
       .sort((a, b) => b.score - a.score || a.order - b.order)
       .slice(0, 3)
       .sort((a, b) => a.order - b.order)
@@ -1040,7 +1079,7 @@ export function buildAnswer(
   // web / honest not-found instead of serving topical facts.
   const best = cands
     .filter((c) => c.score >= minScore)
-    .filter((c) => !isComparativeQ || hasComparativeSignal(c.text, c.score))
+    .filter((c) => !isComparativeQ || hasComparativeSignal(c.text))
     .filter((c) => !isTypeGated || sentenceMatchesQuestionType(c.text, analysis))
     .sort((a, b) => b.score - a.score || a.order - b.order)
     .slice(0, 3)
@@ -1077,7 +1116,7 @@ export function buildAnswer(
         // A-01e2: the same gates as the strict pass — a comparative
         // question needs a comparative sentence, a type-gated
         // question a sentence of its own kind, even here.
-        if (isComparativeQ && !hasComparativeSignal(c.text, c.score)) return false
+        if (isComparativeQ && !hasComparativeSignal(c.text)) return false
         if (isTypeGated && !sentenceMatchesQuestionType(c.text, analysis)) return false
         const toks = new Set(c.text.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
         const hasTopic = topic.some((t) => toks.has(t))
