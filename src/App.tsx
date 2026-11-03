@@ -19,6 +19,8 @@ import { saveUiLang, tr, uiDir, type UiLang, type I18nKey } from './lib/i18n'
 import SettingsPanel from './components/SettingsPanel'
 import { useCloudSync } from './components/useCloudSync'
 import AuthScreen from './components/AuthScreen'
+import ProfilePage from './components/ProfilePage'
+import Avatar from './components/Avatar'
 import type { AuthClientLike } from './lib/authFlow'
 import ConflictResolveModal from './components/ConflictResolveModal'
 import CloudLibraryModal from './components/CloudLibraryModal'
@@ -87,6 +89,7 @@ export default function App(){
   const [user,setUser]=useState<any>(null); const [authMsg,setAuthMsg]=useState(''); const [authClient,setAuthClient]=useState<AuthClientLike|null>(null); const [username,setUsername]=useState<string|null>(null)
   const [showPremium,setShowPremium]=useState(false)
   const [authPageOpen,setAuthPageOpen]=useState(false)
+  const [profileOpen,setProfileOpen]=useState(false)
   const [showCloudLib,setShowCloudLib]=useState(false)
   const [conflictId,setConflictId]=useState<string|null>(null)
   const [saveError,setSaveError]=useState(false)
@@ -147,6 +150,7 @@ export default function App(){
   useEffect(()=>{ document.documentElement.dataset.theme=theme; try{ localStorage.setItem('vyro-web-theme',theme) }catch{ /* best-effort */ } },[theme])
   useEffect(()=>{ saveUiLang(localStorage, lang); document.documentElement.lang = lang==='fa' ? 'fa' : 'en' },[lang])
   useEffect(()=>{ if(user) setAuthPageOpen(false) },[user])
+  useEffect(()=>{ if(!user) setProfileOpen(false) },[user])
   useEffect(()=>{ saveSettings(localStorage, settings) },[settings])
   // Follow-system theme: live-update when the OS preference changes.
   useEffect(()=>{ if(typeof window.matchMedia!=='function') return; const mq=window.matchMedia('(prefers-color-scheme: dark)'); const h=(e:MediaQueryListEvent)=>setSystemDark(e.matches); setSystemDark(mq.matches); mq.addEventListener('change', h); return ()=>mq.removeEventListener('change', h) },[])
@@ -217,6 +221,7 @@ export default function App(){
   const conflictModal=conflictDoc? <ConflictResolveModal doc={conflictDoc} lang={lang} onClose={()=>setConflictId(null)} onResolve={(choice: ConflictChoice)=>cloud.resolveConflict(conflictDoc.id, choice)}/> : null
   if(openDoc) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} syncStatusText={openSyncText} onSyncStatusClick={openDoc.cloudConflict? ()=>setConflictId(openDoc.id):undefined} onBack={()=>setOpenId(null)} theme={theme} onToggleTheme={toggleTheme} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions} writingWidth={settings.writingWidth} toolbarMode={settings.toolbar} autosaveEnabled={settings.autosaveEnabled} autosaveIntervalMs={settings.autosaveIntervalMs} freshDefaults={freshDefaults?.id===openDoc.id? freshDefaults : undefined} settings={settings} onSettingsChange={(patch)=>setSettings(s=>({...s, ...patch}))} onSettingsReset={()=>setSettings(defaultSettings())} isLocal={!isSupabaseConfigured} onCreateMergedDocs={createMergedDocs} docsList={docs.filter(d=>!d.deletedAt).map(d=>({id:d.id,title:d.title,updatedAt:d.updatedAt}))} onOpenDoc={(id)=>setOpenId(id)} onNewDoc={()=>createFromTemplate('blank')} onMakeCopy={(id)=>{ const next=duplicateDoc(docs,id); if(next!==docs){ setDocs(next); setOpenId(next[0].id) } }} accountLabel={user?.email||undefined}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{conflictModal}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
   if(authPageOpen && isSupabaseConfigured && !user) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><AuthScreen lang={settings.uiLang} auth={authClient} onSignedIn={refreshUser} onClose={()=>setAuthPageOpen(false)}/></div>
+  if(profileOpen && user) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><ProfilePage lang={settings.uiLang} name={(user.user_metadata?.display_name)||''} email={user.email||''} username={username} memberSince={user.created_at||null} photoUrl={user.user_metadata?.avatar_url} docs={liveDocs} onClose={()=>setProfileOpen(false)} onOpenDoc={(id)=>{ setProfileOpen(false); setOpenId(id) }} onNewDoc={()=>{ setProfileOpen(false); createFromTemplate('blank') }} onSignOut={()=>{ setProfileOpen(false); void authAction('out') }}/></div>
   return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}>
     <header className="appbar"><div className="appbar-inner">
       <div className="logo big"><span className="vmark">V</span><span>Vyro Web</span></div>
@@ -234,6 +239,7 @@ export default function App(){
         <button className="rbtn" onClick={()=>setSettingsOpen(true)} aria-label={t('settings')} title={t('settings')}>⚙</button>
         <button className="rbtn" onClick={toggleTheme} aria-label={theme==='dark'? t('lightUi'):t('darkUi')}>{theme==='dark'?'☀':'☾'}</button>
         <button className="chip-btn" onClick={()=>setShowPremium(true)}>{isPremium? `★ ${t('premiumActive')}` : user? t('free') : t('localFree')}</button>
+        {user && isSupabaseConfigured && <button className="avatar-btn" onClick={()=>setProfileOpen(true)} aria-label={t('openProfile')} title={t('profile')}><Avatar size={34} photoUrl={user.user_metadata?.avatar_url}/></button>}
       </div>
     </div></header>
     {saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}

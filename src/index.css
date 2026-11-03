@@ -854,3 +854,52 @@ input:focus,select:focus{border-color:var(--brand)}
   .auth-card{padding:26px 20px 20px}
   .auth-features{gap:24px}
 }
+
+/* Avatar + profile page (2026-11-03, owner order): the avatar face sits
+   at the end of the top bar (Supabase-style); clicking it opens the
+   personal profile — identity, document count, total words, and every
+   document with its own word count. Uses the app theme tokens, so it
+   follows light/dark like the rest of the dashboard. */
+.avatar-btn{padding:0;border:none;background:none;cursor:pointer;border-radius:50%;line-height:0;flex:none;transition:box-shadow .15s}
+.avatar-btn:hover{box-shadow:0 0 0 3px rgba(108,76,241,.35)}
+.avatar-graphic{display:block;border-radius:50%}
+img.avatar-graphic{object-fit:cover}
+.profile-page{min-height:100vh;min-height:100dvh;background:var(--bg);color:var(--text);padding:24px 18px 48px;box-sizing:border-box}
+.profile-wrap{max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.profile-back{align-self:flex-start}
+.profile-head{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:26px;display:flex;gap:20px;align-items:center;flex-wrap:wrap;box-shadow:0 10px 30px rgba(20,16,60,.07);overflow:hidden}
+.profile-head::before{content:'';position:absolute;top:0;left:0;right:0;height:5px;background:linear-gradient(90deg,#7a5cff,#38bdf8)}
+.profile-head h1{margin:0;font-size:26px;line-height:1.3}
+.profile-head-main{min-width:0}
+.profile-email{margin:3px 0 0;opacity:.75;font-size:14.5px}
+.profile-chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.profile-chip{background:var(--surface-2);border:1px solid var(--border);border-radius:99px;padding:3px 11px;font-size:12.5px;white-space:nowrap}
+.profile-signout{margin-inline-start:auto}
+.profile-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.profile-stat{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:18px 10px;text-align:center;box-shadow:0 6px 18px rgba(20,16,60,.05)}
+.profile-stat b{display:block;font-size:27px;color:#5a3df0}
+.profile-stat span{font-size:13px;opacity:.75}
+.profile-docs{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:6px 8px 12px;box-shadow:0 10px 30px rgba(20,16,60,.05)}
+.profile-docs-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px 8px}
+.profile-docs-head h2{margin:0;font-size:18px}
+.profile-empty{padding:8px 14px 14px;margin:0}
+.profile-doc{display:flex;align-items:center;gap:12px;width:100%;box-sizing:border-box;text-align:start;background:none;border:none;border-top:1px solid var(--border);padding:12px 14px;cursor:pointer;color:inherit;font:inherit;border-radius:0}
+.profile-doc:hover{background:var(--surface-2)}
+.profile-doc-ic{color:#6c4cf1;display:flex;flex:none}
+.profile-doc-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.profile-doc-main b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:15px}
+.profile-doc-main .muted{font-size:12.5px}
+.profile-doc-star{color:#f5a623;flex:none}
+.profile-doc-words{flex:none;text-align:end;font-size:13px;opacity:.9}
+.profile-doc-words b{font-size:15px}
+@media (max-width:640px){
+  .profile-page{padding:16px 12px 36px}
+  .profile-head{padding:20px 16px;gap:14px}
+  .profile-head h1{font-size:21px}
+  .profile-signout{margin-inline-start:0}
+  .profile-stats{gap:8px}
+  .profile-stat{padding:12px 4px}
+  .profile-stat b{font-size:19px}
+  .profile-stat span{font-size:11.5px}
+  .profile-doc{padding:11px 8px;gap:9px}
+}
