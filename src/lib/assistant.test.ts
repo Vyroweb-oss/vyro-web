@@ -10,6 +10,7 @@ import {
   buildAnswer, searchQueryFor, normalizeDigits, splitSentences, sourceSiteName,
   isRankingOrCurrentQuestion, estimateResearchPages,
   analyzeQuestion, sentenceMatchesQuestionType, searchQueriesFor,
+  decomposeQuestion, subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -669,5 +670,76 @@ describe('A-01e2 live-check fixes (diagnosed by replaying the 2026-11-03 live ch
   it('H3 guard: bare «از X» with no role/copula confirmation is still not name-bearing', () => {
     const person = analyzeQuestion('نویسنده شاهنامه کیست؟')
     expect(sentenceMatchesQuestionType('این کتاب از تهران به دست ما رسیده است.', person)).toBe(false)
+  })
+})
+
+describe('A-01f thinking brain (owner order 2026-11-03: a reasoning layer, general method only)', () => {
+  it('DECOMPOSE: a true two-question ask splits; a two-topic question with a trigger-less first part stays whole', () => {
+    expect(decomposeQuestion('پایتخت فرانسه چیست و جمعیتش چقدر است؟')).toEqual(['پایتخت فرانسه چیست', 'جمعیتش چقدر است'])
+    expect(decomposeQuestion('What is the capital of France and what is its population?')).toHaveLength(2)
+    expect(decomposeQuestion('پایتخت فرانسه و آلمان چیست؟')).toEqual(['پایتخت فرانسه و آلمان چیست؟'])
+    expect(decomposeQuestion('پایتخت فرانسه کجاست؟')).toEqual(['پایتخت فرانسه کجاست؟'])
+  })
+  it('DECOMPOSE: a follow-up part inherits the first part subject noun with possessives stripped', () => {
+    const subs = subQuestionQueries('پایتخت فرانسه چیست و جمعیتش چقدر است؟')
+    expect(subs).toHaveLength(2)
+    expect(subs[1].question).toBe('جمعیتش چقدر است')
+    expect(subs[1].query).toContain('فرانسه')
+    expect(subs[1].query).toContain('جمعیت')
+    expect(subs[1].query).not.toContain('جمعیتش')
+  })
+  it('MULTI-STEP: refineQuery adds distinctive title tokens and stops when titles add nothing new', () => {
+    const refined = refineQuery('جمعیت فرانسه چقدر است؟', ['آمار جمعیت فرانسه در سال ۲۰۲۴'])
+    expect(refined).not.toBe('جمعیت فرانسه چقدر')
+    expect(refined).toContain('آمار')
+    expect(refineQuery('جمعیت فرانسه چقدر است؟', ['جمعیت فرانسه'])).toBe('جمعیت فرانسه چقدر')
+  })
+  it('ASSEMBLY: definition first, every part covered, an unanswered part named honestly, never guessed', () => {
+    const assembled = assembleThoughtAnswer([
+      { question: 'جمعیت فرانسه چقدر است؟', lines: ['جمعیت فرانسه حدود ۶۸ میلیون نفر است.', 'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/France'], found: true },
+      { question: 'فوتوسنتز چیست؟', lines: ['فوتوسنتز فرایندی است که گیاهان با آن غذا می سازند.', 'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/Photo'], found: true },
+    ], 'fa')
+    expect(assembled.found).toBe(true)
+    expect(assembled.lines.join(' ').indexOf('فوتوسنتز')).toBeLessThan(assembled.lines.join(' ').indexOf('جمعیت فرانسه'))
+    const partial = assembleThoughtAnswer([
+      { question: 'پایتخت فرانسه چیست؟', lines: ['پاریس پایتخت فرانسه است.', 'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/France'], found: true },
+      { question: 'جمعیت فرانسه چقدر است؟', lines: [], found: false },
+    ], 'fa')
+    expect(partial.found).toBe(true)
+    expect(partial.lines.join(' ')).toContain('برای این بخش پاسخی در منابع پیدا نشد')
+    expect(partial.lines.join(' ')).toContain('جمعیت فرانسه چقدر است؟')
+    expect(assembleThoughtAnswer([{ question: 'پایتخت سیاره زحل کجاست؟', lines: [], found: false }], 'fa').found).toBe(false)
+  })
+  it('MULTI-PART end to end (spec example): capital + population both answered from their own sources', () => {
+    const capital = [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: 'فرانسه کشوری در اروپای غربی است. پاریس پایتخت فرانسه است و این شهر بزرگ است.' }]
+    const population = [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: 'فرانسه کشوری در اروپای غربی است. جمعیت فرانسه حدود ۶۸ میلیون نفر است و این کشور در اروپا قرار دارد.' }]
+    const parts = subQuestionQueries('پایتخت فرانسه چیست و جمعیتش چقدر است؟')
+    const results = parts.map((sub, i) => {
+      const ans = buildAnswer(i === 0 ? capital : population, sub.query, 'fa')
+      return { question: sub.question, lines: ans.lines, found: ans.found }
+    })
+    const out = assembleThoughtAnswer(results, 'fa')
+    expect(out.found).toBe(true)
+    expect(out.lines.join(' ')).toContain('پاریس')
+    expect(out.lines.join(' ')).toContain('۶۸ میلیون')
+  })
+  it('CROSS-CHECK: two sources with different population numbers show the disagreement with both credits, never one silently', () => {
+    const a = [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: 'جمعیت فرانسه حدود ۶۸ میلیون نفر است.' }]
+    const b = [{ title: 'جمعیت فرانسه', url: 'https://example.org/fr-pop', extract: 'جمعیت فرانسه حدود ۶۶ میلیون نفر است.' }]
+    const conflict = findNumericConflict([...a, ...b], 'جمعیت فرانسه چقدر است؟', 'fa')
+    expect(conflict).not.toBeNull()
+    expect(conflict!.join(' ')).toContain('اختلاف دارند')
+    expect(conflict!.join(' ')).toContain('۶۸ میلیون')
+    expect(conflict!.join(' ')).toContain('۶۶ میلیون')
+    expect(conflict!.join(' ')).toContain('https://fa.wikipedia.org/wiki/France')
+    expect(conflict!.join(' ')).toContain('https://example.org/fr-pop')
+  })
+  it('CROSS-CHECK: agreeing numbers (even across scales: ۶۸ میلیون vs 68,000,000) and non-quantity questions give no conflict', () => {
+    const a = [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: 'جمعیت فرانسه حدود ۶۸ میلیون نفر است.' }]
+    const b = [{ title: 'جمعیت فرانسه', url: 'https://example.org/fr-pop', extract: 'جمعیت فرانسه حدود 68,000,000 نفر است.' }]
+    expect(findNumericConflict([...a, ...b], 'جمعیت فرانسه چقدر است؟', 'fa')).toBeNull()
+    const cap = [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: 'پاریس پایتخت فرانسه است.' }]
+    expect(findNumericConflict([...cap, ...cap], 'پایتخت فرانسه کجاست؟', 'fa')).toBeNull()
+    expect(findNumericConflict(a, 'جمعیت فرانسه چقدر است؟', 'fa')).toBeNull()
   })
 })

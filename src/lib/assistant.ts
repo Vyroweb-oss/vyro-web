@@ -1146,6 +1146,196 @@ export function buildAnswer(
   return { lines, found: true }
 }
 
+// ---- A-01f thinking brain ---------------------------------------------------
+// Owner order 2026-11-03 ~22:43 («خیلی مغز متفکر بسازی برایش»): a
+// reasoning layer on top of analysis (A-01e) and whole-web search.
+// General method only (Hard Rule 9) — no per-question branches:
+// (1) DECOMPOSE splits a multi-part question into sub-questions;
+// (2) MULTI-STEP SEARCH refines a failed query from the titles that
+// came back (max 3 hops, caller-owned); (3) CROSS-CHECK compares
+// single-source answers for quantity/date questions and shows a
+// disagreement instead of silently picking one number; (4) ASSEMBLY
+// orders the parts definition-first and names every unanswered part
+// honestly. Nothing here invents a fact: every sentence still comes
+// from a source via buildAnswer, with its credit line attached.
+
+const STRICT_TRIGGERS = new Set([
+  'چیست', 'کجاست', 'کجا', 'کیست', 'چقدر', 'چند', 'چرا', 'چگونه', 'چطور',
+  'چه', 'کدام', 'سالی', 'when', 'where', 'who', 'what', 'how', 'why', 'which',
+])
+
+/** Split a multi-part question into its sub-questions. Every part
+ *  must carry its own question word — that is what keeps a two-topic
+ *  question («پایتخت فرانسه و آلمان چیست؟», first part trigger-less)
+ *  whole, while a true two-question ask («پایتخت فرانسه چیست و
+ *  جمعیتش چقدر است؟») splits. Anything else returns [question]. */
+export function decomposeQuestion(question: string): string[] {
+  const raw = question.trim()
+  if (!raw) return []
+  const pieces = raw
+    .split(/\s+و\s+|\s+and\s+|[؛;]|[؟?]\s+(?=\S)/)
+    .map((p) => p.trim().replace(/[؟?]+$/, '').trim())
+    .filter(Boolean)
+  if (pieces.length < 2 || pieces.length > 4) return [raw]
+  const ok = pieces.every((p) => {
+    const toks = new Set(normalizeCommand(p).replace(/[؟?!.,،؛:«»"“”]/g, '').split(' ').filter(Boolean))
+    return toks.size >= 2 && [...toks].some((t) => STRICT_TRIGGERS.has(t))
+  })
+  return ok ? pieces : [raw]
+}
+
+/** Possessive suffixes («جمعیتش» = «جمعیت» + «ش») stripped so a
+ *  follow-up part can be matched against the source's own wording.
+ *  Only the ش/شان possessive, only on longer tokens — never a
+ *  general stemmer, so unrelated words are untouched. */
+function stripPossessive(token: string): string {
+  if (token.length > 5 && token.endsWith('شان')) return token.slice(0, -3)
+  if (token.length > 4 && token.endsWith('ش')) return token.slice(0, -1)
+  return token
+}
+
+const SUB_QUESTION_CUES = new Set([
+  'پایتخت', 'capital', 'نویسنده', 'author', 'مولف', 'سراینده', 'چیست', 'کجاست',
+  'کجا', 'کیست', 'چقدر', 'چند', 'چرا', 'چگونه', 'چطور', 'چه', 'کدام', 'سالی',
+  'what', 'where', 'who', 'how', 'why', 'when', 'which', 'است', 'هست', 'is', 'are',
+])
+
+export interface SubQuestion { question: string; query: string }
+
+/** Effective search question per part. A part that already names its
+ *  subject is used as-is; a follow-up part («جمعیتش چقدر است؟»)
+ *  inherits the first part's subject noun (its last non-cue token —
+ *  «فرانسه» in «پایتخت فرانسه») with possessives stripped, so the
+ *  search and the sentence matching see «فرانسه جمعیت چقدر است». */
+export function subQuestionQueries(question: string): SubQuestion[] {
+  const parts = decomposeQuestion(question)
+  if (parts.length === 1) return [{ question: parts[0], query: parts[0] }]
+  const firstToks = searchQueryFor(parts[0]).split(' ').filter(Boolean)
+  const subjectNoun = [...firstToks].reverse().find((t) => !SUB_QUESTION_CUES.has(t)) ?? firstToks[firstToks.length - 1] ?? ''
+  return parts.map((part, i) => {
+    if (i === 0) return { question: part, query: part }
+    const partToks = searchQueryFor(part).split(' ').filter(Boolean)
+    if (subjectNoun && partToks.some((t) => stripPossessive(t) === subjectNoun)) {
+      return { question: part, query: part }
+    }
+    const normalized = part.split(' ').map((t) => stripPossessive(cleanToken(t))).filter(Boolean).join(' ')
+    return { question: part, query: subjectNoun ? `${subjectNoun} ${normalized}` : normalized }
+  })
+}
+
+/** One multi-hop refinement: the original query plus up to two
+ *  distinctive title tokens that were not in it yet. Returns the
+ *  base query unchanged when the titles add nothing new, so the
+ *  caller can stop (max 3 hops total, caller-owned). */
+export function refineQuery(question: string, sourceTitles: string[]): string {
+  const base = searchQueryFor(question)
+  const baseToks = new Set(base.split(' ').filter(Boolean))
+  const extra: string[] = []
+  for (const title of sourceTitles) {
+    for (const rawTok of normalizeCommand(title).split(' ')) {
+      const tok = cleanToken(rawTok)
+      if (tok.length <= 2 || baseToks.has(tok) || extra.includes(tok)) continue
+      if (QUESTION_STOP.has(tok) || RESEARCH_STOP.has(tok)) continue
+      extra.push(tok)
+      if (extra.length >= 2) break
+    }
+    if (extra.length >= 2) break
+  }
+  return extra.length > 0 ? `${base} ${extra.join(' ')}` : base
+}
+
+export interface ThoughtPartResult { question: string; lines: string[]; found: boolean }
+
+/** Step-by-step assembly (definition → evidence → conclusion order,
+ *  stable within each rank): found parts contribute their own
+ *  sentences + credit lines, unanswered parts contribute one honest
+ *  line naming the part, never a guessed answer. Duplicate sentences
+ *  are kept once. No part found at all → found false, no lines. */
+export function assembleThoughtAnswer(parts: ThoughtPartResult[], lang: 'fa' | 'en'): { lines: string[]; found: boolean } {
+  if (parts.length === 0) return { lines: [], found: false }
+  if (parts.length === 1) return { lines: parts[0].lines, found: parts[0].found }
+  const rank = (q: string): number => {
+    const t = analyzeQuestion(q).type
+    if (t === 'definition') return 0
+    if (t === 'place' || t === 'person' || t === 'date' || t === 'quantity') return 1
+    if (t === 'why' || t === 'how') return 2
+    if (t === 'enumeration' || t === 'ranking' || t === 'current') return 3
+    return 4
+  }
+  const ordered = parts.map((p, i) => ({ p, i })).sort((a, b) => rank(a.p.question) - rank(b.p.question) || a.i - b.i)
+  const lines: string[] = []
+  const seen = new Set<string>()
+  let anyFound = false
+  for (const { p } of ordered) {
+    if (p.found) {
+      anyFound = true
+      for (const line of p.lines) {
+        if (line.startsWith('منبع:') || line.startsWith('Source:')) { lines.push(line); continue }
+        if (seen.has(line)) continue
+        seen.add(line)
+        lines.push(line)
+      }
+    } else {
+      lines.push(lang === 'fa'
+        ? `برای این بخش پاسخی در منابع پیدا نشد: ${p.question}`
+        : `No answer was found in the sources for this part: ${p.question}`)
+    }
+  }
+  return anyFound ? { lines, found: true } : { lines: [], found: false }
+}
+
+/** Cross-check for quantity/date questions: answer the question from
+ *  EACH source alone, and if two independent sources both answer but
+ *  with different numbers (same measured unit), return a disagreement
+ *  block with both sentences and both credits instead of silently
+ *  picking one. Equal numbers, a single source, or no pair of
+ *  answers → null (the merged answer stands). */
+export function findNumericConflict(
+  sources: ResearchData[],
+  question: string,
+  lang: 'fa' | 'en',
+): string[] | null {
+  const analysis = analyzeQuestion(question)
+  if (analysis.answerKind !== 'quantity' && analysis.answerKind !== 'date') return null
+  if (sources.length < 2) return null
+  // Numbers are normalized to a common scale first, so «۶۸
+  // میلیون» and «68,000,000» agree instead of falsely conflicting.
+  const readNumber = (sentence: string): number | null => {
+    const norm = normalizeDigits(sentence)
+    const m = norm.match(/(\d[\d.,]*)\s*(میلیون|میلیارد|هزار|million|billion|thousand)?/)
+    if (!m) return null
+    const value = parseFloat(m[1].replace(/,/g, ''))
+    if (!Number.isFinite(value)) return null
+    const scale: Record<string, number> = { 'میلیون': 1e6, million: 1e6, 'میلیارد': 1e9, billion: 1e9, 'هزار': 1e3, thousand: 1e3 }
+    return value * (m[2] ? (scale[m[2]] ?? 1) : 1)
+  }
+  const answers: { sentence: string; credit: string; value: number }[] = []
+  for (const src of sources) {
+    const one = buildAnswer([src], question, lang)
+    if (!one.found) continue
+    const sentence = one.lines.find((l) => !l.startsWith('منبع:') && !l.startsWith('Source:'))
+    const credit = one.lines.find((l) => l.startsWith('منبع:') || l.startsWith('Source:'))
+    if (!sentence || !credit) continue
+    const num = readNumber(sentence)
+    if (num === null) continue
+    answers.push({ sentence, credit, value: num })
+  }
+  for (let i = 0; i < answers.length; i++) {
+    for (let j = i + 1; j < answers.length; j++) {
+      if (answers[i].value !== answers[j].value) {
+        return [
+          lang === 'fa'
+            ? 'منابع در این عدد با هم اختلاف دارند — هر دو را ببینید:'
+            : 'Sources disagree on this number — both are shown:',
+          answers[i].sentence, answers[i].credit,
+          answers[j].sentence, answers[j].credit,
+        ]
+      }
+    }
+  }
+  return null
+}
+
 /** Ready-made document structures in the app's own document format.
  *  Placeholder lines are the user's to fill — the assistant builds the
  *  structure, never fake content. */

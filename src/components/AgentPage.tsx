@@ -4,6 +4,7 @@ import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
   assembleResearch, buildAnswer, searchQueryFor, estimateResearchPages,
+  subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
   type AssistantAction, type ResearchData,
 } from '../lib/assistant'
 import { nodesForBuildAction, linesToNodes, nodesToText } from '../lib/agentPage'
@@ -140,14 +141,50 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
     }
   }
 
+  // A-01f thinking brain: multi-part questions are decomposed and
+  // each part answered in turn (with up to 3 search hops per part),
+  // then assembled in reasoning order with unanswered parts named
+  // honestly; single quantity/date questions get a cross-check that
+  // shows a disagreement instead of silently picking one number.
   const doAnswer = async (action: Extract<AssistantAction, { kind: 'answer' }>) => {
     setBusy(true)
     try {
-      const sources = await fetchSources({ query: searchQueryFor(action.question), lang, pages: 1, mode: 'answer' })
-      if (typeof sources === 'string') { push({ from: 'agent', text: failText(sources) }); return }
-      const answer = buildAnswer(sources, action.question, lang)
-      if (!answer.found) { push({ from: 'agent', text: t('assistantAnswerNotFound') }); return }
-      push({ from: 'agent', title: t('assistantAnswerTitle'), lines: answer.lines })
+      const subs = subQuestionQueries(action.question)
+      if (subs.length === 1) {
+        const sources = await fetchSources({ query: searchQueryFor(action.question), lang, pages: 1, mode: 'answer' })
+        if (typeof sources === 'string') { push({ from: 'agent', text: failText(sources) }); return }
+        const conflict = findNumericConflict(sources, action.question, lang)
+        if (conflict) { push({ from: 'agent', title: t('assistantAnswerTitle'), lines: conflict }); return }
+        const answer = buildAnswer(sources, action.question, lang)
+        if (!answer.found) { push({ from: 'agent', text: t('assistantAnswerNotFound') }); return }
+        push({ from: 'agent', title: t('assistantAnswerTitle'), lines: answer.lines })
+        return
+      }
+      const results: { question: string; lines: string[]; found: boolean }[] = []
+      for (const sub of subs) {
+        let sources = await fetchSources({ query: searchQueryFor(sub.query), lang, pages: 1, mode: 'answer' })
+        if (typeof sources === 'string') {
+          if (sources === 'notfound') { results.push({ question: sub.question, lines: [], found: false }); continue }
+          push({ from: 'agent', text: failText(sources) }); return
+        }
+        let answer = buildAnswer(sources, sub.query, lang)
+        const tried = new Set([searchQueryFor(sub.query)])
+        let attempts = 1
+        while (!answer.found && attempts < 3) {
+          const refined = refineQuery(sub.query, sources.map((s) => s.title))
+          if (tried.has(refined)) break
+          tried.add(refined)
+          attempts += 1
+          const next = await fetchSources({ query: refined, lang, pages: 1, mode: 'answer' })
+          if (typeof next === 'string') break
+          sources = next
+          answer = buildAnswer(sources, refined, lang)
+        }
+        results.push({ question: sub.question, lines: answer.lines, found: answer.found })
+      }
+      const assembled = assembleThoughtAnswer(results, lang)
+      if (!assembled.found) { push({ from: 'agent', text: t('assistantAnswerNotFound') }); return }
+      push({ from: 'agent', title: t('assistantAnswerTitle'), lines: assembled.lines })
     } finally {
       setBusy(false)
     }

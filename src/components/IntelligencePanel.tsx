@@ -6,6 +6,7 @@ import { truncatePreview } from '../lib/intelligence'
 import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
   buildTemplate, assembleResearch, buildAnswer, searchQueryFor, estimateResearchPages,
+  subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
   type AssistantAction, type ResearchData,
 } from '../lib/assistant'
 import { computeDocumentStats } from '../lib/stats'
@@ -202,6 +203,8 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
 
   // Free-form questions (owner order 2026-11-03: ANY question gets
   // searched and answered in seconds, not just preset commands).
+  // A-01f thinking brain: same decomposition / multi-hop / assembly /
+  // cross-check as the Agent page, so both homes answer alike.
   const doAnswer = async (action: Extract<AssistantAction, { kind: 'answer' }>) => {
     if (!supabase) { setMessage(t('assistantSearchOffline')); return }
     setBusy(true)
@@ -209,23 +212,60 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
     setPendingResearch(null)
     setMessage(t('assistantSearching'))
     try {
-      const { data: sess } = await supabase.auth.getSession()
-      const token = sess.session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/assistant-search`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: searchQueryFor(action.question), lang, pages: 1, mode: 'answer' }),
-      })
-      if (!res.ok) { setMessage(t('assistantSearchFailed')); return }
-      const data = (await res.json()) as { found?: boolean; sources?: ResearchData[] } & Partial<ResearchData>
-      const sources: ResearchData[] = data.sources && data.sources.length > 0
-        ? data.sources
-        : data.title && data.extract && data.url ? [{ title: data.title, extract: data.extract, url: data.url }] : []
-      if (!data.found || sources.length === 0) { setMessage(t('assistantSearchNotFound')); return }
-      const answer = buildAnswer(sources, action.question, lang)
-      if (!answer.found) { setMessage(t('assistantAnswerNotFound')); return }
+      const fetchAnswer = async (query: string): Promise<ResearchData[] | 'failed' | 'notfound'> => {
+        if (!supabase) return 'failed'
+        const { data: sess } = await supabase.auth.getSession()
+        const token = sess.session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/assistant-search`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, lang, pages: 1, mode: 'answer' }),
+        })
+        if (!res.ok) return 'failed'
+        const data = (await res.json()) as { found?: boolean; sources?: ResearchData[] } & Partial<ResearchData>
+        const sources: ResearchData[] = data.sources && data.sources.length > 0
+          ? data.sources
+          : data.title && data.extract && data.url ? [{ title: data.title, extract: data.extract, url: data.url }] : []
+        if (!data.found || sources.length === 0) return 'notfound'
+        return sources
+      }
+      const subs = subQuestionQueries(action.question)
+      if (subs.length === 1) {
+        const sources = await fetchAnswer(searchQueryFor(action.question))
+        if (sources === 'failed') { setMessage(t('assistantSearchFailed')); return }
+        if (sources === 'notfound') { setMessage(t('assistantSearchNotFound')); return }
+        const conflict = findNumericConflict(sources, action.question, lang)
+        if (conflict) { setMessage(''); setResult({ title: t('assistantAnswerTitle'), lines: conflict, asList: false }); return }
+        const answer = buildAnswer(sources, action.question, lang)
+        if (!answer.found) { setMessage(t('assistantAnswerNotFound')); return }
+        setMessage('')
+        setResult({ title: t('assistantAnswerTitle'), lines: answer.lines, asList: false })
+        return
+      }
+      const results: { question: string; lines: string[]; found: boolean }[] = []
+      for (const sub of subs) {
+        let sources = await fetchAnswer(searchQueryFor(sub.query))
+        if (sources === 'failed') { setMessage(t('assistantSearchFailed')); return }
+        if (sources === 'notfound') { results.push({ question: sub.question, lines: [], found: false }); continue }
+        let answer = buildAnswer(sources, sub.query, lang)
+        const tried = new Set([searchQueryFor(sub.query)])
+        let attempts = 1
+        while (!answer.found && attempts < 3) {
+          const refined = refineQuery(sub.query, sources.map((s) => s.title))
+          if (tried.has(refined)) break
+          tried.add(refined)
+          attempts += 1
+          const next = await fetchAnswer(refined)
+          if (typeof next === 'string') break
+          sources = next
+          answer = buildAnswer(sources, refined, lang)
+        }
+        results.push({ question: sub.question, lines: answer.lines, found: answer.found })
+      }
+      const assembled = assembleThoughtAnswer(results, lang)
+      if (!assembled.found) { setMessage(t('assistantAnswerNotFound')); return }
       setMessage('')
-      setResult({ title: t('assistantAnswerTitle'), lines: answer.lines, asList: false })
+      setResult({ title: t('assistantAnswerTitle'), lines: assembled.lines, asList: false })
     } catch {
       setMessage(t('assistantSearchFailed'))
     } finally {
