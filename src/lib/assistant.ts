@@ -1,3 +1,6 @@
+import { computePagination } from './pagination'
+import { usableHeightMm, usableWidthMm, PAGE_SIZES, MARGIN_PRESETS } from './pageSetup'
+
 // Vyro Assistant (دستیار وایرو) — the app's OWN built-in assistant.
 // Owner order 2026-11-03: the assistant must be Vyro's own, NOT another
 // AI service — no external AI, no API, no network, nothing leaves the
@@ -555,6 +558,69 @@ export function assembleResearch(
     }
   }
   return { nodes, words, targetWords }
+}
+
+/** A-01b: the RENDERED page count of an assembled research draft, measured
+ *  with the app's OWN pagination engine (computePagination) instead of the
+ *  old words/300 estimate — the exact failure found at A-01, where a
+ *  713-word sectioned draft was reported as ≈2 pages but rendered as 3.
+ *  Why words alone lie: a sectioned draft pays a heading on nearly every
+ *  section (large type + browser heading margins) and every paragraph's
+ *  last line is only partly filled, so the same word count occupies far
+ *  more vertical space than one long unsectioned flow. This function
+ *  prices each top-level block the way the editor renders it, then packs
+ *  the blocks with computePagination:
+ *   - page: the default setup a brand-new document opens with (A4,
+ *     Normal margins) via pageSetup's own usableHeightMm/usableWidthMm,
+ *     so the estimate and the print @page rule share one usable height;
+ *   - type: the editor's own CSS (.a4-page .tiptap: 16px/1.65 body,
+ *     h1 2em/1.25, h2 1.5em/1.3, h3 1.2em/1.65; paragraphs .6em below;
+ *     headings carry the browser's default block margins);
+ *   - lines: characters per line from the usable width at ~0.442em mean
+ *     glyph width (calibrated against the live measurements behind
+ *     WORDS_PER_PAGE: a 1,024-word unsectioned draft and an 821-word
+ *     sectioned draft both render as 3 pages, and this model reproduces
+ *     both, while words/300 misses the sectioned case).
+ *  Honest limit, stated not hidden: this is a PRE-INSERT estimate — it
+ *  assumes the default A4/Normal setup, because the panels do not know
+ *  the target document's custom size/margins. Once the draft is inserted,
+ *  the editor's measured status-bar count is the truth and supersedes it.
+ *  Research assemblies contain only headings and paragraphs; other node
+ *  types fall back to body metrics. A block taller than one usable page
+ *  is chunked into page-sized pieces (real text flows line by line;
+ *  computePagination's oversize rule would otherwise park it on one page). */
+const MM_PX = 96 / 25.4 // mirrors Editor.tsx's MM_PX exactly
+export function estimateResearchPages(nodes: JsonNode[]): number {
+  const setup = {
+    sizeId: 'A4' as const, widthMm: PAGE_SIZES.A4.w, heightMm: PAGE_SIZES.A4.h,
+    margins: { ...MARGIN_PRESETS.normal }, marginsPreset: 'normal',
+  }
+  const usablePx = usableHeightMm(setup) * MM_PX
+  const usableWidthPx = usableWidthMm(setup) * MM_PX
+  const glyph = (fontPx: number) => Math.max(10, Math.floor(usableWidthPx / (fontPx * 0.442)))
+  const metrics: Record<string, { fontPx: number; linePx: number; marginPx: number }> = {
+    body: { fontPx: 16, linePx: 16 * 1.65, marginPx: 16 * 0.6 },
+    h1: { fontPx: 32, linePx: 32 * 1.25, marginPx: 2 * 0.67 * 32 },
+    h2: { fontPx: 24, linePx: 24 * 1.3, marginPx: 2 * 0.83 * 24 },
+    h3: { fontPx: 19.2, linePx: 19.2 * 1.65, marginPx: 2 * 1.0 * 19.2 },
+  }
+  const segs: { height: number }[] = []
+  for (const node of nodes) {
+    const level = (node.attrs as { level?: number } | undefined)?.level
+    const m = node.type === 'heading' && level === 1 ? metrics.h1
+      : node.type === 'heading' && level === 2 ? metrics.h2
+      : node.type === 'heading' ? metrics.h3 : metrics.body
+    const text = nodeText(node)
+    const lines = Math.max(1, Math.ceil(text.length / glyph(m.fontPx)))
+    const height = lines * m.linePx + m.marginPx
+    if (height > usablePx) {
+      const chunks = Math.ceil(height / usablePx)
+      for (let i = 0; i < chunks; i++) segs.push({ height: height / chunks })
+    } else {
+      segs.push({ height })
+    }
+  }
+  return Math.max(1, computePagination(segs, usablePx).pageCount)
 }
 
 /** Single-article convenience wrapper (paragraph mode). */

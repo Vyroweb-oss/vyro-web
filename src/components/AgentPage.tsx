@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/react'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
-  assembleResearch, buildAnswer, searchQueryFor, WORDS_PER_PAGE,
+  assembleResearch, buildAnswer, searchQueryFor, estimateResearchPages,
   type AssistantAction, type ResearchData,
 } from '../lib/assistant'
 import { nodesForBuildAction, linesToNodes, nodesToText } from '../lib/agentPage'
@@ -129,7 +129,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
       const trueWords = computeDocumentStats({ type: 'doc', content: built.nodes }).words
       const meta = t('assistantResearchMeta')
         .replace('{w}', String(trueWords))
-        .replace('{p}', String(Math.max(1, Math.round(trueWords / WORDS_PER_PAGE))))
+        .replace('{p}', String(estimateResearchPages(built.nodes)))
       const short = built.words < built.targetWords * 0.85 ? ` ${t('assistantResearchShort')}` : ''
       // The Agent page ALWAYS prepares the result here first (it is the
       // one place for requests); inserting or creating a document is

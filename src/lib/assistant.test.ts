@@ -8,7 +8,7 @@ import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
   buildTemplate, buildResearchDoc, assembleResearch, parseSections, cleanWikiText,
   buildAnswer, searchQueryFor, normalizeDigits, splitSentences, sourceSiteName,
-  isRankingOrCurrentQuestion,
+  isRankingOrCurrentQuestion, estimateResearchPages,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -452,5 +452,35 @@ describe('A-01d2 ranking preference (live failure 2026-11-03: generic wiki match
     expect(sourceSiteName({ url: 'https://en.wikipedia.org/wiki/X' }, 'en')).toBe('Wikipedia')
     expect(sourceSiteName({ url: 'https://example-blog.com/post', site: 'Example Blog' }, 'fa')).toBe('Example Blog')
     expect(sourceSiteName({ url: 'https://www.example-blog.com/post' }, 'fa')).toBe('example-blog.com')
+  })
+})
+
+describe('A-01b real page measurement (A-01 failure: 713-word sectioned draft reported ≈2, rendered 3)', () => {
+  const para = (text: string) => ({ type: 'paragraph', content: [{ type: 'text', text }] })
+  const head = (level: number, text: string) => ({ type: 'heading', attrs: { level }, content: [{ type: 'text', text }] })
+  it('a short draft is one page', () => {
+    expect(estimateResearchPages([head(1, 'موضوع'), para('یک پاراگراف کوتاه.')])).toBe(1)
+  })
+  it('a sectioned draft the word formula calls 2 pages measures 3 with the app pagination engine', () => {
+    const nodes: { type: string; attrs?: { level: number }; content: { type: string; text: string }[] }[] = [head(1, 'موضوع پژوهش')]
+    for (let i = 0; i < 10; i++) {
+      nodes.push(head(2, 'بخش'))
+      nodes.push(para(Array(60).fill('نمونه').join(' ')))
+    }
+    nodes.push(para('منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/X'))
+    nodes.push(para('منابع دیگر'))
+    const words = nodes.flatMap((n) => (n.content as { text?: string }[]).map((c) => c.text ?? ''))
+      .join(' ').split(/\s+/).filter(Boolean).length
+    expect(words).toBeLessThan(750)
+    expect(Math.round(words / 300)).toBe(2) // the old, wrong answer
+    expect(estimateResearchPages(nodes)).toBe(3) // the rendered answer
+  })
+  it('an unsectioned ~1020-word draft measures 3 (live calibration behind WORDS_PER_PAGE)', () => {
+    const nodes: { type: string; attrs?: { level: number }; content: { type: string; text: string }[] }[] = [head(1, 'موضوع')]
+    for (let i = 0; i < 10; i++) nodes.push(para(Array(102).fill('نمونه').join(' ')))
+    expect(estimateResearchPages(nodes)).toBe(3)
+  })
+  it('a single block taller than one usable page is chunked, not parked on one page', () => {
+    expect(estimateResearchPages([para('x'.repeat(10000))])).toBe(4)
   })
 })

@@ -5,7 +5,7 @@ import { usePanelFocusReturn } from './useDialogFocus'
 import { truncatePreview } from '../lib/intelligence'
 import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
-  buildTemplate, assembleResearch, buildAnswer, searchQueryFor, WORDS_PER_PAGE,
+  buildTemplate, assembleResearch, buildAnswer, searchQueryFor, estimateResearchPages,
   type AssistantAction, type ResearchData,
 } from '../lib/assistant'
 import { computeDocumentStats } from '../lib/stats'
@@ -176,7 +176,7 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
       const trueWords = computeDocumentStats({ type: 'doc', content: built.nodes }).words
       const meta = t('assistantResearchMeta')
         .replace('{w}', String(trueWords))
-        .replace('{p}', String(Math.max(1, Math.round(trueWords / WORDS_PER_PAGE))))
+        .replace('{p}', String(estimateResearchPages(built.nodes)))
       const short = built.words < built.targetWords * 0.85 ? ` ${t('assistantResearchShort')}` : ''
       if (action.insert) {
         editor.chain().focus().insertContent(built.nodes as object[]).run()
