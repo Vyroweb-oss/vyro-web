@@ -11,6 +11,11 @@ import {
 } from '../lib/assistant'
 import { computeDocumentStats } from '../lib/stats'
 import { supabase } from '../lib/supabase'
+import {
+  recordFeedback, feedbackPreference, applyDetailPreference, countAnswerWords,
+  recordWeakQuestion,
+  recordUserLanguage, preferredReplyLanguage, detectSocial, isAmbiguousQuestion,
+} from '../lib/assistantLearning'
 
 // Vyro Assistant panel (دستیار وایرو) — owner order 2026-11-03,
 // replacing the Mission-2 architecture-only shell. The assistant is
@@ -29,8 +34,12 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
   const [command, setCommand] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
-  const [result, setResult] = useState<{ title: string; lines: string[]; asList: boolean } | null>(null)
+  const [result, setResult] = useState<{ title: string; lines: string[]; asList: boolean; question?: string } | null>(null)
   const [pendingResearch, setPendingResearch] = useState<object[] | null>(null)
+  // A-01g: the last answered question (follow-up topic) + whether
+  // the current answer already received feedback (local only).
+  const [lastQuestion, setLastQuestion] = useState('')
+  const [votedResult, setVotedResult] = useState(false)
 
   const sel = useEditorState({
     editor,
@@ -212,14 +221,14 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
     setPendingResearch(null)
     setMessage(t('assistantSearching'))
     try {
-      const fetchAnswer = async (query: string): Promise<ResearchData[] | 'failed' | 'notfound'> => {
+      const fetchAnswer = async (query: string, qLang: UiLang = lang): Promise<ResearchData[] | 'failed' | 'notfound'> => {
         if (!supabase) return 'failed'
         const { data: sess } = await supabase.auth.getSession()
         const token = sess.session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
         const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/assistant-search`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, lang, pages: 1, mode: 'answer' }),
+          body: JSON.stringify({ query, lang: qLang, pages: 1, mode: 'answer' }),
         })
         if (!res.ok) return 'failed'
         const data = (await res.json()) as { found?: boolean; sources?: ResearchData[] } & Partial<ResearchData>
@@ -229,25 +238,28 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         if (!data.found || sources.length === 0) return 'notfound'
         return sources
       }
+      // A-01g: answer in the user's own language; trim to their
+      // feedback-derived detail; mine not-found questions locally.
+      const qLang = preferredReplyLanguage(action.question) ?? lang
       const subs = subQuestionQueries(action.question)
       if (subs.length === 1) {
-        const sources = await fetchAnswer(searchQueryFor(action.question))
+        const sources = await fetchAnswer(searchQueryFor(action.question), qLang)
         if (sources === 'failed') { setMessage(t('assistantSearchFailed')); return }
-        if (sources === 'notfound') { setMessage(t('assistantSearchNotFound')); return }
-        const conflict = findNumericConflict(sources, action.question, lang)
-        if (conflict) { setMessage(''); setResult({ title: t('assistantAnswerTitle'), lines: conflict, asList: false }); return }
-        const answer = buildAnswer(sources, action.question, lang)
-        if (!answer.found) { setMessage(t('assistantAnswerNotFound')); return }
+        if (sources === 'notfound') { recordWeakQuestion(action.question, 'not-found'); setMessage(t('assistantSearchNotFound')); return }
+        const conflict = findNumericConflict(sources, action.question, qLang)
+        if (conflict) { setMessage(''); setResult({ title: t('assistantAnswerTitle'), lines: applyDetailPreference(conflict, feedbackPreference()), asList: false, question: action.question }); return }
+        const answer = buildAnswer(sources, action.question, qLang)
+        if (!answer.found) { recordWeakQuestion(action.question, 'not-found'); setMessage(t('assistantAnswerNotFound')); return }
         setMessage('')
-        setResult({ title: t('assistantAnswerTitle'), lines: answer.lines, asList: false })
+        setResult({ title: t('assistantAnswerTitle'), lines: applyDetailPreference(answer.lines, feedbackPreference()), asList: false, question: action.question })
         return
       }
       const results: { question: string; lines: string[]; found: boolean }[] = []
       for (const sub of subs) {
-        let sources = await fetchAnswer(searchQueryFor(sub.query))
+        let sources = await fetchAnswer(searchQueryFor(sub.query), qLang)
         if (sources === 'failed') { setMessage(t('assistantSearchFailed')); return }
         if (sources === 'notfound') { results.push({ question: sub.question, lines: [], found: false }); continue }
-        let answer = buildAnswer(sources, sub.query, lang)
+        let answer = buildAnswer(sources, sub.query, qLang)
         const tried = new Set([searchQueryFor(sub.query)])
         let attempts = 1
         while (!answer.found && attempts < 3) {
@@ -255,17 +267,20 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
           if (tried.has(refined)) break
           tried.add(refined)
           attempts += 1
-          const next = await fetchAnswer(refined)
+          const next = await fetchAnswer(refined, qLang)
           if (typeof next === 'string') break
           sources = next
-          answer = buildAnswer(sources, refined, lang)
+          answer = buildAnswer(sources, refined, qLang)
         }
         results.push({ question: sub.question, lines: answer.lines, found: answer.found })
       }
-      const assembled = assembleThoughtAnswer(results, lang)
-      if (!assembled.found) { setMessage(t('assistantAnswerNotFound')); return }
+      const assembled = assembleThoughtAnswer(results, qLang)
+      if (!assembled.found) {
+        for (const r of results) if (!r.found) recordWeakQuestion(r.question, 'not-found')
+        setMessage(t('assistantAnswerNotFound')); return
+      }
       setMessage('')
-      setResult({ title: t('assistantAnswerTitle'), lines: assembled.lines, asList: false })
+      setResult({ title: t('assistantAnswerTitle'), lines: applyDetailPreference(assembled.lines, feedbackPreference()), asList: false, question: action.question })
     } catch {
       setMessage(t('assistantSearchFailed'))
     } finally {
@@ -273,9 +288,40 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
     }
   }
 
+  // A-01g feedback on the panel's current answer (local only).
+  const voteResult = (useful: boolean) => {
+    if (!result?.question) return
+    recordFeedback(result.question, useful, countAnswerWords(result.lines))
+    if (!useful) recordWeakQuestion(result.question, 'generic')
+    setVotedResult(true)
+    setMessage(t('assistantFeedbackThanks'))
+  }
+
   const runCommand = (raw: string) => {
     if (!raw.trim() || busy) return
+    // A-01g behaviour learning, before any search: remember the
+    // user's language, answer greetings/thanks socially, and ask
+    // for clarification on pronoun-only questions with no topic.
+    recordUserLanguage(raw)
+    const replyLang = preferredReplyLanguage(raw) ?? lang
+    const social = detectSocial(raw)
+    if (social) {
+      setResult(null)
+      setMessage(tr(replyLang, social === 'greeting' ? 'assistantGreeting' : 'assistantThanksReply'))
+      setCommand('')
+      return
+    }
+    setVotedResult(false)
     const action = parseAssistantCommand(raw)
+    if (action.kind === 'answer') {
+      setLastQuestion(action.question)
+      if (isAmbiguousQuestion(raw, lastQuestion || null)) {
+        setResult(null)
+        setMessage(tr(replyLang, 'assistantClarifyPronoun'))
+        setCommand('')
+        return
+      }
+    }
     if (action.kind === 'research') void doResearch(action)
     else if (action.kind === 'answer') void doAnswer(action)
     else if (action.kind === 'answer-local') {
@@ -364,6 +410,12 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
           <div className="find-row">
             <button type="button" className="rbtn small" onClick={insertResult}>{t('assistantInsertResult')}</button>
           </div>
+          {result.question && !votedResult && (
+            <div className="find-row">
+              <button type="button" className="rbtn small" onClick={() => voteResult(true)}>{t('assistantFeedbackUseful')}</button>
+              <button type="button" className="rbtn small" onClick={() => voteResult(false)}>{t('assistantFeedbackNotUseful')}</button>
+            </div>
+          )}
         </div>
       )}
     </div>

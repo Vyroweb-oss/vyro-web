@@ -10,6 +10,12 @@ import {
 import { nodesForBuildAction, linesToNodes, nodesToText } from '../lib/agentPage'
 import { computeDocumentStats } from '../lib/stats'
 import { supabase } from '../lib/supabase'
+import {
+  recordFeedback, feedbackPreference, applyDetailPreference, countAnswerWords,
+  recordWeakQuestion, getWeakQuestions, clearWeakQuestions,
+  recordUserLanguage, preferredReplyLanguage, detectSocial, isAmbiguousQuestion,
+  type WeakEntry,
+} from '../lib/assistantLearning'
 
 // The dedicated Agent section (owner order 2026-11-03 ~20:12: build ONE
 // section inside Vyro that is only for the agent, like other AI
@@ -28,6 +34,9 @@ type Entry = {
   lines?: string[]
   asList?: boolean
   nodes?: object[]
+  // A-01g: the question behind an answer, so feedback and the local
+  // weak list can attach to it (never leaves this device).
+  question?: string
 }
 
 export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
@@ -41,6 +50,11 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
   const [busy, setBusy] = useState(false)
   const [entries, setEntries] = useState<Entry[]>([])
   const [notice, setNotice] = useState('')
+  // A-01g learning from users (local only): voted answer ids and the
+  // device-local weak-question list shown on this page.
+  const [voted, setVoted] = useState<number[]>([])
+  const [weakList, setWeakList] = useState<WeakEntry[]>([])
+  const refreshWeak = () => setWeakList(getWeakQuestions())
   const idRef = useRef(0)
   const historyRef = useRef<HTMLDivElement | null>(null)
 
@@ -54,6 +68,8 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
     const el = historyRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [entries, busy])
+
+  useEffect(() => { refreshWeak() }, [entries])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -149,25 +165,31 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
   const doAnswer = async (action: Extract<AssistantAction, { kind: 'answer' }>) => {
     setBusy(true)
     try {
+      // A-01g: a Dari-speaking user's question is searched and
+      // answered in Dari even when the UI language is English.
+      const qLang = preferredReplyLanguage(action.question) ?? lang
       const subs = subQuestionQueries(action.question)
       if (subs.length === 1) {
-        const sources = await fetchSources({ query: searchQueryFor(action.question), lang, pages: 1, mode: 'answer' })
-        if (typeof sources === 'string') { push({ from: 'agent', text: failText(sources) }); return }
-        const conflict = findNumericConflict(sources, action.question, lang)
-        if (conflict) { push({ from: 'agent', title: t('assistantAnswerTitle'), lines: conflict }); return }
-        const answer = buildAnswer(sources, action.question, lang)
-        if (!answer.found) { push({ from: 'agent', text: t('assistantAnswerNotFound') }); return }
-        push({ from: 'agent', title: t('assistantAnswerTitle'), lines: answer.lines })
+        const sources = await fetchSources({ query: searchQueryFor(action.question), lang: qLang, pages: 1, mode: 'answer' })
+        if (typeof sources === 'string') {
+          if (sources === 'notfound') recordWeakQuestion(action.question, 'not-found')
+          push({ from: 'agent', text: failText(sources) }); return
+        }
+        const conflict = findNumericConflict(sources, action.question, qLang)
+        if (conflict) { push({ from: 'agent', title: t('assistantAnswerTitle'), lines: applyDetailPreference(conflict, feedbackPreference()), question: action.question }); return }
+        const answer = buildAnswer(sources, action.question, qLang)
+        if (!answer.found) { recordWeakQuestion(action.question, 'not-found'); push({ from: 'agent', text: t('assistantAnswerNotFound') }); return }
+        push({ from: 'agent', title: t('assistantAnswerTitle'), lines: applyDetailPreference(answer.lines, feedbackPreference()), question: action.question })
         return
       }
       const results: { question: string; lines: string[]; found: boolean }[] = []
       for (const sub of subs) {
-        let sources = await fetchSources({ query: searchQueryFor(sub.query), lang, pages: 1, mode: 'answer' })
+        let sources = await fetchSources({ query: searchQueryFor(sub.query), lang: qLang, pages: 1, mode: 'answer' })
         if (typeof sources === 'string') {
           if (sources === 'notfound') { results.push({ question: sub.question, lines: [], found: false }); continue }
           push({ from: 'agent', text: failText(sources) }); return
         }
-        let answer = buildAnswer(sources, sub.query, lang)
+        let answer = buildAnswer(sources, sub.query, qLang)
         const tried = new Set([searchQueryFor(sub.query)])
         let attempts = 1
         while (!answer.found && attempts < 3) {
@@ -175,16 +197,19 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
           if (tried.has(refined)) break
           tried.add(refined)
           attempts += 1
-          const next = await fetchSources({ query: refined, lang, pages: 1, mode: 'answer' })
+          const next = await fetchSources({ query: refined, lang: qLang, pages: 1, mode: 'answer' })
           if (typeof next === 'string') break
           sources = next
-          answer = buildAnswer(sources, refined, lang)
+          answer = buildAnswer(sources, refined, qLang)
         }
         results.push({ question: sub.question, lines: answer.lines, found: answer.found })
       }
-      const assembled = assembleThoughtAnswer(results, lang)
-      if (!assembled.found) { push({ from: 'agent', text: t('assistantAnswerNotFound') }); return }
-      push({ from: 'agent', title: t('assistantAnswerTitle'), lines: assembled.lines })
+      const assembled = assembleThoughtAnswer(results, qLang)
+      if (!assembled.found) {
+        for (const r of results) if (!r.found) recordWeakQuestion(r.question, 'not-found')
+        push({ from: 'agent', text: t('assistantAnswerNotFound') }); return
+      }
+      push({ from: 'agent', title: t('assistantAnswerTitle'), lines: applyDetailPreference(assembled.lines, feedbackPreference()), question: action.question })
     } finally {
       setBusy(false)
     }
@@ -240,12 +265,35 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
     }
   }
 
+  // A-01g: feedback on an answer is stored locally; a «not helpful»
+  // vote also mines the question into the device-local weak list.
+  const vote = (e: Entry, useful: boolean) => {
+    if (!e.question || !e.lines) return
+    recordFeedback(e.question, useful, countAnswerWords(e.lines))
+    if (!useful) recordWeakQuestion(e.question, 'generic')
+    setVoted((prev) => [...prev, e.id])
+    refreshWeak()
+    setNotice(t('assistantFeedbackThanks'))
+  }
+
   const runCommand = (raw: string) => {
     const text = raw.trim()
     if (!text || busy) return
     push({ from: 'user', text })
     setInput('')
+    // A-01g behaviour learning, before any search: the user's own
+    // wording is remembered on this device; greetings/thanks get a
+    // social reply (never a search); a pronoun-only question with
+    // no prior topic gets a short clarification, never a guess.
+    recordUserLanguage(text)
+    const replyLang = preferredReplyLanguage(text) ?? lang
+    const social = detectSocial(text)
+    if (social) { push({ from: 'agent', text: tr(replyLang, social === 'greeting' ? 'assistantGreeting' : 'assistantThanksReply') }); return }
     const action = parseAssistantCommand(text)
+    if (action.kind === 'answer') {
+      const lastTopic = [...entries].reverse().find((e) => e.question)?.question ?? null
+      if (isAmbiguousQuestion(text, lastTopic)) { push({ from: 'agent', text: tr(replyLang, 'assistantClarifyPronoun') }); return }
+    }
     if (action.kind === 'research') { void doResearch(action); return }
     if (action.kind === 'answer') { void doAnswer(action); return }
     if (action.kind === 'answer-local') { push({ from: 'agent', title: t('assistantAnswerTitle'), lines: action.lines }); return }
@@ -311,11 +359,28 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
                       <button type="button" className="rbtn small" onClick={() => copyEntry(e)}>{t('agentCopy')}</button>
                     </div>
                   )}
+                  {e.lines && e.question && !voted.includes(e.id) && (
+                    <div className="agent-entry-actions">
+                      <button type="button" className="rbtn small" onClick={() => vote(e, true)}>{t('assistantFeedbackUseful')}</button>
+                      <button type="button" className="rbtn small" onClick={() => vote(e, false)}>{t('assistantFeedbackNotUseful')}</button>
+                    </div>
+                  )}
                 </>}
           </div>
         ))}
         {busy && <div className="agent-entry agent" role="status">{t('assistantSearching')}</div>}
       </div>
+      {weakList.length > 0 && (
+        <div className="agent-chips">
+          <span className="find-preview-label">{t('assistantWeakTitle')}</span>
+          <div className="intelligence-actions">
+            {weakList.map((w) => (
+              <span key={w.q} className="find-meta" dir="auto">{w.q}</span>
+            ))}
+            <button type="button" className="rbtn small" onClick={() => { clearWeakQuestions(); refreshWeak() }}>{t('assistantWeakClear')}</button>
+          </div>
+        </div>
+      )}
       <div className="agent-chips">
         <span className="find-preview-label">{t('assistantExamples')}</span>
         <div className="intelligence-actions">
