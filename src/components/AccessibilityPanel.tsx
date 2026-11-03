@@ -32,6 +32,8 @@ const GROUP_ORDER: { kind: A11yIssueKind; labelKey: I18nKey }[] = [
   { kind: 'imageAltRedundantPrefix', labelKey: 'a11yImageAltRedundantPrefix' },
   { kind: 'tableEmptyCells', labelKey: 'a11yTableEmptyCells' },
   { kind: 'linkSameTargetDifferentText', labelKey: 'a11yLinkSameTargetDifferentText' },
+  { kind: 'tableHeaderNotFirstRow', labelKey: 'a11yTableHeaderNotFirstRow' },
+  { kind: 'imageAltMatchesNearbyText', labelKey: 'a11yImageAltMatchesNearbyText' },
 ]
 
 function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
@@ -46,6 +48,12 @@ function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
       return `${t('a11yTable')} ${issue.tableIndex}`
     case 'tableEmptyCells':
       return `${t('a11yTable')} ${issue.tableIndex}`
+    case 'tableHeaderNotFirstRow':
+      return `${t('a11yTable')} ${issue.tableIndex}`
+    case 'imageAltMatchesNearbyText':
+      return issue.altText
+        ? `${t('a11yImage')} ${issue.imageIndex}: ${issue.altText}`
+        : `${t('a11yImage')} ${issue.imageIndex}`
     case 'headingSkip':
       return issue.headingText
         ? `H${issue.prevLevel} → H${issue.level}: ${issue.headingText}`

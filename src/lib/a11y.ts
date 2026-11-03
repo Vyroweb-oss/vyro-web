@@ -4,11 +4,11 @@
 // and in Phase 2, P2-22, with two more, and in Phase 2, P2-23, with two
 // more, and in Phase 2, P2-24, with two more, and in Phase 2, P2-25,
 // with two more, and in Phase 2, P2-26, with two more, and in Phase 2,
-// P2-27, with two more).
+// P2-27, with two more, and in Phase 2, P2-28, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// twenty-two local, JSON-derivable rules — nothing is faked:
+// twenty-four local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -130,6 +130,31 @@
 //       runs with href '' are NOT flagged here, they are already
 //       linkMissingHref; independent of (16) and of the vague/URL-text
 //       branches).
+//   (23) tables whose header row is not the first row
+//       (tableHeaderNotFirstRow — one issue per table, carrying
+//       tableIndex only; fires if and only if the table's first row
+//       (content[0], when it is a tableRow) contains NO tableHeader
+//       cell AND some LATER row contains a tableHeader cell; a table
+//       with a header in the first row passes, a table with no header
+//       anywhere passes this rule (tableNoHeader already covers it),
+//       and a table with no rows or a non-tableRow first row never
+//       fires; independent of tableNoHeader / tableMergedCells /
+//       tableEmptyCells, so co-firing is legitimate).
+//   (24) images whose alt text matches nearby text
+//       (imageAltMatchesNearbyText — for each image with a non-empty
+//       alt, missing/empty alt is excluded, already imageAltMissing;
+//       the normalised alt (normalizeDuplicateText of the trimmed alt)
+//       is compared with the normalised recursive text of (a) its
+//       containing top-level block, when that block's recursive text
+//       trimmed is non-empty, (b) the nearest preceding top-level
+//       block with non-empty trimmed recursive text, and (c) the
+//       nearest following such block; any equality flags one issue
+//       carrying imageIndex and the trimmed alt; imageIndex matches
+//       the main walk's document order, top-level blocks in doc.content
+//       order, depth-first inside each; own-block text never contains
+//       the alt itself, since image nodes carry no text, so the
+//       own-block comparison is safe; malformed docs with no content
+//       array never fire).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -179,6 +204,8 @@ export type A11yIssueKind =
   | 'imageAltRedundantPrefix'
   | 'tableEmptyCells'
   | 'linkSameTargetDifferentText'
+  | 'tableHeaderNotFirstRow'
+  | 'imageAltMatchesNearbyText'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -235,6 +262,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   imageAltRedundantPrefix: 0,
   tableEmptyCells: 0,
   linkSameTargetDifferentText: 0,
+  tableHeaderNotFirstRow: 0,
+  imageAltMatchesNearbyText: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -503,10 +532,90 @@ export function analyzeDoc(docJson: any): A11yResult {
       if (hasEmptyCell) {
         push({ kind: 'tableEmptyCells', tableIndex })
       }
+      // Header row not first (P2-28, rule 23): one issue per table,
+      // carrying tableIndex only, independent of the header, merged-
+      // cell, and empty-cell rules above — neither branch suppresses
+      // the others, so a headerless-first table with a later header
+      // row legitimately fires both tableNoHeader and this rule. The
+      // first row must be a tableRow: a table with no rows, or with a
+      // non-tableRow first row, never fires, and a table with no
+      // header anywhere passes this rule (tableNoHeader covers it).
+      const tableRows = Array.isArray(node.content) ? node.content : []
+      const firstRowIsTableRow = tableRows.length > 0
+        && !!tableRows[0] && typeof tableRows[0] === 'object' && tableRows[0].type === 'tableRow'
+      if (firstRowIsTableRow) {
+        const firstRowCells = Array.isArray(tableRows[0].content) ? tableRows[0].content : []
+        if (!firstRowCells.some(isHeaderCell)) {
+          const laterRowHasHeader = tableRows.slice(1).some((row: any) =>
+            row && typeof row === 'object' && row.type === 'tableRow' && Array.isArray(row.content)
+              && row.content.some(isHeaderCell))
+          if (laterRowHasHeader) {
+            push({ kind: 'tableHeaderNotFirstRow', tableIndex })
+          }
+        }
+      }
     }
     if (Array.isArray(node.content)) node.content.forEach(walk)
   }
   walk(docJson)
+
+  // Alt text matching nearby text (P2-28, rule 24): a second pass over
+  // the top-level blocks, in the same order as the main walk above
+  // (top-level blocks in doc.content order, depth-first inside each),
+  // so the imageIndex assigned here matches the main walk's. For each
+  // image with a non-empty alt (missing/empty alt is excluded above,
+  // already imageAltMissing), the normalised alt (normalizeDuplicateText
+  // of the trimmed alt) is compared with the normalised recursive text
+  // of (a) its containing top-level block, when that block's recursive
+  // text trimmed is non-empty, (b) the nearest preceding top-level
+  // block with non-empty trimmed recursive text, and (c) the nearest
+  // following such block. Any equality flags one issue carrying
+  // imageIndex and the trimmed alt. Own-block text never contains the
+  // alt itself (image nodes carry no text), so the own-block
+  // comparison is safe. A doc with no content array never fires.
+  if (Array.isArray((docJson as any)?.content)) {
+    const blocks: any[] = (docJson as any).content
+    const blockTexts = blocks.map((b: any) => nodeTextRecursive(b).trim())
+    let nearbyImageIndex = 0
+    blocks.forEach((block: any, blockPos: number) => {
+      const collectImages = (node: any) => {
+        if (!node || typeof node !== 'object') return
+        if (node.type === 'image') {
+          nearbyImageIndex += 1
+          const alt = node.attrs?.alt
+          if (typeof alt === 'string' && alt.trim() !== '') {
+            const trimmedAlt = alt.trim()
+            const normalizedAlt = normalizeDuplicateText(trimmedAlt)
+            const matches = (text: string): boolean =>
+              text !== '' && normalizeDuplicateText(text) === normalizedAlt
+            let flagged = matches(blockTexts[blockPos])
+            if (!flagged) {
+              for (let j = blockPos - 1; j >= 0; j -= 1) {
+                if (blockTexts[j] !== '') {
+                  flagged = matches(blockTexts[j])
+                  break
+                }
+              }
+            }
+            if (!flagged) {
+              for (let j = blockPos + 1; j < blocks.length; j += 1) {
+                if (blockTexts[j] !== '') {
+                  flagged = matches(blockTexts[j])
+                  break
+                }
+              }
+            }
+            if (flagged) {
+              push({ kind: 'imageAltMatchesNearbyText', imageIndex: nearbyImageIndex, altText: trimmedAlt })
+            }
+          }
+          return
+        }
+        if (Array.isArray(node.content)) node.content.forEach(collectImages)
+      }
+      collectImages(block)
+    })
+  }
 
   // Links with empty or vague visible text, counted per link RUN (see
   // the header comment). Runs are scoped to one parent's content array:
