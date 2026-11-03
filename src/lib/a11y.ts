@@ -8,11 +8,12 @@
 // Phase 2, P2-29, with two more, and in Phase 2, P2-30, with two more, and in
 // Phase 2, P2-32, with two more, and in Phase 2, P2-33, with two more, and in
 // Phase 2, P2-34, with two more, and in Phase 2, P2-35, with two
-// more, and in Phase 2, P2-36, with two more).
+// more, and in Phase 2, P2-36, with two more, and in
+// Phase 2, P2-37, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// thirty-eight local, JSON-derivable rules — nothing is faked:
+// forty local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -300,6 +301,28 @@
 //       all other alt branches, so a phone alt legitimately
 //       also fires imageAltNoLetters (its text contains no
 //       letters), and no branch suppresses another).
+//   (39) images whose TRIMMED alt text is an email address
+//       (imageAltIsEmail — the same email regex as rules (34)
+//       and (35): /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i on the
+//       trimmed alt, so an uppercase address and an address
+//       with surrounding spaces (trimmed first) both flag,
+//       while a bare domain without '@' and a sentence
+//       embedding an email do not; missing/empty/whitespace
+//       alt is EXCLUDED, it is already imageAltMissing;
+//       independent of all other alt branches, so no branch
+//       suppresses another and co-firing is legitimate).
+//   (40) NON-empty headings whose TRIMMED text is 1–2 code
+//       points long (headingTooShort — counted in code points,
+//       not UTF-16 units, so a single emoji counts as 1 and
+//       flags, and a 3-code-point heading passes; a single
+//       Persian/Dari letter heading also flags, by design —
+//       the count is code points, not letters; empty headings
+//       are EXCLUDED, they are already headingEmpty;
+//       headingText carries the original, unnormalised text,
+//       and the issue also carries level; independent of all
+//       other heading rules, so a digit-only short heading
+//       legitimately also fires headingNoLetters, and no
+//       branch suppresses another).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -365,6 +388,8 @@ export type A11yIssueKind =
   | 'linkTextIsPhoneNumber'
   | 'headingTextIsPhoneNumber'
   | 'imageAltIsPhoneNumber'
+  | 'imageAltIsEmail'
+  | 'headingTooShort'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -386,7 +411,7 @@ export interface A11yIssue {
   href?: string
   /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber issues. */
   linkText?: string
-  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber issues. */
+  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail issues. */
   altText?: string
 }
 
@@ -437,6 +462,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   linkTextIsPhoneNumber: 0,
   headingTextIsPhoneNumber: 0,
   imageAltIsPhoneNumber: 0,
+  imageAltIsEmail: 0,
+  headingTooShort: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -610,6 +637,24 @@ export function analyzeDoc(docJson: any): A11yResult {
     if (h.empty) return
     if (isPhoneNumberText(h.text.trim())) {
       push({ kind: 'headingTextIsPhoneNumber', headingIndex: i + 1, headingText: h.text, level: h.level })
+    }
+  })
+  // Headings that are very short (P2-37, rule 40): a NON-empty
+  // heading whose TRIMMED text is 1–2 code points long flags,
+  // so a single emoji counts as 1 and flags, a 2-code-point
+  // heading flags, and a 3-code-point heading passes; a single
+  // Persian/Dari letter heading also flags, by design — the
+  // count is code points, not letters. Empty headings are
+  // excluded (already headingEmpty). headingText carries the
+  // original, unnormalised text. Independent of the other
+  // heading rules — a digit-only short heading legitimately
+  // also fires headingNoLetters, and no branch suppresses
+  // another.
+  headings.forEach((h, i) => {
+    if (h.empty) return
+    const trimmedLength = [...h.text.trim()].length
+    if (trimmedLength >= 1 && trimmedLength <= 2) {
+      push({ kind: 'headingTooShort', headingIndex: i + 1, headingText: h.text, level: h.level })
     }
   })
   // Duplicate heading text (P2-21): only later occurrences are flagged,
@@ -796,6 +841,19 @@ export function analyzeDoc(docJson: any): A11yResult {
         // contains no letters), so no branch suppresses another.
         if (isPhoneNumberText(trimmedAlt)) {
           push({ kind: 'imageAltIsPhoneNumber', imageIndex, altText: trimmedAlt })
+        }
+        // Email-address alt text (P2-37, rule 39): the TRIMMED
+        // alt must match the same regex as rules (34) and (35) —
+        // /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i — so an uppercase
+        // address and an address with surrounding spaces
+        // (trimmed first) both flag, while a bare domain
+        // without '@' and a sentence embedding an email do
+        // not. Missing/empty alt is excluded above (already
+        // imageAltMissing). Independent of all other alt
+        // branches — no branch suppresses another, so
+        // co-firing is legitimate.
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmedAlt)) {
+          push({ kind: 'imageAltIsEmail', imageIndex, altText: trimmedAlt })
         }
       }
     } else if (node.type === 'table') {
