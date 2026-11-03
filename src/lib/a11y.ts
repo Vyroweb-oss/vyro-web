@@ -11,11 +11,12 @@
 // more, and in Phase 2, P2-36, with two more, and in
 // Phase 2, P2-37, with two more, and in Phase 2, P2-38,
 // with two more, and in Phase 2, P2-39, with two more, and in
-// Phase 2, P2-40, with two more).
+// Phase 2, P2-40, with two more, and in
+// Phase 2, P2-41, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// forty-six local, JSON-derivable rules — nothing is faked:
+// forty-eight local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -394,6 +395,37 @@
 //       unnormalised text, and the issue also carries
 //       level; independent of all other heading rules, so
 //       co-firing is legitimate).
+//   (47) non-empty headings whose TRIMMED text CONTAINS a
+//       URL substring but is NOT exactly a URL
+//       (headingContainsUrl — the trimmed text matches
+//       /https?:\/\/\S+/i or /www\.[^\s]+\.[^\s]{2,}/i
+//       somewhere inside it, so 'See https://example.com
+//       for details' and 'Visit www.example.com today'
+//       flag, while a heading that IS exactly a URL does
+//       NOT flag here (it is already headingTextIsUrl,
+//       rule 30), a bare domain without a scheme or www.
+//       (e.g. 'example.com guide') does NOT flag, and a
+//       www. host without a TLD (e.g. 'www.example')
+//       does NOT flag; empty headings are EXCLUDED,
+//       they are already headingEmpty; headingText
+//       carries the original, unnormalised text, and the
+//       issue also carries level; independent of all
+//       other heading rules, so co-firing with e.g.
+//       headingTooLong is legitimate).
+//   (48) images whose TRIMMED alt text CONTAINS a URL
+//       substring but is NOT exactly a URL
+//       (imageAltContainsUrl — the same contains test
+//       as rule (47) on the trimmed alt, so 'See
+//       https://example.com for details' flags, while
+//       an alt that IS exactly a URL does NOT flag here
+//       (it is already imageAltIsUrl, rule 25), a bare
+//       domain without a scheme or www. does NOT flag,
+//       and a www. host without a TLD does NOT flag;
+//       missing/empty/whitespace alt is EXCLUDED, it
+//       is already imageAltMissing; the issue carries
+//       imageIndex and the trimmed alt; independent of
+//       all other alt branches, so co-firing is
+//       legitimate).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -467,6 +499,8 @@ export type A11yIssueKind =
   | 'headingTextIsFilename'
   | 'linkTextAllCaps'
   | 'headingEndsWithPeriod'
+  | 'headingContainsUrl'
+  | 'imageAltContainsUrl'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -488,7 +522,7 @@ export interface A11yIssue {
   href?: string
   /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort / linkTextIsFilename / linkTextAllCaps issues. */
   linkText?: string
-  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail / imageAltAllCaps issues. */
+  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail / imageAltAllCaps / imageAltContainsUrl issues. */
   altText?: string
 }
 
@@ -547,6 +581,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   headingTextIsFilename: 0,
   linkTextAllCaps: 0,
   headingEndsWithPeriod: 0,
+  headingContainsUrl: 0,
+  imageAltContainsUrl: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -584,6 +620,23 @@ function normalizeDuplicateText(text: string): string {
  */
 function isFilenameText(trimmed: string): boolean {
   return /^[^\s]+\.(pdf|docx?|txt|rtf|odt|xlsx?|csv|pptx?|zip|rar|7z|png|jpe?g|gif|webp|svg|bmp|avif|mp3|wav|mp4|mov|html|json|md)$/i.test(trimmed)
+}
+
+/**
+ * URL tests shared by rules (47) and (48) (P2-41): the input must
+ * already be trimmed. isUrlText is the exact-URL test of rules
+ * (25)/(30) — an http(s) URL with no whitespace, or a www. host
+ * with a TLD of at least 2 characters. containsUrlText is the
+ * substring version: the same two patterns unanchored, so a URL
+ * embedded in a longer sentence matches, while a bare domain
+ * without a scheme or www. and a www. host without a TLD do not.
+ */
+function isUrlText(trimmed: string): boolean {
+  return /^https?:\/\/\S+$/i.test(trimmed) || /^www\.[^\s]+\.[^\s]{2,}$/i.test(trimmed)
+}
+
+function containsUrlText(trimmed: string): boolean {
+  return /https?:\/\/\S+|www\.[^\s]+\.[^\s]{2,}/i.test(trimmed)
 }
 
 function isPhoneNumberText(trimmed: string): boolean {
@@ -782,6 +835,26 @@ export function analyzeDoc(docJson: any): A11yResult {
     if (h.empty) return
     if (h.text.trim().endsWith('.')) {
       push({ kind: 'headingEndsWithPeriod', headingIndex: i + 1, headingText: h.text, level: h.level })
+    }
+  })
+  // Headings containing a URL (P2-41, rule 47): a NON-empty
+  // heading whose TRIMMED text CONTAINS a URL substring but
+  // is NOT exactly a URL, so 'See https://example.com for
+  // details' and 'Visit www.example.com today' flag, while
+  // a heading that IS exactly a URL does NOT flag here
+  // (it is already headingTextIsUrl, rule 30), a bare
+  // domain without a scheme or www. does NOT flag, and a
+  // www. host without a TLD does NOT flag. Empty
+  // headings are excluded (already headingEmpty).
+  // headingText carries the original, unnormalised text.
+  // Independent of the other heading rules — a heading
+  // containing a URL may legitimately also fire e.g.
+  // headingTooLong, and no branch suppresses another.
+  headings.forEach((h, i) => {
+    if (h.empty) return
+    const trimmedHeading = h.text.trim()
+    if (!isUrlText(trimmedHeading) && containsUrlText(trimmedHeading)) {
+      push({ kind: 'headingContainsUrl', headingIndex: i + 1, headingText: h.text, level: h.level })
     }
   })
   // Duplicate heading text (P2-21): only later occurrences are flagged,
@@ -996,6 +1069,22 @@ export function analyzeDoc(docJson: any): A11yResult {
           && trimmedAlt === trimmedAlt.toUpperCase()
           && trimmedAlt !== trimmedAlt.toLowerCase()) {
           push({ kind: 'imageAltAllCaps', imageIndex, altText: trimmedAlt })
+        }
+        // Alt text containing a URL (P2-41, rule 48):
+        // the TRIMMED alt CONTAINS a URL substring but
+        // is NOT exactly a URL, so 'See
+        // https://example.com for details' flags, while
+        // an alt that IS exactly a URL does NOT flag
+        // here (it is already imageAltIsUrl, rule 25),
+        // a bare domain without a scheme or www. does
+        // NOT flag, and a www. host without a TLD does
+        // NOT flag. Missing/empty alt is excluded
+        // above (already imageAltMissing). Independent
+        // of all other alt branches — no branch
+        // suppresses another, so co-firing is
+        // legitimate.
+        if (!isUrlText(trimmedAlt) && containsUrlText(trimmedAlt)) {
+          push({ kind: 'imageAltContainsUrl', imageIndex, altText: trimmedAlt })
         }
       }
     } else if (node.type === 'table') {
