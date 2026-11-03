@@ -414,6 +414,39 @@ describe('A-01d2 ranking preference (live failure 2026-11-03: generic wiki match
     }]
     expect(buildAnswer(korea, 'پایتخت فرانسه کجاست؟', 'fa').found).toBe(false)
   })
+  it('A-01d3: a weak-marker wiki sentence (leading textbooks) must NOT pre-empt the web answer', () => {
+    const wikiSpurious = [{
+      title: 'هوش مصنوعی', url: 'https://fa.wikipedia.org/wiki/AI',
+      extract: 'کتاب‌های هوش مصنوعی پیشرو، این شاخه را به عنوان شاخه مطالعه بر روی عوامل هوشمند تعریف می‌کنند که سامانه‌های هوشمند می‌سازند و داده‌ها را پردازش می‌کنند.',
+    }]
+    const ans = buildAnswer([...wikiSpurious, ...webWinner], QUESTION, 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('قوی‌ترین هوش مصنوعی در کدنویسی')
+    expect(ans.lines[ans.lines.length - 1]).toContain('Example Blog')
+    expect(ans.lines.join(' ')).not.toContain('ویکی‌پدیا')
+  })
+  it('A-01d3: a nav-boilerplate mega-sentence (>60 words, no terminators) is never served as an answer', () => {
+    const navBlob = Array(80).fill('منو').join(' ') + ' هوش مصنوعی کدنویسی قوی'
+    const web = [{
+      title: 'بهترین هوش مصنوعی برای کدنویسی', url: 'https://example-blog.com/ai-coding', site: 'Example Blog',
+      extract: `${navBlob}. ابزار ایکس قوی‌ترین هوش مصنوعی در کدنویسی است و برنامه‌نویسان بسیاری از آن استفاده می‌کنند.`,
+    }]
+    const ans = buildAnswer(web, QUESTION, 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).not.toContain('منو')
+    expect(ans.lines.join(' ')).toContain('قوی‌ترین هوش مصنوعی در کدنویسی')
+    expect(ans.lines[ans.lines.length - 1]).toContain('Example Blog')
+  })
+  it('A-01d3: a true 3-token wiki ranking sentence (largest ocean) still wins over the web', () => {
+    const wiki = [{
+      title: 'اقیانوس آرام', url: 'https://fa.wikipedia.org/wiki/Pacific',
+      extract: 'اقیانوس آرام بزرگ‌ترین اقیانوس جهان است که مساحت آن از مجموع خشکی‌های زمین بیشتر است و ژرف‌ترین گودال‌های اقیانوسی جهان را در خود جای داده است.',
+    }]
+    const ans = buildAnswer(wiki, 'بزرگ‌ترین اقیانوس جهان کدام است؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('اقیانوس آرام بزرگ‌ترین اقیانوس جهان است')
+    expect(ans.lines[ans.lines.length - 1]).toContain('منبع: ویکی‌پدیا')
+  })
   it('sourceSiteName: wikipedia URL → ویکی‌پدیا in FA, web URL → site field or bare hostname', () => {
     expect(sourceSiteName({ url: 'https://fa.wikipedia.org/wiki/X' }, 'fa')).toBe('ویکی‌پدیا')
     expect(sourceSiteName({ url: 'https://en.wikipedia.org/wiki/X' }, 'en')).toBe('Wikipedia')

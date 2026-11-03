@@ -432,7 +432,11 @@ export function parseSections(extract: string): ResearchSection[] {
 }
 
 const usableSentence = (s: string) =>
-  countWords(s) >= 5 && !/https?:\/\//.test(s) && !s.includes('==')
+  // A-01d3: cap at 60 words — a fetched web page's stripped nav
+  // (menus, breadcrumbs, footer links) has no sentence terminators,
+  // so it collapses into one 100+-word "sentence" that would otherwise
+  // win as an answer. Real sentences almost never exceed 60 words.
+  countWords(s) >= 5 && countWords(s) <= 60 && !/https?:\/\//.test(s) && !s.includes('==')
 
 const fingerprint = (s: string) => s.replace(/\s+/g, ' ').slice(0, 36)
 
@@ -674,13 +678,30 @@ export function buildAnswer(
   // below, so a question with no web answer keeps its old sourced
   // answer instead of going blank.
   if (isRankingOrCurrentQuestion(question) && qTokens.size >= 2) {
-    const RANK_MARKERS = new Set([
-      'قوی', 'ترین', 'بهترین', 'برتر', 'پیشرو', 'اول', 'رتبه', 'مقایسه', 'جدیدترین', 'آخرین',
-      'strongest', 'best', 'top', 'leading', 'first', 'fastest', 'newest', 'latest', 'ranked', 'ranking', 'compare', 'comparison', 'versus',
+    // A-01d3 (live failure 2026-11-03: the owner's coding-AI question
+    // was "answered" by a Wikipedia sentence whose only ranking word
+    // was «پیشرو» in «کتاب‌های هوش مصنوعی پیشرو» — leading textbooks,
+    // not a ranked winner). Weak markers («پیشرو»/leading, newest/
+    // latest-style recency words) describe fields and editions as
+    // often as winners, so a weak-marker sentence wins only when it
+    // also matches ≥3 question tokens — a real ranking sentence
+    // about the asked subject does; a 2-token generic match does not.
+    // Strong markers (بهترین/قوی‌ترین/best/strongest/…) keep minScore.
+    const STRONG_RANK_MARKERS = new Set([
+      'قوی', 'ترین', 'بهترین', 'برتر', 'اول', 'رتبه', 'مقایسه',
+      'strongest', 'best', 'top', 'first', 'fastest', 'ranked', 'ranking', 'compare', 'comparison', 'versus',
+    ])
+    const WEAK_RANK_MARKERS = new Set([
+      'پیشرو', 'جدیدترین', 'آخرین',
+      'leading', 'newest', 'latest',
     ])
     const wikiRanking = cands
       .filter((c) => isWikiUrl(c.url) && c.score >= minScore)
-      .filter((c) => [...expandedToks(c.text)].some((t) => RANK_MARKERS.has(t)))
+      .filter((c) => {
+        const toks = expandedToks(c.text)
+        if ([...toks].some((t) => STRONG_RANK_MARKERS.has(t))) return true
+        return c.score >= 3 && [...toks].some((t) => WEAK_RANK_MARKERS.has(t))
+      })
       .sort((a, b) => b.score - a.score || a.order - b.order)
       .slice(0, 3)
       .sort((a, b) => a.order - b.order)
