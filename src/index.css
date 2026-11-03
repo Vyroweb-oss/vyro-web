@@ -711,9 +711,14 @@ input:focus,select:focus{border-color:var(--brand)}
 .settings-modal{max-width:560px;max-height:90vh;overflow:auto}
 .settings-divider{border:0;border-top:1px solid var(--border);margin:2px 0}
 
-/* ---------- Vyro Intelligence (M2-10, architecture + UI only) ---------- */
+/* ---------- Vyro Intelligence (M2-10) → Vyro Assistant (owner order 2026-11-03: the app's own local command engine) ---------- */
 .intelligence-banner{background:#fef3c7;color:#78350f;border:1px solid #f59e0b;border-radius:var(--r-sm);padding:8px 10px;font-size:13.5px}
 [data-theme="dark"] .intelligence-banner{background:#451a03;color:#fde68a;border-color:#92400e}
+.assistant-banner{background:#ecfdf5;color:#065f46;border-color:#34d399}
+[data-theme="dark"] .assistant-banner{background:#052e1b;color:#a7f3d0;border-color:#065f46}
+.assistant-form{display:flex;gap:8px}
+.assistant-input{flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font:inherit;min-width:140px}
+.assistant-message{white-space:pre-line}
 .intelligence-group{display:flex;flex-direction:column;gap:6px}
 .intelligence-actions{display:flex;gap:6px;flex-wrap:wrap}
 .intelligence-compare{display:flex;flex-direction:column;gap:6px}
