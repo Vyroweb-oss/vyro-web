@@ -26,6 +26,7 @@ const STR = {
     never: '—', loadFailed: 'Could not load the panel data.',
     notConfigured: 'Accounts are not configured on this build.',
     allFree: 'Everything on Vyro is free for all users — there is no Premium version.',
+    themeToDark: '🌙 Black theme', themeToLight: '☀️ Light theme',
   },
   fa: {
     title: 'پنل مدیریت وایرو', signIn: 'ورود', email: 'ایمیل', password: 'رمز عبور',
@@ -37,6 +38,7 @@ const STR = {
     never: '—', loadFailed: 'داده‌های پنل بارگذاری نشد.',
     notConfigured: 'حساب‌ها در این نسخه پیکربندی نشده‌اند.',
     allFree: 'همه‌چیز در وایرو برای همه کاربران رایگان است — نسخهٔ پرمیوم وجود ندارد.',
+    themeToDark: '🌙 تم سیاه', themeToLight: '☀️ تم روشن',
   },
 } as const
 
@@ -56,6 +58,15 @@ const PUB_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string
 export default function AdminApp() {
   const [lang, setLang] = useState<Lang>('fa')
   const t = STR[lang]
+  // Black theme (owner order 2026-11-03): a persisted panel-only theme;
+  // admin.css keys every color off the [data-theme="dark"] variables.
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try { return localStorage.getItem('vyro-admin-theme') === 'dark' ? 'dark' : 'light' } catch { return 'light' }
+  })
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    try { localStorage.setItem('vyro-admin-theme', theme) } catch { /* storage unavailable */ }
+  }, [theme])
   const [ready, setReady] = useState(false)
   const [signedIn, setSignedIn] = useState(false)
   const [forbidden, setForbidden] = useState(false)
@@ -115,6 +126,9 @@ export default function AdminApp() {
             <button className={lang === 'en' ? 'on' : ''} onClick={() => setLang('en')}>EN</button>
             <button className={lang === 'fa' ? 'on' : ''} onClick={() => setLang('fa')}>فارسی</button>
           </span>
+          <button className="adm-btn ghost small" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+            {theme === 'dark' ? t.themeToLight : t.themeToDark}
+          </button>
           {signedIn && <button className="adm-btn ghost" onClick={() => supabase?.auth.signOut()}>{t.signOut}</button>}
         </span>
       </header>
