@@ -6,11 +6,12 @@
 // with two more, and in Phase 2, P2-26, with two more, and in Phase 2,
 // P2-27, with two more, and in Phase 2, P2-28, with two more, and in
 // Phase 2, P2-29, with two more, and in Phase 2, P2-30, with two more, and in
-// Phase 2, P2-32, with two more, and in Phase 2, P2-33, with two more).
+// Phase 2, P2-32, with two more, and in Phase 2, P2-33, with two more, and in
+// Phase 2, P2-34, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// thirty-two local, JSON-derivable rules — nothing is faked:
+// thirty-four local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -235,6 +236,22 @@
 //       original, unnormalised text, and the issue also carries
 //       level; independent of all other heading rules, so co-firing
 //       is legitimate).
+//   (33) images whose TRIMMED alt text is 1–2 code points long
+//       (imageAltVeryShort — counted in code points, not UTF-16
+//       units, so a single emoji counts as 1 and flags, and a
+//       3-code-point alt passes; missing/empty alt is NOT flagged
+//       here, it is imageAltMissing; independent of all other alt
+//       rules, so co-firing is legitimate).
+//   (34) links whose TRIMMED visible text is an email address
+//       (linkTextIsEmail — per link RUN, as defined below; the
+//       trimmed run text matches
+//       /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i, so an uppercase address
+//       and an address with surrounding spaces (trimmed first)
+//       both flag, while a bare domain without '@' and ordinary
+//       non-email text do not; empty runs are NOT flagged here,
+//       they are already linkEmptyText; independent of the
+//       vague/URL-text/no-letters branches, so neither suppresses
+//       nor is suppressed by them).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -294,6 +311,8 @@ export type A11yIssueKind =
   | 'headingTextIsUrl'
   | 'linkTextTooLong'
   | 'headingAllCaps'
+  | 'imageAltVeryShort'
+  | 'linkTextIsEmail'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -313,9 +332,9 @@ export interface A11yIssue {
   linkIndex?: number
   /** Link target, for link issues ('' when the link mark has no href). */
   href?: string
-  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong issues. */
+  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail issues. */
   linkText?: string
-  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters issues. */
+  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort issues. */
   altText?: string
 }
 
@@ -360,6 +379,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   headingTextIsUrl: 0,
   linkTextTooLong: 0,
   headingAllCaps: 0,
+  imageAltVeryShort: 0,
+  linkTextIsEmail: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -651,6 +672,15 @@ export function analyzeDoc(docJson: any): A11yResult {
         if (!/\p{L}/u.test(trimmedAlt)) {
           push({ kind: 'imageAltNoLetters', imageIndex, altText: trimmedAlt })
         }
+        // Very short alt text (P2-34, rule 33): the trimmed alt is
+        // 1–2 code points long, so a single emoji counts as 1 and
+        // flags, and a 3-code-point alt passes. Missing/empty alt
+        // is excluded above (already imageAltMissing). Independent
+        // of all other alt branches — no branch suppresses another,
+        // so co-firing is legitimate.
+        if ([...trimmedAlt].length >= 1 && [...trimmedAlt].length <= 2) {
+          push({ kind: 'imageAltVeryShort', imageIndex, altText: trimmedAlt })
+        }
       }
     } else if (node.type === 'table') {
       tableIndex += 1
@@ -821,7 +851,7 @@ export function analyzeDoc(docJson: any): A11yResult {
   // "click here for details" does not. Empty runs are NOT vague — they
   // are already linkEmptyText, and flush() evaluates all link rules per
   // run (empty, then vague / URL-text, then missing-href, then
-  // no-letters, then too-long, in that order).
+  // no-letters, then too-long, then email, in that order).
   const VAGUE_LINK_TEXT = new Set([
     'click here', 'here', 'this', 'link', 'more', 'read more', 'click',
     'اینجا', 'اینجا کلیک کنید', 'کلیک کنید', 'لینک', 'بیشتر',
@@ -898,6 +928,19 @@ export function analyzeDoc(docJson: any): A11yResult {
           // may legitimately fire several of them.
           if ([...trimmed].length > 100) {
             push({ kind: 'linkTextTooLong', linkIndex, href: runHref, linkText: trimmed })
+          }
+          // Link text that is an email address (P2-34, rule 34):
+          // the trimmed run text matches
+          // /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i, so an uppercase
+          // address and an address with surrounding spaces
+          // (trimmed first) both flag, while a bare domain without
+          // '@' and ordinary non-email text do not. Empty runs are
+          // excluded by the branch above (already linkEmptyText).
+          // Independent of the vague/URL-text/no-letters/
+          // missing-href/too-long branches above — no branch
+          // suppresses another, so co-firing is legitimate.
+          if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmed)) {
+            push({ kind: 'linkTextIsEmail', linkIndex, href: runHref, linkText: trimmed })
           }
         }
         runHref = null
