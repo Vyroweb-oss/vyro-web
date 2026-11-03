@@ -14,11 +14,12 @@
 // Phase 2, P2-40, with two more, and in
 // Phase 2, P2-41, with two more, and in
 // Phase 2, P2-42, with two more, and in
-// Phase 2, P2-43, with two more).
+// Phase 2, P2-43, with two more, and in
+// Phase 2, P2-44, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// fifty-two local, JSON-derivable rules — nothing is faked:
+// fifty-four local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -492,6 +493,43 @@
 //       carries imageIndex and the trimmed alt;
 //       independent of all other alt branches, so
 //       co-firing is legitimate).
+//   (53) links whose TRIMMED visible text CONTAINS
+//       a phone-number substring but is NOT exactly
+//       a phone number (linkContainsPhoneNumber —
+//       per link RUN, as defined below; the shared
+//       containsPhoneNumberText test below scans the
+//       trimmed run text for a phone-like substring
+//       with the same date guard as the exact test
+//       (rule 36), so 'Call +98 912 345 6789 today'
+//       flags, while a run that IS exactly a phone
+//       number does NOT flag here (it is already
+//       linkTextIsPhoneNumber, rule 36), a
+//       YYYY-MM-DD date (8 digits, hyphens only)
+//       does NOT flag, and a bare hyphenated
+//       7-digit string does NOT flag; empty runs
+//       are EXCLUDED, they are already
+//       linkEmptyText; the issue carries linkIndex,
+//       href, and the trimmed linkText; independent
+//       of all other link branches, so co-firing
+//       is legitimate).
+//   (54) non-empty headings whose TRIMMED text
+//       CONTAINS a phone-number substring but is
+//       NOT exactly a phone number
+//       (headingContainsPhoneNumber — the same
+//       containsPhoneNumberText test as rule (53)
+//       on the trimmed heading text, so 'Call +98
+//       912 345 6789' flags, while a heading that
+//       IS exactly a phone number does NOT flag
+//       here (it is already
+//       headingTextIsPhoneNumber, rule 37), a
+//       YYYY-MM-DD date does NOT flag, and a bare
+//       hyphenated 7-digit string does NOT flag;
+//       empty headings are EXCLUDED, they are
+//       already headingEmpty; headingText carries
+//       the original, unnormalised text, and the
+//       issue also carries level; independent of
+//       all other heading rules, so co-firing is
+//       legitimate).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -571,6 +609,8 @@ export type A11yIssueKind =
   | 'headingContainsEmail'
   | 'linkContainsEmail'
   | 'imageAltContainsEmail'
+  | 'linkContainsPhoneNumber'
+  | 'headingContainsPhoneNumber'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -590,7 +630,7 @@ export interface A11yIssue {
   linkIndex?: number
   /** Link target, for link issues ('' when the link mark has no href). */
   href?: string
-  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort / linkTextIsFilename / linkTextAllCaps / linkContainsUrl / linkContainsEmail issues. */
+  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort / linkTextIsFilename / linkTextAllCaps / linkContainsUrl / linkContainsEmail / linkContainsPhoneNumber issues. */
   linkText?: string
   /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail / imageAltAllCaps / imageAltContainsUrl / imageAltContainsEmail issues. */
   altText?: string
@@ -657,6 +697,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   headingContainsEmail: 0,
   linkContainsEmail: 0,
   imageAltContainsEmail: 0,
+  linkContainsPhoneNumber: 0,
+  headingContainsPhoneNumber: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -724,6 +766,32 @@ function containsUrlText(trimmed: string): boolean {
  */
 function containsEmailText(trimmed: string): boolean {
   return /[^\s@]+@[^\s@]+\.[^\s@]{2,}/.test(trimmed)
+}
+
+/**
+ * Phone-substring test for rules (53) and (54) (P2-44): the input must
+ * already be trimmed. Each phone-like candidate substring — a run of
+ * digits, spaces, parentheses, hyphens, and dots, optionally starting
+ * with '+' — is put through the same date guard as the exact test
+ * (rule 36): after stripping spaces, parentheses, hyphens, and dots
+ * and an optional leading '+', what remains must be all digits with
+ * at least 7 digits, AND the candidate must either start with '+',
+ * contain a space or parenthesis, or have at least 10 digits. That
+ * guard is what keeps a YYYY-MM-DD date (8 digits, hyphens only)
+ * and a bare hyphenated 7-digit string from flagging, even when they
+ * sit inside a longer sentence. The exact-phone exclusion lives in
+ * each rule pass itself, which also checks isPhoneNumberText before
+ * flagging.
+ */
+function containsPhoneNumberText(trimmed: string): boolean {
+  const candidates = trimmed.match(/\+?[\d][\d\s().-]*\d/g) ?? []
+  return candidates.some((candidate) => {
+    const digits = candidate.replace(/[\s().-]/g, '').replace(/^\+/, '')
+    return /^\d{7,}$/.test(digits)
+      && (candidate.startsWith('+')
+        || /[\s()]/.test(candidate)
+        || digits.length >= 10)
+  })
 }
 
 function isPhoneNumberText(trimmed: string): boolean {
@@ -961,6 +1029,27 @@ export function analyzeDoc(docJson: any): A11yResult {
     const trimmedHeading = h.text.trim()
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmedHeading) && containsEmailText(trimmedHeading)) {
       push({ kind: 'headingContainsEmail', headingIndex: i + 1, headingText: h.text, level: h.level })
+    }
+  })
+  // Headings containing a phone number (P2-44, rule 54): a
+  // NON-empty heading whose TRIMMED text CONTAINS a
+  // phone-number substring but is NOT exactly a phone
+  // number, reusing containsPhoneNumberText, so 'Call
+  // +98 912 345 6789' flags, while a heading that IS
+  // exactly a phone number does NOT flag here (it is
+  // already headingTextIsPhoneNumber, rule 37), a
+  // YYYY-MM-DD date does NOT flag, and a bare
+  // hyphenated 7-digit string does NOT flag. Empty
+  // headings are excluded (already headingEmpty).
+  // headingText carries the original, unnormalised
+  // text. Independent of the other heading rules —
+  // no branch suppresses another, so co-firing is
+  // legitimate.
+  headings.forEach((h, i) => {
+    if (h.empty) return
+    const trimmedHeading = h.text.trim()
+    if (!isPhoneNumberText(trimmedHeading) && containsPhoneNumberText(trimmedHeading)) {
+      push({ kind: 'headingContainsPhoneNumber', headingIndex: i + 1, headingText: h.text, level: h.level })
     }
   })
   // Duplicate heading text (P2-21): only later occurrences are flagged,
@@ -1567,6 +1656,24 @@ export function analyzeDoc(docJson: any): A11yResult {
           // legitimate.
           if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmed) && containsEmailText(trimmed)) {
             push({ kind: 'linkContainsEmail', linkIndex, href: runHref, linkText: trimmed })
+          }
+          // Links whose visible text contains a phone number
+          // (P2-44, rule 53): the trimmed run text
+          // CONTAINS a phone-number substring but is NOT
+          // exactly a phone number, reusing
+          // containsPhoneNumberText, so 'Call +98 912
+          // 345 6789 today' flags, while a run that IS
+          // exactly a phone number does NOT flag here
+          // (it is already linkTextIsPhoneNumber, rule
+          // 36), a YYYY-MM-DD date does NOT flag, and
+          // a bare hyphenated 7-digit string does NOT
+          // flag. Empty runs are excluded by the
+          // branch above (already linkEmptyText).
+          // Independent of all other link branches —
+          // no branch suppresses another, so
+          // co-firing is legitimate.
+          if (!isPhoneNumberText(trimmed) && containsPhoneNumberText(trimmed)) {
+            push({ kind: 'linkContainsPhoneNumber', linkIndex, href: runHref, linkText: trimmed })
           }
         }
         runHref = null
