@@ -9,6 +9,7 @@ import {
   buildTemplate, buildResearchDoc, assembleResearch, parseSections, cleanWikiText,
   buildAnswer, searchQueryFor, normalizeDigits, splitSentences, sourceSiteName,
   isRankingOrCurrentQuestion, estimateResearchPages,
+  analyzeQuestion, sentenceMatchesQuestionType, searchQueriesFor,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -482,5 +483,105 @@ describe('A-01b real page measurement (A-01 failure: 713-word sectioned draft re
   })
   it('a single block taller than one usable page is chunked, not parked on one page', () => {
     expect(estimateResearchPages([para('x'.repeat(10000))])).toBe(4)
+  })
+})
+
+describe('A-01e question analysis (owner order 2026-11-03: analyze the question, then analyze the answers)', () => {
+  it('classifies questions into types with the right answer kind', () => {
+    expect(analyzeQuestion('کدام هوش مصنوعی در کدنویسی قوی‌تر است؟').type).toBe('ranking')
+    expect(analyzeQuestion('کدام هوش مصنوعی در کدنویسی قوی‌تر است؟').answerKind).toBe('comparative')
+    expect(analyzeQuestion('نویسنده شاهنامه کیست؟').type).toBe('person')
+    expect(analyzeQuestion('نویسنده شاهنامه کیست؟').answerKind).toBe('name')
+    expect(analyzeQuestion('پایتخت فرانسه کجاست؟').type).toBe('place')
+    expect(analyzeQuestion('سرعت نور چقدر است؟').type).toBe('quantity')
+    expect(analyzeQuestion('فوتوسنتز چیست؟').type).toBe('definition')
+    expect(analyzeQuestion('چرا آسمان آبی است؟').type).toBe('why')
+    expect(analyzeQuestion('What is the best AI for coding?').type).toBe('ranking')
+  })
+  it('person query variants rephrase نویسنده as اثر (source phrasing) without changing searchQueryFor', () => {
+    expect(searchQueryFor('نویسنده شاهنامه کیست؟')).toBe('نویسنده شاهنامه')
+    expect(searchQueriesFor('نویسنده شاهنامه کیست؟')).toContain('اثر شاهنامه')
+    expect(searchQueriesFor('نویسنده شاهنامه کیست؟')[0]).toBe('نویسنده شاهنامه')
+  })
+  it('owner ranking question still yields a comparative answer via existing fixtures', () => {
+    const wiki = [{
+      title: 'رایانه', url: 'https://fa.wikipedia.org/wiki/Computer',
+      extract: 'رایانه دستگاهی الکترونیکی است که داده‌ها را پردازش می‌کند. پژوهشگران سامانه‌های رایانه‌ای می‌سازند و آنها را بهبود می‌دهند.',
+    }]
+    const web = [{
+      title: 'بهترین هوش مصنوعی برای کدنویسی', url: 'https://example-blog.com/ai-coding', site: 'Example Blog',
+      extract: 'ابزار ایکس قوی‌ترین هوش مصنوعی در کدنویسی است و برنامه‌نویسان بسیاری از آن استفاده می‌کنند. این ابزار کدهای پیچیده را سریع و دقیق می‌نویسد و خطاها را هم پیدا می‌کند.',
+    }]
+    const ans = buildAnswer([...wiki, ...web], 'کدام هوش مصنوعی در کدنویسی قوی‌تر است؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('قوی‌ترین هوش مصنوعی در کدنویسی')
+  })
+  it('Shahnameh author: a name-bearing sentence wins', () => {
+    const src = [{
+      title: 'شاهنامه', url: 'https://fa.wikipedia.org/wiki/Shahnameh',
+      extract: 'شاهنامه اثر حکیم ابوالقاسم فردوسی توسی است و از بزرگ‌ترین آثار حماسی جهان به شمار می‌رود. شاهنامه کتابی حماسی است که داستان‌های پهلوانان ایران را روایت می‌کند.',
+    }]
+    const ans = buildAnswer(src, 'نویسنده شاهنامه کیست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('فردوسی')
+  })
+  it('France capital: a place-bearing sentence wins', () => {
+    const src = [{
+      title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France',
+      extract: 'فرانسه کشوری در اروپای غربی است و پایتخت آن شهر پاریس می باشد. این کشور از اعضای بنیانگذار اتحادیه اروپا به شمار می رود و نقش مهمی در تاریخ اروپا داشته است.',
+    }]
+    const ans = buildAnswer(src, 'پایتخت فرانسه کجاست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('پاریس')
+  })
+  it('speed of light: a quantity-bearing sentence beats a word-sharing generic sentence', () => {
+    const src = [{
+      title: 'سرعت نور', url: 'https://fa.wikipedia.org/wiki/SpeedOfLight',
+      extract: 'نور موجی الکترومغناطیسی است که سرعت آن در خلأ ثابت است و در فیزیک اهمیت دارد. سرعت نور در خلأ ۲۹۹۷۹۲۴۵۸ متر بر ثانیه است و یکی از ثابت‌های بنیادی فیزیک به شمار می‌رود.',
+    }]
+    const ans = buildAnswer(src, 'سرعت نور چقدر است؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('۲۹۹۷۹۲۴۵۸')
+    expect(ans.lines[0]).toContain('متر بر ثانیه')
+  })
+  it('definition question: a definition sentence (subject + است) wins', () => {
+    const src = [{
+      title: 'فوتوسنتز', url: 'https://fa.wikipedia.org/wiki/Photosynthesis',
+      extract: 'گیاهان سبز در برگ‌های خود رنگدانه دارند و نور خورشید را جذب می‌کنند. فوتوسنتز فرایندی است که گیاهان با آن نور خورشید را به انرژی شیمیایی تبدیل می‌کنند.',
+    }]
+    const ans = buildAnswer(src, 'فوتوسنتز چیست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('فوتوسنتز فرایندی است')
+  })
+  it('nonsense question: honest not-found, never a topical paragraph', () => {
+    const src = [{
+      title: 'رایانه', url: 'https://fa.wikipedia.org/wiki/Computer',
+      extract: 'رایانه دستگاهی الکترونیکی است که داده‌ها را پردازش می‌کند. پژوهشگران سامانه‌های رایانه‌ای می‌سازند و آنها را بهبود می‌دهند.',
+    }]
+    expect(buildAnswer(src, 'قیمت دلار امروز چند است؟', 'fa').found).toBe(false)
+  })
+  it('word-sharing non-answer REJECTED: generic definition sharing نویسنده+شاهنامه loses to the name-bearing sentence', () => {
+    const src = [{
+      title: 'شاهنامه', url: 'https://fa.wikipedia.org/wiki/Shahnameh',
+      extract: 'شاهنامه کتابی حماسی است و نویسنده آن داستان‌های پهلوانان ایران را روایت می‌کند و شاهنامه در ادبیات فارسی جایگاه ویژه‌ای دارد. شاهنامه اثر حکیم ابوالقاسم فردوسی توسی است.',
+    }]
+    const ans = buildAnswer(src, 'نویسنده شاهنامه کیست؟', 'fa')
+    expect(ans.found).toBe(true)
+    // The generic first sentence shares BOTH subject words and comes
+    // first, yet must NOT win: it names nobody.
+    expect(ans.lines[0]).toContain('فردوسی')
+    expect(ans.lines[0]).not.toContain('کتابی حماسی است و نویسنده آن')
+    // Unit-level proof: the generic sentence is not name-bearing,
+    // the اثر sentence is.
+    const person = analyzeQuestion('نویسنده شاهنامه کیست؟')
+    expect(sentenceMatchesQuestionType('شاهنامه کتابی حماسی است و نویسنده آن داستان‌های پهلوانان ایران را روایت می‌کند.', person)).toBe(false)
+    expect(sentenceMatchesQuestionType('شاهنامه اثر فردوسی است.', person)).toBe(true)
+  })
+  it('France/Korea guard survives the analysis pass', () => {
+    const korea = [{
+      title: 'پایتخت کره', url: 'https://fa.wikipedia.org/wiki/KoreaCapitals',
+      extract: 'پایتخت کره به پیشینه تاریخی آن سرزمین بستگی دارد که در طول تاریخ تغییر کرده است. کره شبه جزیره ای در شرق آسیا است که از دو کشور کره شمالی و کره جنوبی تشکیل شده است.',
+    }]
+    expect(buildAnswer(korea, 'پایتخت فرانسه کجاست؟', 'fa').found).toBe(false)
   })
 })

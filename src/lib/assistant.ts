@@ -114,6 +114,175 @@ export function isRankingOrCurrentQuestion(question: string): boolean {
   return [...RANKING_QUESTION_TOKENS].some((t) => toks.has(t))
 }
 
+// ---- A-01e question analysis ------------------------------------------------
+// Owner order 2026-11-03 ~22:16: teach the assistant to analyze each
+// question BEFORE answering, and to analyze candidate answers against
+// the question before replying. The failure behind generic-definition
+// answers: a sentence can share words with the question («شاهنامه»،
+// «نویسنده») without answering it. So a question is classified into a
+// type, its true subject tokens are extracted, and the kind of
+// sentence that counts as an answer is fixed up front; candidate
+// sentences are then checked against that kind, not just against word
+// overlap. This layer only PREFERS type-matching sentences inside
+// buildAnswer — every legacy pass below (strict, A-01c, A-01d web,
+// generic-keep) still runs when it finds nothing, so no existing
+// behaviour is removed.
+
+export type QuestionType =
+  | 'definition' | 'person' | 'date' | 'place' | 'why' | 'how'
+  | 'enumeration' | 'ranking' | 'current' | 'quantity' | 'unknown'
+
+export type AnswerKind =
+  | 'definition' | 'name' | 'date' | 'place' | 'reason' | 'procedure'
+  | 'enumeration' | 'comparative' | 'recent' | 'quantity' | 'any'
+
+export interface QuestionAnalysis {
+  type: QuestionType
+  /** Searchable subject tokens (searchQueryFor, in order). */
+  subjectTokens: string[]
+  /** What kind of sentence counts as an answer to this question. */
+  answerKind: AnswerKind
+}
+
+const STRONG_COMPARATIVE_TOKENS = new Set([
+  'قوی', 'بهترین', 'برتر', 'بزرگ', 'اول', 'رتبه',
+  'strongest', 'best', 'largest', 'fastest', 'top', 'first', 'ranked',
+])
+
+export function analyzeQuestion(question: string): QuestionAnalysis {
+  // Strip sentence punctuation from tokens: the trigger word is
+  // often the LAST word («فوتوسنتز چیست؟» tokenizes as «چیست؟»,
+  // which would otherwise never match «چیست»).
+  const toks = new Set(normalizeCommand(question).replace(/[؟?!.,،؛:«»"“”]/g, '').split(' ').filter(Boolean))
+  const has = (...words: string[]) => words.some((w) => toks.has(w))
+  const subjectTokens = searchQueryFor(question).split(' ').filter((w) => w.length > 1)
+  const kind = (type: QuestionType, answerKind: AnswerKind): QuestionAnalysis =>
+    ({ type, subjectTokens, answerKind })
+  // Ranking / current first: isRankingOrCurrentQuestion already
+  // owns this detection (A-01d2); a recency-only question
+  // (آخرین/جدیدترین/latest/newest, no strong comparative) is
+  // 'current', everything else ranking here is 'ranking'.
+  if (isRankingOrCurrentQuestion(question)) {
+    if (has('آخرین', 'جدیدترین', 'latest', 'newest') && ![...toks].some((t) => STRONG_COMPARATIVE_TOKENS.has(t))) {
+      return kind('current', 'recent')
+    }
+    return kind('ranking', 'comparative')
+  }
+  if (has('کیست', 'who', 'نویسنده', 'مولف', 'سراینده', 'wrote', 'written', 'author')) {
+    return kind('person', 'name')
+  }
+  if (has('کجاست', 'کجا', 'where', 'پایتخت', 'capital', 'located')) {
+    return kind('place', 'place')
+  }
+  if (has('when', 'سال', 'سالی', 'چه سالی')) return kind('date', 'date')
+  if (has('چند', 'چقدر', 'how many', 'how much', 'سرعت', 'speed', 'قیمت', 'price',
+    'طول', 'length', 'ارتفاع', 'height', 'وزن', 'weight', 'فاصله', 'distance', 'تعداد')) {
+    return kind('quantity', 'quantity')
+  }
+  if (has('چرا', 'why')) return kind('why', 'reason')
+  if (has('چگونه', 'چطور', 'how')) return kind('how', 'procedure')
+  if (has('ببر', 'ببرید', 'فهرست', 'list', 'examples', 'بشمار')) return kind('enumeration', 'enumeration')
+  if (has('چیست', 'what', 'تعریف', 'یعنی')) return kind('definition', 'definition')
+  return kind('unknown', 'any')
+}
+
+/** Query variants chosen from the analysis (A-01e step 2): the panel
+ *  still searches the primary query; the variants exist so a later
+ *  caller can retry a person question in the source's own phrasing
+ *  (نویسنده → اثر, wrote → written by) without rewriting the search
+ *  pipeline. searchQueryFor itself is untouched (existing tests pin
+ *  it); this only adds variants beside it. */
+export function searchQueriesFor(question: string): string[] {
+  const primary = searchQueryFor(question)
+  const analysis = analyzeQuestion(question)
+  const variants: string[] = []
+  if (analysis.type === 'person') {
+    const toks = primary.split(' ')
+    if (toks.includes('نویسنده')) {
+      variants.push(toks.map((t) => (t === 'نویسنده' ? 'اثر' : t)).join(' '))
+    }
+    if (toks.includes('wrote')) {
+      variants.push(toks.map((t) => (t === 'wrote' ? 'written by' : t)).join(' '))
+    }
+  }
+  return [...new Set([primary, ...variants.filter((v) => v && v !== primary)])]
+}
+
+/** Sentence tokens with ZWNJ-joined words also counted as their
+ *  parts, so «قوی‌ترین» matches «قوی» (module-level twin of the
+ *  helper already used inside buildAnswer). */
+function analysisTokens(text: string): Set<string> {
+  const raw = new Set(normalizeDigits(text).toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
+  const out = new Set<string>(raw)
+  raw.forEach((t) => t.split('\u200C').forEach((p) => { if (p) out.add(p) }))
+  return out
+}
+
+const COMPARATIVE_MARKERS = new Set([
+  'قوی', 'ترین', 'بهترین', 'برتر', 'بزرگ', 'اول', 'رتبه',
+  'strongest', 'best', 'largest', 'fastest', 'top', 'first', 'ranked',
+])
+const YEAR_RE = /(1[0-9]{3}|20[0-9]{2})/
+const QUANTITY_UNITS = new Set([
+  'متر', 'کیلومتر', 'ثانیه', 'دقیقه', 'ساعت', 'کیلوگرم', 'گرم', 'سانتی', 'میلی',
+  'm', 'km', 'cm', 'mm', 'kg', 'm/s', 'km/s', 'ms', 'دلار', 'تومان', 'ریال', 'درصد',
+])
+
+/** Does this sentence (the source's own words) actually ANSWER a
+ *  question of the given kind — not merely share words with it?
+ *  A name-bearing sentence names someone via an author relation
+ *  (اثر + name, written by + name); a place-bearing sentence states
+ *  a capital/city; a quantity-bearing sentence carries a number with
+ *  a unit; a comparative sentence states a superlative/rank. Bare
+ *  word-sharing (a definition sentence that happens to mention
+ *  «نویسنده») is deliberately NOT enough. */
+export function sentenceMatchesQuestionType(sentence: string, analysis: QuestionAnalysis): boolean {
+  const toks = analysisTokens(sentence)
+  const norm = normalizeDigits(sentence).toLowerCase()
+  switch (analysis.answerKind) {
+    case 'any': return true
+    case 'name': {
+      // «اثر فردوسی» / «مولف …» / «written by Shakespeare»: the
+      // marker must be followed by a token that is NOT one of the
+      // question's subject tokens — otherwise «نویسنده آن» style
+      // generic sentences would pass.
+      const words = norm.split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+      for (let i = 0; i < words.length; i++) {
+        if (['اثر', 'مولف', 'سراینده'].includes(words[i]) && words[i + 1] &&
+            !analysis.subjectTokens.includes(words[i + 1])) return true
+      }
+      if (/written by|authored by/.test(norm)) return true
+      if (/\bwrote\b/.test(norm) && /\b[A-Z][a-z]+ [A-Z][a-z]+\b/.test(sentence)) return true
+      return /\b[A-Z][a-z]+ [A-Z][a-z]+\b/.test(sentence) &&
+        /written|author|wrote/.test(norm)
+    }
+    case 'place':
+      return ['پایتخت', 'capital', 'شهر', 'city', 'located'].some((t) => toks.has(t))
+    case 'date':
+      return YEAR_RE.test(norm)
+    case 'quantity': {
+      if (!/\d/.test(norm)) return false
+      return [...toks].some((t) => QUANTITY_UNITS.has(t)) || /[%٪$]/.test(norm) ||
+        /\d+\s*(m\/s|km\/s|km\/h)/.test(norm)
+    }
+    case 'comparative':
+      // Strong markers only — weak «پیشرو»/leading is excluded by
+      // the same A-01d3 reasoning as the ranking branch.
+      return [...toks].some((t) => COMPARATIVE_MARKERS.has(t))
+    case 'recent':
+      return ['جدیدترین', 'آخرین', 'latest', 'newest', 'recent'].some((t) => toks.has(t)) || YEAR_RE.test(norm)
+    case 'definition':
+      return analysis.subjectTokens.some((t) => toks.has(t)) &&
+        ['است', 'هست', 'می باشد', 'می‌باشد', 'is', 'are'].some((t) => toks.has(t) || norm.includes(t))
+    case 'reason':
+      return ['چون', 'زیرا', 'because', 'due', 'علت', 'دلیل'].some((t) => toks.has(t))
+    case 'procedure':
+      return ['طریق', 'مراحل', 'steps', 'step', 'روش'].some((t) => toks.has(t))
+    case 'enumeration':
+      return /،|,/.test(sentence)
+  }
+}
+
 function numbersIn(s: string): number[] {
   return (s.match(/\d+/g) ?? []).map((n) => parseInt(n, 10)).filter((n) => Number.isFinite(n))
 }
@@ -781,6 +950,54 @@ export function buildAnswer(
     }
     const webLines = webFallback()
     if (webLines) return { lines: webLines, found: true }
+  }
+  // A-01e QUESTION-ANALYSIS PASS (runs before the generic strict
+  // pass, after the ranking branch above): a type-matching sentence
+  // that names the question's topic beats a higher-overlap generic
+  // sentence that merely shares words. Eligibility mirrors the
+  // A-01c guard so the France/Korea case still fails: the sentence
+  // must match the global topic (a subject token in the TOP source's
+  // title, else the longest subject token) AND another subject token
+  // or a light synonym — unless the question has a single subject
+  // token, or the answer kind itself carries the evidence (a
+  // quantity/date/recent answer's number or year IS the answer).
+  // When nothing qualifies, execution falls through to the legacy
+  // strict / A-01c / web passes unchanged — never blank by default.
+  const analysis = analyzeQuestion(question)
+  if (analysis.answerKind !== 'any') {
+    const topTitleToks = new Set(sources[0].title.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
+    let aTopic = orderedTokens.filter((t) => topTitleToks.has(t))
+    if (aTopic.length === 0) {
+      const longest = Math.max(...orderedTokens.map((t) => t.length))
+      aTopic = [orderedTokens.find((t) => t.length === longest) as string]
+    }
+    const aTopicSet = new Set(aTopic)
+    const aOther = new Set<string>()
+    qTokens.forEach((t) => {
+      if (!aTopicSet.has(t)) aOther.add(t)
+      ;(SYNONYMS[t] ?? []).forEach((s) => aOther.add(s))
+    })
+    const aMatched = cands
+      .filter((c) => {
+        if (!sentenceMatchesQuestionType(c.text, analysis)) return false
+        const toks = expandedToks(c.text)
+        if (!aTopic.some((t) => toks.has(t))) return false
+        if (qTokens.size === 1) return true
+        if (c.score >= 2) return true
+        if ([...aOther].some((t) => toks.has(t))) return true
+        return analysis.answerKind === 'quantity' || analysis.answerKind === 'date' || analysis.answerKind === 'recent'
+      })
+      .sort((a, b) => b.score - a.score || a.order - b.order)
+      .slice(0, 2)
+      .sort((a, b) => a.order - b.order)
+    if (aMatched.length > 0) {
+      const lines = aMatched.map((c) => c.text)
+      for (const url of [...new Set(aMatched.map((c) => c.url))].slice(0, 2)) {
+        const cand = aMatched.find((c) => c.url === url) as Cand
+        lines.push(lang === 'fa' ? `منبع: ${sourceSiteName({ url, site: cand.site }, lang)} — ${url}` : `Source: ${sourceSiteName({ url, site: cand.site }, lang)} — ${url}`)
+      }
+      return { lines, found: true }
+    }
   }
   const best = cands
     .filter((c) => c.score >= minScore)
