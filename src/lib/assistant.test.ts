@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest'
 import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
   buildTemplate, buildResearchDoc, assembleResearch, parseSections, cleanWikiText,
-  buildAnswer, searchQueryFor, normalizeDigits, splitSentences,
+  buildAnswer, searchQueryFor, normalizeDigits, splitSentences, sourceSiteName,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -289,5 +289,71 @@ describe('assistant templates', () => {
       const json = JSON.stringify(buildTemplate(kind, 'fa'))
       expect(json.length).toBeLessThan(1200)
     }
+  })
+})
+
+describe('A-01d whole-web search (owner order 2026-11-03: any question from anywhere on the internet)', () => {
+  it('answers the owner’s exact question from a web source when Wikipedia does not answer it', () => {
+    const wiki = [{
+      title: 'رایانه', url: 'https://fa.wikipedia.org/wiki/Computer',
+      extract: 'رایانه دستگاهی الکترونیکی است که داده‌ها را پردازش می‌کند. پژوهشگران سامانه‌های رایانه‌ای می‌سازند و آنها را بهبود می‌دهند.',
+    }]
+    const web = [{
+      title: 'بهترین هوش مصنوعی برای کدنویسی', url: 'https://example-blog.com/ai-coding', site: 'Example Blog',
+      extract: 'ابزار ایکس قوی‌ترین هوش مصنوعی در کدنویسی است و برنامه‌نویسان بسیاری از آن استفاده می‌کنند. این ابزار کدهای پیچیده را سریع و دقیق می‌نویسد و خطاها را هم پیدا می‌کند.',
+    }]
+    const ans = buildAnswer([...wiki, ...web], 'کدام هوش مصنوعی در کدنویسی قوی‌تر است؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('قوی‌ترین هوش مصنوعی در کدنویسی')
+    expect(ans.lines[ans.lines.length - 1]).toContain('Example Blog')
+    expect(ans.lines[ans.lines.length - 1]).toContain('https://example-blog.com/ai-coding')
+    expect(ans.lines.join(' ')).not.toContain('ویکی‌پدیا')
+  })
+  it('assembleResearch lists BOTH a Wikipedia credit and a web site credit', () => {
+    const s = (tag: string) => `این جمله درباره ${tag} است و اطلاعات مهم و دقیقی درباره آن ارائه می کند و شرح می دهد.`
+    const wiki = { title: 'موضوع', url: 'https://fa.wikipedia.org/wiki/X', extract: Array.from({ length: 10 }, (_, i) => s(`ویکی ${i}`)).join(' ') }
+    const web = { title: 'مقاله وب', url: 'https://example-blog.com/post', site: 'Example Blog', extract: Array.from({ length: 10 }, (_, i) => s(`وب ${i}`)).join(' ') }
+    const out = assembleResearch([wiki, web], 'fa', { pages: 1 })
+    const all = JSON.stringify(out.nodes)
+    expect(all).toContain('منابع:')
+    expect(all).toContain('ویکی‌پدیا — https://fa.wikipedia.org/wiki/X')
+    expect(all).toContain('Example Blog — https://example-blog.com/post')
+  })
+  it('France/Korea guard survives: a Wikipedia secondary source is never rescued by the web fallback', () => {
+    const generic = [{
+      title: 'رایانه', url: 'https://fa.wikipedia.org/wiki/Computer',
+      extract: 'رایانه دستگاهی الکترونیکی است که داده‌ها را پردازش می‌کند. پژوهشگران سامانه‌های رایانه‌ای می‌سازند و آنها را بهبود می‌دهند.',
+    }]
+    const korea = [{
+      title: 'پایتخت کره', url: 'https://fa.wikipedia.org/wiki/KoreaCapitals',
+      extract: 'پایتخت کره به پیشینه تاریخی آن سرزمین بستگی دارد که در طول تاریخ تغییر کرده است. کره شبه جزیره ای در شرق آسیا است که از دو کشور کره شمالی و کره جنوبی تشکیل شده است.',
+    }]
+    expect(buildAnswer([...generic, ...korea], 'پایتخت فرانسه کجاست؟', 'fa').found).toBe(false)
+  })
+  it('Shahnameh author case still passes after the web fallback was added', () => {
+    const shahnameh = [{
+      title: 'شاهنامه', url: 'https://fa.wikipedia.org/wiki/Shahnameh',
+      extract: 'شاهنامه اثر حکیم ابوالقاسم فردوسی توسی است و از بزرگ‌ترین آثار حماسی جهان به شمار می‌رود. شاهنامه کتابی حماسی است که داستان‌های پهلوانان ایران را روایت می‌کند.',
+    }]
+    const ans = buildAnswer(shahnameh, 'نویسنده شاهنامه کیست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('فردوسی')
+  })
+  it('a nonsense question against non-matching wiki + web sources still honestly returns not-found', () => {
+    const wiki = [{
+      title: 'رایانه', url: 'https://fa.wikipedia.org/wiki/Computer',
+      extract: 'رایانه دستگاهی الکترونیکی است که داده‌ها را پردازش می‌کند. پژوهشگران سامانه‌های رایانه‌ای می‌سازند و آنها را بهبود می‌دهند.',
+    }]
+    const web = [{
+      title: 'آشپزی خانگی', url: 'https://example-blog.com/cooking', site: 'Example Blog',
+      extract: 'آشپزی خانگی غذایی سالم و خوشمزه به سفره می‌آورد. آشپزهای خانگی سبزی تازه و ادویه خوشبو به کار می‌برند و غذاهای سنتی می‌پزند.',
+    }]
+    expect(buildAnswer([...wiki, ...web], 'قیمت دلار امروز چند است؟', 'fa').found).toBe(false)
+  })
+  it('sourceSiteName: wikipedia URL → ویکی‌پدیا in FA, web URL → site field or bare hostname', () => {
+    expect(sourceSiteName({ url: 'https://fa.wikipedia.org/wiki/X' }, 'fa')).toBe('ویکی‌پدیا')
+    expect(sourceSiteName({ url: 'https://en.wikipedia.org/wiki/X' }, 'en')).toBe('Wikipedia')
+    expect(sourceSiteName({ url: 'https://example-blog.com/post', site: 'Example Blog' }, 'fa')).toBe('Example Blog')
+    expect(sourceSiteName({ url: 'https://www.example-blog.com/post' }, 'fa')).toBe('example-blog.com')
   })
 })

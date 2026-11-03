@@ -339,6 +339,27 @@ export interface ResearchData {
   title: string
   extract: string
   url: string
+  /** Display site name for general-web sources (A-01d); Wikipedia
+   *  sources carry none — their name is derived from the URL. */
+  site?: string
+}
+
+/** Display name for a source's credit line (A-01d): a wikipedia.org
+ *  URL is always «ویکی‌پدیا» / «Wikipedia»; otherwise the source's
+ *  own site field, else its bare hostname without www. */
+export function sourceSiteName(src: Pick<ResearchData, 'url' | 'site'>, lang: 'fa' | 'en'): string {
+  try {
+    const host = new URL(src.url).hostname
+    if (host.endsWith('wikipedia.org')) return lang === 'fa' ? 'ویکی‌پدیا' : 'Wikipedia'
+    if (src.site) return src.site
+    return host.replace(/^www\./, '')
+  } catch {
+    return src.site ?? (lang === 'fa' ? 'ویکی‌پدیا' : 'Wikipedia')
+  }
+}
+
+const isWikiUrl = (u: string): boolean => {
+  try { return new URL(u).hostname.endsWith('wikipedia.org') } catch { return u.includes('wikipedia.org') }
 }
 
 /** Words per page calibrated to Vyro's OWN A4 pagination (live
@@ -501,12 +522,16 @@ export function assembleResearch(
     }
   }
 
+  // A-01d: credits are generalized — every source is credited by
+  // its own site name (Wikipedia by URL, web sources by their site
+  // field or hostname). The credit is built here in the engine, so
+  // the UI can never drop a source.
   if (sources.length === 1) {
-    add(para(lang === 'fa' ? `منبع: ویکی‌پدیا — ${main.url}` : `Source: Wikipedia — ${main.url}`))
+    add(para(lang === 'fa' ? `منبع: ${sourceSiteName(main, lang)} — ${main.url}` : `Source: ${sourceSiteName(main, lang)} — ${main.url}`))
   } else {
     add(para(lang === 'fa' ? 'منابع:' : 'Sources:'))
     for (const src of sources) {
-      add(para(lang === 'fa' ? `ویکی‌پدیا — ${src.url}` : `Wikipedia — ${src.url}`))
+      add(para(`${sourceSiteName(src, lang)} — ${src.url}`))
     }
   }
   return { nodes, words, targetWords }
@@ -530,7 +555,7 @@ export function buildAnswer(
 ): { lines: string[]; found: boolean } {
   const qTokens = new Set(searchQueryFor(question).split(' ').filter((w) => w.length > 1))
   if (qTokens.size === 0 || sources.length === 0) return { lines: [], found: false }
-  interface Cand { text: string; score: number; order: number; url: string }
+  interface Cand { text: string; score: number; order: number; url: string; site?: string }
   const cands: Cand[] = []
   let order = 0
   for (const src of sources) {
@@ -540,7 +565,7 @@ export function buildAnswer(
         const toks = new Set(sentence.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
         let score = 0
         qTokens.forEach((t) => { if (toks.has(t)) score++ })
-        cands.push({ text: sentence, score, order: order++, url: src.url })
+        cands.push({ text: sentence, score, order: order++, url: src.url, site: src.site })
       }
     }
   }
@@ -574,6 +599,18 @@ export function buildAnswer(
       writer: ['author', 'wrote'],
       written: ['author'],
       wrote: ['author', 'written', 'writer'],
+      // A-01d ranking synonyms (ZWNJ forms normalized: the question
+      // tokenizes «قوی‌ترین» as «قوی» + «تر», so both forms map).
+      'قوی‌ترین': ['قوی', 'برتر', 'پیشرو', 'اول'],
+      'قویترین': ['قوی', 'برتر', 'پیشرو', 'اول'],
+      'قوی': ['برتر', 'پیشرو', 'اول'],
+      'بهترین': ['قوی', 'برتر', 'پیشرو', 'اول'],
+      'بهتر': ['برتر', 'اول'],
+      strongest: ['strong', 'top', 'leading', 'first'],
+      best: ['strongest', 'top', 'leading', 'first'],
+      top: ['best', 'leading', 'first'],
+      ranking: ['rank', 'best', 'top'],
+      latest: ['newest', 'recent'],
     }
     const top = sources[0]
     const titleToks = new Set(top.title.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
@@ -601,15 +638,56 @@ export function buildAnswer(
       .slice(0, 2)
     if (fb.length > 0) {
       const lines = fb.map((c) => c.text)
-      lines.push(lang === 'fa' ? `منبع: ویکی‌پدیا — ${top.url}` : `Source: Wikipedia — ${top.url}`)
+      lines.push(lang === 'fa' ? `منبع: ${sourceSiteName(top, lang)} — ${top.url}` : `Source: ${sourceSiteName(top, lang)} — ${top.url}`)
       return { lines, found: true }
+    }
+    // A-01d WHOLE-WEB fallback: ONLY non-Wikipedia sources, in
+    // order — a Wikipedia secondary source can never be rescued by
+    // this pass (the France/Korea guard). Same shape as A-01c, but
+    // the topic token is taken from EACH web source's own title
+    // (else the longest subject token), and the sentence must match
+    // it AND another subject token or a light synonym. A winner or
+    // ranking is stated only when the fetched source's OWN sentence
+    // states it — never invented. At most 2 sentences + that
+    // source's site credit.
+    for (const ws of sources.filter((s) => !isWikiUrl(s.url))) {
+      const wTitleToks = new Set(ws.title.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
+      let wtopic = ordered.filter((t) => wTitleToks.has(t))
+      if (wtopic.length === 0) {
+        const longest = Math.max(...ordered.map((t) => t.length))
+        wtopic = [ordered.find((t) => t.length === longest) as string]
+      }
+      const wtopicSet = new Set(wtopic)
+      const wother = new Set<string>()
+      qTokens.forEach((t) => {
+        if (!wtopicSet.has(t)) wother.add(t)
+        ;(SYNONYMS[t] ?? []).forEach((s) => wother.add(s))
+      })
+      const wb = cands
+        .filter((c) => c.url === ws.url)
+        .filter((c) => {
+          const raw = new Set(c.text.toLowerCase().split(/[^\p{L}\p{N}\u200C]+/u))
+          // ZWNJ-joined words also count as their parts, so a
+          // sentence's «قوی‌ترین» matches the question token «قوی».
+          const toks = new Set<string>(raw)
+          raw.forEach((t) => t.split('\u200C').forEach((p) => { if (p) toks.add(p) }))
+          return wtopic.some((t) => toks.has(t)) && [...wother].some((t) => toks.has(t))
+        })
+        .sort((a, b) => a.order - b.order)
+        .slice(0, 2)
+      if (wb.length > 0) {
+        const lines = wb.map((c) => c.text)
+        lines.push(lang === 'fa' ? `منبع: ${sourceSiteName(ws, lang)} — ${ws.url}` : `Source: ${sourceSiteName(ws, lang)} — ${ws.url}`)
+        return { lines, found: true }
+      }
     }
     return { lines: [], found: false }
   }
   if (best.length === 0) return { lines: [], found: false }
   const lines = best.map((c) => c.text)
   for (const url of [...new Set(best.map((c) => c.url))].slice(0, 2)) {
-    lines.push(lang === 'fa' ? `منبع: ویکی‌پدیا — ${url}` : `Source: Wikipedia — ${url}`)
+    const cand = best.find((c) => c.url === url) as Cand
+    lines.push(lang === 'fa' ? `منبع: ${sourceSiteName({ url, site: cand.site }, lang)} — ${url}` : `Source: ${sourceSiteName({ url, site: cand.site }, lang)} — ${url}`)
   }
   return { lines, found: true }
 }
