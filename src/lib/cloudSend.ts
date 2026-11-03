@@ -24,7 +24,7 @@ export type SendBlockReason =
   | 'already-queued'
 
 export interface SendContext {
-  /** Cloud engine live (flag on + configured + signed-in Premium). */
+  /** Cloud engine live (flag on + configured + signed in). */
   engineActive: boolean
   /** First-upload consent timestamp for this account, or null. */
   consentAt: string | null

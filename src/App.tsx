@@ -141,7 +141,7 @@ export default function App(){
   const isPremium = isSupabaseConfigured && !!user && entitlement.isPremium
   // Stage 2B: cloud sync engine lifecycle (inert unless the kill-switch
   // flag is on AND a premium user is signed in — see useCloudSync).
-  const cloud=useCloudSync({ user, isPremium, docs, setDocs })
+  const cloud=useCloudSync({ user, docs, setDocs })
   useEffect(()=>{ const ok=saveDocs(localStorage, docs); if(!ok && !saveErrorShown.current){ saveErrorShown.current=true; setSaveError(true) } if(ok){ saveErrorShown.current=false; setSaveError(false) } },[docs])
   useEffect(()=>{ document.documentElement.dataset.theme=theme; try{ localStorage.setItem('vyro-web-theme',theme) }catch{ /* best-effort */ } },[theme])
   useEffect(()=>{ saveUiLang(localStorage, lang); document.documentElement.lang = lang==='fa' ? 'fa' : 'en' },[lang])
@@ -185,7 +185,7 @@ export default function App(){
   // renamed since the last build are listed. While the palette is open the
   // document cannot change (modal backdrop), so jump positions stay valid.
   }),[theme, lang, editorActions, docs, settings, paletteOpen])
-  const openCustomTemplate=()=>{ if(!isPremium){ setShowPremium(true); return } setTplName(''); setTplModal(true) }
+  const openCustomTemplate=()=>{ setTplName(''); setTplModal(true) }
   const createCustomTemplate=()=>{ const name=tplName.trim(); if(!name) return; const content=applyNewDocDefaults({type:'doc',content:[{type:'paragraph',content:[{type:'text',text:'Custom template — edit and reuse.'}]}]}, settings); const {docs:nd,doc}=createDoc(docs,{title:name, content, dir: settings.defaultDir}); setDocs(nd); setTplModal(false); setOpenId(doc.id); setFreshDefaults({id:doc.id, font:settings.defaultFont, size:settings.defaultFontSize}) }
   const patchDoc=(id:string, patch:Partial<VyroDoc>, content?:any)=>{ setDocs(prev=>prev.map(d=> d.id===id? {...d, ...patch, ...(content?{content}:{}), updatedAt:new Date().toISOString()}:d)) }
   // PC2 Mailings: one new local doc per merged record, via the existing
@@ -213,7 +213,7 @@ export default function App(){
   const openSyncText=openSyncStatus? syncStatusText(openSyncStatus, openDoc?.cloudSyncedAt, lang) : undefined
   const conflictDoc=conflictId? docs.find(d=>d.id===conflictId && d.cloudConflict) ?? null : null
   const conflictModal=conflictDoc? <ConflictResolveModal doc={conflictDoc} lang={lang} onClose={()=>setConflictId(null)} onResolve={(choice: ConflictChoice)=>cloud.resolveConflict(conflictDoc.id, choice)}/> : null
-  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} syncStatusText={openSyncText} onSyncStatusClick={openDoc.cloudConflict? ()=>setConflictId(openDoc.id):undefined} onBack={()=>setOpenId(null)} isPremium={isPremium} onRequirePremium={()=>setShowPremium(true)} theme={theme} onToggleTheme={toggleTheme} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions} writingWidth={settings.writingWidth} toolbarMode={settings.toolbar} autosaveEnabled={settings.autosaveEnabled} autosaveIntervalMs={settings.autosaveIntervalMs} freshDefaults={freshDefaults?.id===openDoc.id? freshDefaults : undefined} settings={settings} onSettingsChange={(patch)=>setSettings(s=>({...s, ...patch}))} onSettingsReset={()=>setSettings(defaultSettings())} isLocal={!isSupabaseConfigured} onCreateMergedDocs={createMergedDocs} docsList={docs.filter(d=>!d.deletedAt).map(d=>({id:d.id,title:d.title,updatedAt:d.updatedAt}))} onOpenDoc={(id)=>setOpenId(id)} onNewDoc={()=>createFromTemplate('blank')} onMakeCopy={(id)=>{ const next=duplicateDoc(docs,id); if(next!==docs){ setDocs(next); setOpenId(next[0].id) } }} accountLabel={user?.email||undefined}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{conflictModal}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
+  if(openDoc) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} syncStatusText={openSyncText} onSyncStatusClick={openDoc.cloudConflict? ()=>setConflictId(openDoc.id):undefined} onBack={()=>setOpenId(null)} theme={theme} onToggleTheme={toggleTheme} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions} writingWidth={settings.writingWidth} toolbarMode={settings.toolbar} autosaveEnabled={settings.autosaveEnabled} autosaveIntervalMs={settings.autosaveIntervalMs} freshDefaults={freshDefaults?.id===openDoc.id? freshDefaults : undefined} settings={settings} onSettingsChange={(patch)=>setSettings(s=>({...s, ...patch}))} onSettingsReset={()=>setSettings(defaultSettings())} isLocal={!isSupabaseConfigured} onCreateMergedDocs={createMergedDocs} docsList={docs.filter(d=>!d.deletedAt).map(d=>({id:d.id,title:d.title,updatedAt:d.updatedAt}))} onOpenDoc={(id)=>setOpenId(id)} onNewDoc={()=>createFromTemplate('blank')} onMakeCopy={(id)=>{ const next=duplicateDoc(docs,id); if(next!==docs){ setDocs(next); setOpenId(next[0].id) } }} accountLabel={user?.email||undefined}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{conflictModal}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
   return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}>
     <header className="appbar"><div className="appbar-inner">
       <div className="logo big"><span className="vmark">V</span><span>Vyro Web</span></div>
@@ -244,7 +244,7 @@ export default function App(){
           <button className={`side-nav-item${view==='trash'?' active':''}`} aria-pressed={view==='trash'} onClick={()=>setView('trash')}><span>🗑 {t('trash')}</span><span className="side-nav-count">{trashed.length}</span></button>
         </nav>
         <div className="card sub-card"><h3>{t('profileSubscription')}</h3>
-          {!isSupabaseConfigured ? <><p><b>{t('localFree')}</b></p><p className="muted">{t('noAccount')}</p></> : user ? <><p>{user.email}</p>{username && <p className="muted">{t('usernameLabel')}: {username}</p>}<p>{(user.user_metadata?.display_name)||t('noDisplayName')}</p><p><b>{entitlement.isPremium?`${t('premiumActive')} — ${entitlement.status}`: entitlement.status==='expired'? t('premiumExpired'): t('free')}</b></p>{entitlement.premiumUntil && <p className="muted">{t('until')} {entitlement.premiumUntil.toLocaleString()}</p>}<button className="rbtn" onClick={()=>authAction('out')}>{t('signOut')}</button>{!entitlement.isPremium && <button className="primary small" onClick={()=>setShowPremium(true)}>{t('goPremium')}</button>}</> : <AuthScreen lang={settings.uiLang} auth={authClient} onSignedIn={refreshUser}/>}
+          {!isSupabaseConfigured ? <><p><b>{t('localFree')}</b></p><p className="muted">{t('noAccount')}</p></> : user ? <><p>{user.email}</p>{username && <p className="muted">{t('usernameLabel')}: {username}</p>}<p>{(user.user_metadata?.display_name)||t('noDisplayName')}</p><p><b>{entitlement.isPremium?`${t('premiumActive')} — ${entitlement.status}`: entitlement.status==='expired'? t('premiumExpired'): t('free')}</b></p>{entitlement.premiumUntil && <p className="muted">{t('until')} {entitlement.premiumUntil.toLocaleString()}</p>}<button className="rbtn" onClick={()=>authAction('out')}>{t('signOut')}</button></> : <AuthScreen lang={settings.uiLang} auth={authClient} onSignedIn={refreshUser}/>}
           {authMsg && <p className="muted">{authMsg}</p>}
         </div>
       </aside>
@@ -275,7 +275,7 @@ export default function App(){
             </button>)}
             <button className="tpl-card" onClick={openCustomTemplate}>
               <span className="tpl-thumb" aria-hidden="true"/>
-              <span className="tpl-name">{t('customTemplate')} {!isPremium&&t('premiumLock')}</span><span className="tpl-desc">{t('customTemplateDesc')}</span>
+              <span className="tpl-name">{t('customTemplate')}</span><span className="tpl-desc">{t('customTemplateDesc')}</span>
             </button>
           </div>
         </section>
@@ -357,4 +357,4 @@ export default function App(){
     {smartForm && <SmartTemplateForm tpl={smartForm} lang={lang} onClose={()=>setSmartForm(null)} onCreate={createFromSmartForm}/>}
   </div>
 }
-function PremiumModal({onClose,isPremium,lang}:{onClose:()=>void;isPremium:boolean;lang:UiLang}){ const t=(k:I18nKey)=>tr(lang,k); const modalRef=useRef<HTMLDivElement>(null); useDialogFocus(true, { containerRef: modalRef, onClose, autofocus: true, trap: true }); return <div className="modal-backdrop" onClick={onClose}><div ref={modalRef} className="modal" onClick={e=>e.stopPropagation()}><h2>{t('premiumTitle')}</h2>{isPremium?<p>{t('premiumThanks')}</p>:<><p>{t('premiumDesc')}</p><ul><li>{t('planMonthly')}</li><li>{t('planQuarterly')}</li></ul><ol><li>{t('payStep1')} <b>+93 779 528 228</b></li><li>{t('payStep2')}</li><li>{t('payStep3')}</li></ol></>}<button className="primary" onClick={onClose}>{t('close')}</button></div></div> }
+function PremiumModal({onClose,isPremium,lang}:{onClose:()=>void;isPremium:boolean;lang:UiLang}){ const t=(k:I18nKey)=>tr(lang,k); const modalRef=useRef<HTMLDivElement>(null); useDialogFocus(true, { containerRef: modalRef, onClose, autofocus: true, trap: true }); return <div className="modal-backdrop" onClick={onClose}><div ref={modalRef} className="modal" onClick={e=>e.stopPropagation()}><h2>{t('premiumTitle')}</h2>{isPremium?<p>{t('premiumThanks')}</p>:<p>{t('premiumDesc')}</p>}<button className="primary" onClick={onClose}>{t('close')}</button></div></div> }

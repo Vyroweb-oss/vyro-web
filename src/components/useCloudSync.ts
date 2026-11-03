@@ -60,20 +60,19 @@ export interface CloudSyncHandle {
    * itself failed (nothing is claimed either way). */
   verifyCloudLink: (docId: string) => Promise<LinkVerification | 'unavailable'>
   /** True while the queue is paused because the server refused a write
-   * for a lapsed Premium (documents stay local and editable). */
+   * (documents stay local and editable). */
   pausedPremium: boolean
 }
 
 interface UseCloudSyncOpts {
   user: { id: string } | null | undefined
-  isPremium: boolean
   docs: VyroDoc[]
   setDocs: Dispatch<SetStateAction<VyroDoc[]>>
 }
 
-export function useCloudSync({ user, isPremium, docs, setDocs }: UseCloudSyncOpts): CloudSyncHandle {
+export function useCloudSync({ user, docs, setDocs }: UseCloudSyncOpts): CloudSyncHandle {
   const accountId = user?.id ?? null
-  const active = isCloudDocsEnabled && isSupabaseConfigured && !!accountId && isPremium
+  const active = isCloudDocsEnabled && isSupabaseConfigured && !!accountId
   const [engine, setEngine] = useState<SyncEngine | null>(null)
   const [, setTick] = useState(0)
   const docsRef = useRef(docs)

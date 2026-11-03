@@ -40,8 +40,9 @@ describe('heavy paths are dynamically imported, not statically bundled', () => {
   it('Editor has no static import of docx.ts; DOCX export loads it lazily', () => {
     expect(editorSrc).not.toMatch(/from '\.\.\/lib\/docx'/)
     expect(editorSrc).toContain("await import('../lib/docx')")
-    // Both gated call sites keep the exact shape gates.test.ts pins.
-    expect(editorSrc.match(/gated\(\(\)=>exportDocx/g)?.length).toBe(2)
+    // Both DOCX call sites keep the exact direct shape gates.test.ts pins
+    // (ungated since the owner's 2026-11-03 unlock).
+    expect(editorSrc.match(/exportDocx\(editor\.getJSON\(\), doc\.title\)/g)?.length).toBe(2)
   })
   it('Editor DOCX failure surfaces the existing export-failed toast', () => {
     expect(editorSrc).toContain("t('exportFailed')")
