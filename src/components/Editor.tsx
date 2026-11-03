@@ -33,6 +33,7 @@ import LinkManagerPanel from './LinkManagerPanel'
 import MailMergePanel from './MailMergePanel'
 import ComparePanel from './ComparePanel'
 import IntelligencePanel from './IntelligencePanel'
+import AgentPage from './AgentPage'
 import { validateImageFile, imageSizeKb, IMAGE_WIDTH_PRESETS } from '../lib/images'
 import FindReplacePanel from './FindReplacePanel'
 import ContextMenu from './ContextMenu'
@@ -178,7 +179,7 @@ const TABS: { id:string; key:I18nKey }[] = [
   { id:'Layout', key:'tabLayout' }, { id:'References', key:'tabReferences' }, { id:'Mailings', key:'tabMailings' }, { id:'Review', key:'tabReview' }, { id:'View', key:'tabView' },
 ]
 
-export default function Editor({ doc, onChange, onBack, theme, onToggleTheme, lang, onLangChange, saveFailed, syncStatusText, onSyncStatusClick, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults, settings, onSettingsChange, onSettingsReset, isLocal, onCreateMergedDocs, onNewDoc, onOpenDoc, onMakeCopy, docsList, accountLabel }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; syncStatusText?:string; onSyncStatusClick?:()=>void; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number }; settings?: VyroSettings; onSettingsChange?: (patch: Partial<VyroSettings>)=>void; onSettingsReset?: ()=>void; isLocal?: boolean; onCreateMergedDocs?: (items:{title:string;content:any}[])=>void; onNewDoc?: ()=>void; onOpenDoc?: (id:string)=>void; onMakeCopy?: (id:string)=>void; docsList?: { id:string; title:string; updatedAt:string }[]; accountLabel?: string }){
+export default function Editor({ doc, onChange, onBack, theme, onToggleTheme, lang, onLangChange, saveFailed, syncStatusText, onSyncStatusClick, onPaletteOpen, onEditorActions, writingWidth, toolbarMode, autosaveEnabled, autosaveIntervalMs, freshDefaults, settings, onSettingsChange, onSettingsReset, isLocal, onCreateMergedDocs, onCreateDocFromAgent, onNewDoc, onOpenDoc, onMakeCopy, docsList, accountLabel }:{ doc:VyroDoc; onChange:(patch:Partial<VyroDoc>, content?:any)=>void; onBack:()=>void; theme:string; onToggleTheme:()=>void; lang:UiLang; onLangChange?:(l:UiLang)=>void; saveFailed?:boolean; syncStatusText?:string; onSyncStatusClick?:()=>void; onPaletteOpen?:()=>void; onEditorActions?:(a:EditorPaletteActions|null)=>void; writingWidth?: VyroSettings['writingWidth']; toolbarMode?: VyroSettings['toolbar']; autosaveEnabled?: boolean; autosaveIntervalMs?: number; freshDefaults?: { id:string; font:string; size:number }; settings?: VyroSettings; onSettingsChange?: (patch: Partial<VyroSettings>)=>void; onSettingsReset?: ()=>void; isLocal?: boolean; onCreateMergedDocs?: (items:{title:string;content:any}[])=>void; onCreateDocFromAgent?: (title:string, nodes:object[])=>void; onNewDoc?: ()=>void; onOpenDoc?: (id:string)=>void; onMakeCopy?: (id:string)=>void; docsList?: { id:string; title:string; updatedAt:string }[]; accountLabel?: string }){
   const t=(k:I18nKey)=>tr(lang,k)
   const [tab,setTab]=useState('Home')
   const [zoom,setZoom]=useState(100)
@@ -350,6 +351,7 @@ export default function Editor({ doc, onChange, onBack, theme, onToggleTheme, la
   const [compareOpen,setCompareOpen]=useState(false)
   // M2-10 Vyro Intelligence panel (architecture + UI only; never mutates the doc).
   const [intelligenceOpen,setIntelligenceOpen]=useState(false)
+  const [agentOpen,setAgentOpen]=useState(false)
   const [versions,setVersions]=useState<VersionSnapshot[]>(()=> typeof window!=='undefined' ? loadVersions(localStorage) : [])
   const [versionLabel,setVersionLabel]=useState('')
   const [selectedVersionId,setSelectedVersionId]=useState<string|null>(null)
@@ -1189,7 +1191,7 @@ export default function Editor({ doc, onChange, onBack, theme, onToggleTheme, la
         <Group label={t('groupProofing')}><Btn active={spell} onClick={toggleSpell}>{t('spellcheck')} {spell? t('on'):t('off')}</Btn></Group>
         <Group label={t('groupCount')}><span className="static-stat">{statusStats.words} {countNoun(statusStats.words, t('wordSingular'), t('words'))} · {statusStats.charsWithSpaces} {countNoun(statusStats.charsWithSpaces, t('characterSingular'), t('characters'))} · {statusStats.paragraphs} {countNoun(statusStats.paragraphs, t('paragraphSingular'), t('paragraphs'))}</span><Btn active={statsOpen} onClick={()=>setStatsOpen(o=>!o)}>{t('documentStatistics')}</Btn></Group>
         <Group label={t('compare')}><Btn active={compareOpen} onClick={()=>setCompareOpen(o=>!o)}>{t('compare')}</Btn></Group>
-        <Group label={t('intelligence')}><Btn active={intelligenceOpen} onClick={()=>setIntelligenceOpen(o=>!o)}>{t('intelligence')}</Btn></Group>
+        <Group label={t('intelligence')}><Btn active={intelligenceOpen} onClick={()=>setIntelligenceOpen(o=>!o)}>{t('intelligence')}</Btn><Btn active={agentOpen} onClick={()=>setAgentOpen(true)}>🤖 {t('agentOpenPage')}</Btn></Group>
       </>}
       {tab==='View' && <>
         <Group label={t('groupViews')}><Btn onClick={enterFocus}>{t('focusMode')}</Btn><Btn onClick={enterReading}>{t('readingMode')}</Btn></Group>
@@ -1220,6 +1222,7 @@ export default function Editor({ doc, onChange, onBack, theme, onToggleTheme, la
     {viewMode==='edit' && exportPresetsOpen && <ExportPresetsPanel editor={editor} doc={doc} lang={lang} onClose={()=>setExportPresetsOpen(false)} onExportText={(name,text,mime)=>download(name,text,mime)} onExportHtml={(name,html)=>download(name, `<!doctype html><html dir="${doc.dir}"><head><meta charset="utf-8"><title>${escapeHtml(doc.title)}</title></head><body>${html}</body></html>`, 'text/html')} onExportArchive={(name,payload)=>download(name,payload,'application/json')} onPrint={()=>window.print()} />}
     {viewMode==='edit' && compareOpen && <ComparePanel editor={editor} doc={doc} versions={versions} lang={lang} onClose={()=>setCompareOpen(false)} onVersionsSaved={(next)=>setVersions(next)} />}
     {viewMode==='edit' && intelligenceOpen && <IntelligencePanel editor={editor} lang={lang} onClose={()=>setIntelligenceOpen(false)} />}
+    {viewMode==='edit' && agentOpen && <AgentPage editor={editor} lang={lang} onClose={()=>setAgentOpen(false)} onCreateDoc={(title,nodes)=>{ setAgentOpen(false); onCreateDocFromAgent?.(title,nodes) }} />}
     {viewMode==='edit' && linksOpen && <LinkManagerPanel editor={editor} lang={lang} onClose={()=>setLinksOpen(false)} onEditLink={openLinkAt} />}
     {viewMode==='edit' && mailMergeOpen && <MailMergePanel editor={editor} doc={doc} lang={lang} onCreateMergedDocs={onCreateMergedDocs} onClose={()=>setMailMergeOpen(false)} />}
     {viewMode==='edit' && versionsOpen && <div className="versions-panel" role="region" aria-label={t('versions')}
