@@ -21,7 +21,7 @@ export type AssistantAction =
   | { kind: 'insert-template'; template: AssistantTemplateKind; topic?: string }
   | { kind: 'insert-page-break' }
   | { kind: 'insert-date' }
-  | { kind: 'research'; topic: string; paragraphs: number; pages?: number }
+  | { kind: 'research'; topic: string; paragraphs: number; pages?: number; insert: boolean }
   | { kind: 'selection-heading'; level: 1 | 2 | 3 }
   | { kind: 'selection-bold' }
   | { kind: 'selection-cleanup' }
@@ -56,7 +56,7 @@ const RESEARCH_STOP = new Set([
   'در', 'از', 'اینترنت', 'وب', 'آنلاین', 'جستجو', 'سرچ', 'تحقیق', 'بگرد', 'بنویس', 'بساز',
   'درباره', 'باره', 'مقاله', 'انشا', 'متن', 'یک', 'و', 'را', 'کن', 'پاراگراف', 'سایت',
   'صفحه', 'صفحات', 'page', 'pages', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه',
-  'ده', 'پانزده', 'بیست', 'سی',
+  'ده', 'پانزده', 'بیست', 'سی', 'تایپ', 'درج', 'نشان', 'نمایش', 'سند', 'فقط', 'بده',
   'essay', 'write', 'search', 'research', 'internet', 'web', 'online', 'the', 'for',
   'about', 'make', 'an', 'a', 'article', 'text', 'find', 'paragraph', 'paragraphs', 'and',
 ])
@@ -133,10 +133,16 @@ export function parseAssistantCommand(raw: string): AssistantAction {
       }
       const pgWord = s.match(/(یک|دو|سه|چهار|پنج|شش|هفت|هشت|نه|ده|پانزده|بیست|سی)\s+صفحه/)
       const pages = pgNum ? parseInt(pgNum[1], 10) : pgWord ? FA_PAGE_WORDS[pgWord[1]] : undefined
+      // Owner order 2026-11-03: obey the user about TYPING it into
+      // the document — "تایپ نکن / فقط نشان بده" means prepare and
+      // preview only; anything else inserts (the standing default).
+      const noType = /تایپ نکن|درج نکن|در سند ننویس|داخل سند ننویس|فقط نشان|فقط نمایش|don't type|do not type|don't insert|do not insert|just show|preview only/
+        .test(s)
       return {
         kind: 'research', topic,
         paragraphs: clamp(pNum ? parseInt(pNum[1], 10) : 3, 1, 6),
         pages: pages !== undefined ? clamp(pages, 1, 30) : undefined,
+        insert: !noType,
       }
     }
   }
@@ -280,23 +286,70 @@ export interface ResearchData {
   url: string
 }
 
-export const WORDS_PER_PAGE = 480
+/** Words per page calibrated to Vyro's OWN A4 pagination (live
+ *  measurement 2026-11-03: 1,024 words rendered as 3 pages). */
+export const WORDS_PER_PAGE = 350
 const WORDS_PER_PARAGRAPH = 110
 
 export interface ResearchAssembly { nodes: JsonNode[]; words: number; targetWords: number }
 
 const countWords = (s: string) => s.split(/\s+/).filter(Boolean).length
 
+const nodeText = (n: JsonNode): string => {
+  const own = typeof n.text === 'string' ? n.text : ''
+  const kids = Array.isArray(n.content) ? (n.content as JsonNode[]).map(nodeText).join(' ') : ''
+  return own + kids
+}
+
+export interface ResearchSection { heading: string | null; text: string }
+
+/** Strip the light wiki markup of Wikipedia's wiki-format extracts
+ *  ([[links]], bold/italic ticks, [n] reference markers, stray tags)
+ *  so the assembled sentences read clean and professional. */
+export function cleanWikiText(raw: string): string {
+  return raw
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
+    .replace(/\[\[([^\]]+)\]\]/g, '$1')
+    .replace(/'''([^']+)'''/g, '$1')
+    .replace(/''([^']+)''/g, '$1')
+    .replace(/\[[\d۰-۹]+\]/g, '')
+    .replace(/<[^>]+>/g, ' ')
+}
+
+/** Split a wiki-format extract into its REAL sections: "== Title =="
+ *  lines become section headings; the text before the first heading
+ *  is the article's lead. Plain extracts (no markers) return a single
+ *  lead section. */
+export function parseSections(extract: string): ResearchSection[] {
+  const sections: ResearchSection[] = [{ heading: null, text: '' }]
+  for (const line of cleanWikiText(extract).split('\n')) {
+    const m3 = line.match(/^===\s*(.+?)\s*===$/)
+    const m2 = line.match(/^==\s*([^=]+?)\s*==$/)
+    if (m3 || m2) sections.push({ heading: (m3?.[1] ?? m2?.[1] ?? '').trim(), text: '' })
+    else sections[sections.length - 1].text += line + '\n'
+  }
+  return sections
+    .map((s) => ({ heading: s.heading, text: s.text.trim() }))
+    .filter((s) => s.text.length > 0)
+}
+
+const usableSentence = (s: string) =>
+  countWords(s) >= 5 && !/https?:\/\//.test(s) && !s.includes('==')
+
+const fingerprint = (s: string) => s.replace(/\s+/g, ' ').slice(0, 36)
+
 /** Assemble a research draft from fetched sources (owner orders
- *  2026-11-03: precise search; write to the LENGTH asked — pages when
- *  pages are named, otherwise paragraphs). Title, the best source's
- *  lead as the introduction, then the sources' strongest sentences
- *  (their OWN words, original order) sectioned per source until the
- *  target length is reached — and ALWAYS a closing credit of every
- *  source used. The credit is part of the honesty contract: it is
- *  built here, in the engine, and cannot be dropped by the UI. If the
- *  sources run out first, the draft is honestly shorter — the caller
- *  reports the real size; nothing is ever padded with invented text. */
+ *  2026-11-03: the most precise search; a PROFESSIONAL build — the
+ *  article's real section headings, clean edited text, no duplicate
+ *  sentences; the LENGTH asked — pages when pages are named,
+ *  otherwise paragraphs; and a reported word count that counts
+ *  EVERYTHING inserted, so the report matches the document). Title,
+ *  the best source's lead as the introduction, then each section's
+ *  strongest sentences (the sources' OWN words, original order) —
+ *  and ALWAYS a closing credit of every source used, built here in
+ *  the engine so the UI cannot drop it. If the sources run out
+ *  first, the draft is honestly shorter; nothing is ever padded with
+ *  invented text. */
 export function assembleResearch(
   sources: ResearchData[],
   lang: 'fa' | 'en',
@@ -305,49 +358,69 @@ export function assembleResearch(
   const targetWords = opts.pages ? opts.pages * WORDS_PER_PAGE : (opts.paragraphs ?? 3) * WORDS_PER_PARAGRAPH
   const nodes: JsonNode[] = []
   let words = 0
+  const add = (n: JsonNode) => { nodes.push(n); words += countWords(nodeText(n)) }
   if (sources.length === 0) return { nodes, words, targetWords }
+  const seen = new Set<string>()
   const main = sources[0]
-  nodes.push(head(1, main.title))
-  const lead = splitSentences(main.extract).slice(0, 2)
-  if (lead.length > 0) {
-    nodes.push(para(lead.join(' ')))
-    words += countWords(lead.join(' '))
-  }
-  const multiSection = sources.length > 1 && (opts.pages ?? 0) >= 2
-  sources.forEach((src, si) => {
-    if (words >= targetWords) return
-    const sentences = splitSentences(src.extract)
-    const body = si === 0 ? sentences.slice(lead.length) : sentences
-    if (body.length === 0) return
-    // This source's strongest sentences, in its own order, sized to
-    // the room left (first source gets the biggest share).
-    const roomWords = targetWords - words
-    const quota = Math.max(6, Math.ceil(roomWords / 18))
-    const picked = summarizeText(body.join(' '), quota)
-    if (picked.length === 0) return
-    if (multiSection) nodes.push(head(2, src.title))
+  add(head(1, main.title))
+
+  // Emit one section's best sentences as paragraphs, honouring the
+  // remaining room; returns how many sentences were used.
+  const emitSentences = (sentences: string[]) => {
     let buf: string[] = []
     let bufWords = 0
     const flush = () => {
       if (buf.length === 0) return
-      nodes.push(para(buf.join(' ')))
+      add(para(buf.join(' ')))
       buf = []; bufWords = 0
     }
-    for (const sentence of picked) {
-      if (words >= targetWords && buf.length > 0) break
-      buf.push(sentence)
+    for (const sentence of sentences) {
+      const fp = fingerprint(sentence)
+      if (seen.has(fp)) continue
       const w = countWords(sentence)
-      bufWords += w; words += w
+      if (words + bufWords + w > targetWords + 30 && buf.length > 0) break
+      seen.add(fp)
+      buf.push(sentence); bufWords += w
       if (bufWords >= WORDS_PER_PARAGRAPH) flush()
     }
     flush()
+  }
+
+  sources.forEach((src, si) => {
+    const sections = parseSections(src.extract)
+    sections.forEach((section, idx) => {
+      if (words >= targetWords) return
+      const sentences = splitSentences(section.text).filter(usableSentence)
+      if (sentences.length === 0) return
+      if (si === 0 && idx === 0) {
+        // The lead: its first two sentences are the introduction;
+        // the rest flows on as unheaded body text.
+        const lead = sentences.slice(0, 2)
+        if (lead.length > 0) {
+          lead.forEach((s) => seen.add(fingerprint(s)))
+          add(para(lead.join(' ')))
+        }
+        const rest = summarizeText(sentences.slice(2).join(' '), Math.max(6, Math.ceil((targetWords - words) / 16)))
+          .filter(usableSentence)
+        emitSentences(rest)
+        return
+      }
+      const picked = summarizeText(sentences.join(' '), Math.max(6, Math.ceil((targetWords - words) / 16)))
+        .filter(usableSentence)
+      const fresh = picked.filter((s) => !seen.has(fingerprint(s)))
+      if (fresh.length === 0) return
+      const heading = section.heading ?? (si > 0 ? src.title : null)
+      if (heading) add(head(2, heading))
+      emitSentences(fresh)
+    })
   })
+
   if (sources.length === 1) {
-    nodes.push(para(lang === 'fa' ? `منبع: ویکی‌پدیا — ${main.url}` : `Source: Wikipedia — ${main.url}`))
+    add(para(lang === 'fa' ? `منبع: ویکی‌پدیا — ${main.url}` : `Source: Wikipedia — ${main.url}`))
   } else {
-    nodes.push(para(lang === 'fa' ? 'منابع:' : 'Sources:'))
+    add(para(lang === 'fa' ? 'منابع:' : 'Sources:'))
     for (const src of sources) {
-      nodes.push(para(lang === 'fa' ? `ویکی‌پدیا — ${src.url}` : `Wikipedia — ${src.url}`))
+      add(para(lang === 'fa' ? `ویکی‌پدیا — ${src.url}` : `Wikipedia — ${src.url}`))
     }
   }
   return { nodes, words, targetWords }

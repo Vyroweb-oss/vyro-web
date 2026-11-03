@@ -28,6 +28,7 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [result, setResult] = useState<{ title: string; lines: string[]; asList: boolean } | null>(null)
+  const [pendingResearch, setPendingResearch] = useState<object[] | null>(null)
 
   const sel = useEditorState({
     editor,
@@ -152,6 +153,7 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
     if (!supabase) { setMessage(t('assistantSearchOffline')); return }
     setBusy(true)
     setResult(null)
+    setPendingResearch(null)
     setMessage(t('assistantSearching'))
     try {
       const { data: sess } = await supabase.auth.getSession()
@@ -168,12 +170,25 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         : data.title && data.extract && data.url ? [{ title: data.title, extract: data.extract, url: data.url }] : []
       if (!data.found || sources.length === 0) { setMessage(t('assistantSearchNotFound')); return }
       const built = assembleResearch(sources, lang, { pages: action.pages, paragraphs: action.paragraphs })
-      editor.chain().focus().insertContent(built.nodes as object[]).run()
       const meta = t('assistantResearchMeta')
         .replace('{w}', String(built.words))
         .replace('{p}', String(Math.max(1, Math.round(built.words / WORDS_PER_PAGE))))
       const short = built.words < built.targetWords * 0.85 ? ` ${t('assistantResearchShort')}` : ''
-      setMessage(`${t('assistantResearchDone')} ${meta}${short}`)
+      if (action.insert) {
+        editor.chain().focus().insertContent(built.nodes as object[]).run()
+        setPendingResearch(null)
+        setMessage(`${t('assistantResearchDone')} ${meta}${short}`)
+      } else {
+        // The user said "don't type it, just show me" (owner order
+        // 2026-11-03): keep the draft OUT of the document, preview
+        // its opening in the panel, and offer one-tap insertion.
+        setPendingResearch(built.nodes as object[])
+        const preview = built.nodes
+          .map((n) => (n as { content?: { text?: string }[] }).content?.map((c) => c.text ?? '').join(' ') ?? '')
+          .filter(Boolean).slice(0, 3)
+        setResult({ title: sources[0].title, lines: preview, asList: false })
+        setMessage(`${t('assistantPreviewReady')} ${meta}${short}`)
+      }
     } catch {
       setMessage(t('assistantSearchFailed'))
     } finally {
@@ -190,6 +205,13 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
   }
 
   const insertResult = () => {
+    if (pendingResearch) {
+      editor.chain().focus().insertContent(pendingResearch).run()
+      setPendingResearch(null)
+      setResult(null)
+      done()
+      return
+    }
     if (!result) return
     if (result.asList) {
       const node = {

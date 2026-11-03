@@ -6,7 +6,8 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
-  buildTemplate, buildResearchDoc, assembleResearch, normalizeDigits, splitSentences,
+  buildTemplate, buildResearchDoc, assembleResearch, parseSections, cleanWikiText,
+  normalizeDigits, splitSentences,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -97,15 +98,14 @@ describe('assistant web research (owner order 2026-11-03)', () => {
     if (c.kind === 'research') expect(c.pages).toBe(1)
   })
   it('assembleResearch fills the requested page length from several sources and credits them all', () => {
-    const sentence = 'این جمله درباره موضوع است و اطلاعات مهمی درباره آن می دهد و شرح می کند.'
     const mk = (n: number, title: string, url: string) => ({
-      title, url, extract: Array.from({ length: n }, (_, i) => `${sentence} بخش ${i + 1} از ${title} است.`).join(' '),
+      title, url, extract: Array.from({ length: n }, (_, i) => `این جمله شماره ${i + 1} درباره ${title} است و اطلاعات مهمی درباره آن می دهد و شرح می کند.`).join(' '),
     })
     const one = mk(30, 'موضوع الف', 'https://fa.wikipedia.org/wiki/A')
     const two = mk(30, 'موضوع ب', 'https://fa.wikipedia.org/wiki/B')
     const out = assembleResearch([one, two], 'fa', { pages: 2 })
-    expect(out.targetWords).toBe(960)
-    expect(out.words).toBeGreaterThanOrEqual(700)
+    expect(out.targetWords).toBe(700)
+    expect(out.words).toBeGreaterThanOrEqual(560)
     const all = JSON.stringify(out.nodes)
     expect(all).toContain('منابع:')
     expect(all).toContain('https://fa.wikipedia.org/wiki/A')
@@ -115,6 +115,45 @@ describe('assistant web research (owner order 2026-11-03)', () => {
     const small = { title: 'کوچک', url: 'https://fa.wikipedia.org/wiki/S', extract: 'یک جمله کوتاه است. جمله دوم هم هست. و جمله سوم.' }
     const out = assembleResearch([small], 'fa', { pages: 10 })
     expect(out.words).toBeLessThan(out.targetWords)
+  })
+  it('obeys the user about typing into the document (owner: طبق درخواست کاربر)', () => {
+    const show = parseAssistantCommand('درباره انرژی خورشیدی در اینترنت بگرد و بنویس، فقط نشان بده تایپ نکن')
+    expect(show.kind).toBe('research')
+    if (show.kind === 'research') { expect(show.insert).toBe(false); expect(show.topic).toContain('انرژی خورشیدی') }
+    const type = parseAssistantCommand('درباره انرژی خورشیدی در اینترنت بگرد و در سند بنویس')
+    expect(type.kind).toBe('research')
+    if (type.kind === 'research') expect(type.insert).toBe(true)
+  })
+  it('parseSections reads a wiki extract’s real sections; cleanWikiText strips markup', () => {
+    const extract = "مقدمه درباره '''موضوع''' است و [[پیوند|شرح]] دارد.[۲]\n== بخش اول ==\nمتن بخش اول اینجاست و ادامه دارد.\n== بخش دوم ==\nمتن بخش دوم هم اینجاست."
+    const sections = parseSections(extract)
+    expect(sections.length).toBe(3)
+    expect(sections[0].heading).toBeNull()
+    expect(sections[0].text).toContain('موضوع')
+    expect(sections[0].text).not.toContain("'''")
+    expect(sections[0].text).not.toContain('[۲]')
+    expect(sections[1].heading).toBe('بخش اول')
+    expect(sections[2].heading).toBe('بخش دوم')
+    expect(cleanWikiText("'''پررنگ''' و [[الف|ب]]")).toBe('پررنگ و ب')
+  })
+  it('assembleResearch uses the article’s real section headings and reports the TRUE word count', () => {
+    const s = 'این جمله کامل درباره موضوع اصلی است و اطلاعات دقیق و مهمی ارائه می کند.'
+    const extract = [
+      `${s} ${s.replace('اصلی', 'دوم')}`,
+      '== تاریخچه ==',
+      Array.from({ length: 8 }, (_, i) => s.replace('کامل', `کامل${i}`)).join(' '),
+      '== کاربردها ==',
+      Array.from({ length: 8 }, (_, i) => s.replace('دقیق', `دقیق${i}`)).join(' '),
+    ].join('\n')
+    const out = assembleResearch([{ title: 'موضوع', url: 'https://fa.wikipedia.org/wiki/X', extract }], 'fa', { pages: 1 })
+    const types = out.nodes.map((n) => n.type)
+    expect(types).toContain('heading')
+    const texts = JSON.stringify(out.nodes)
+    expect(texts).toContain('تاریخچه')
+    const actual = out.nodes
+      .map((n) => ((n.content as { text?: string }[] | undefined) ?? []).map((c) => c.text ?? '').join(' '))
+      .join(' ').split(/\s+/).filter(Boolean).length
+    expect(out.words).toBe(actual)
   })
   it('buildResearchDoc assembles title, lead, body — and ALWAYS the source line', () => {
     const extract = 'آلودگی هوا یک مشکل بزرگ است. دود کارخانه ها هوا را خراب می کند. مردم مریض می شوند. دولت ها باید قانون بگذارند. در شهرهای بزرگ ترافیک زیاد است. کودکان بیشتر آسیب می بینند. انرژی پاک یک راه حل است.'
