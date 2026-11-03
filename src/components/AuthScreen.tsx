@@ -44,6 +44,8 @@ interface Props {
   onSignedIn: () => void
   /** When rendered as the full auth page, a close button returns to the dashboard. */
   onClose?: () => void
+  /** Which form the page opens on (the landing page's "Sign in" opens sign-in directly). */
+  initialView?: 'signup' | 'signin'
 }
 
 function LogoMark() {
@@ -100,9 +102,9 @@ function PasswordField(props: { label: string; value: string; onChange: (v: stri
   )
 }
 
-export default function AuthScreen({ lang, auth, onSignedIn, onClose }: Props) {
+export default function AuthScreen({ lang, auth, onSignedIn, onClose, initialView }: Props) {
   const t = (k: I18nKey) => tr(lang, k)
-  const [view, setView] = useState<'signup' | 'signin'>('signup')
+  const [view, setView] = useState<'signup' | 'signin'>(initialView ?? 'signup')
   const [legal, setLegal] = useState<'terms' | 'privacy' | null>(null)
   const [busy, setBusy] = useState<null | 'su' | 'si' | 'reset'>(null)
   // Sign-up form state

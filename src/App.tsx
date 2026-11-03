@@ -20,6 +20,7 @@ import SettingsPanel from './components/SettingsPanel'
 import { useCloudSync } from './components/useCloudSync'
 import AuthScreen from './components/AuthScreen'
 import ProfilePage from './components/ProfilePage'
+import LandingPage from './components/LandingPage'
 import Avatar from './components/Avatar'
 import type { AuthClientLike } from './lib/authFlow'
 import ConflictResolveModal from './components/ConflictResolveModal'
@@ -86,10 +87,13 @@ export default function App(){
   const toggleTheme=()=>setSettings(s=>({...s, theme: resolveTheme(s.theme, systemDark)==='dark'?'light':'dark'}))
   const [settingsOpen,setSettingsOpen]=useState(false)
   const [freshDefaults,setFreshDefaults]=useState<{id:string;font:string;size:number}|null>(null)
-  const [user,setUser]=useState<any>(null); const [authMsg,setAuthMsg]=useState(''); const [authClient,setAuthClient]=useState<AuthClientLike|null>(null); const [username,setUsername]=useState<string|null>(null)
+  const [user,setUser]=useState<any>(null); const [authClient,setAuthClient]=useState<AuthClientLike|null>(null); const [username,setUsername]=useState<string|null>(null)
   const [showPremium,setShowPremium]=useState(false)
   const [authPageOpen,setAuthPageOpen]=useState(false)
   const [profileOpen,setProfileOpen]=useState(false)
+  const [authInitialView,setAuthInitialView]=useState<'signup'|'signin'>('signup')
+  const [landingSeen,setLandingSeen]=useState<boolean>(()=>{ try{ return localStorage.getItem('vyro-web-landing-seen-v1')==='1' }catch{ return false } })
+  const dismissLanding=()=>{ setLandingSeen(true); try{ localStorage.setItem('vyro-web-landing-seen-v1','1') }catch{ /* best-effort */ } }
   const [showCloudLib,setShowCloudLib]=useState(false)
   const [conflictId,setConflictId]=useState<string|null>(null)
   const [saveError,setSaveError]=useState(false)
@@ -202,7 +206,7 @@ export default function App(){
   // mapped errors, no raw server messages). App keeps only sign-out and the
   // signed-in refresh used as AuthScreen's onSignedIn callback.
   const refreshUser=async()=>{ try{ const { supabase }=await import('./lib/supabase'); if(!supabase) return; const {data}=await supabase.auth.getUser(); setUser(data.user??null) }catch{ /* Local Mode fallback */ } }
-  const authAction=async(kind:'out')=>{ if(!isSupabaseConfigured) return; setAuthMsg(''); try{ const { supabase }=await import('./lib/supabase'); if(!supabase) return; if(kind==='out'){ await supabase.auth.signOut(); setUser(null) } }catch(e:any){ setAuthMsg(e.message||t('authFailed')) } }
+  const authAction=async(kind:'out')=>{ if(!isSupabaseConfigured) return; try{ const { supabase }=await import('./lib/supabase'); if(!supabase) return; if(kind==='out'){ await supabase.auth.signOut(); setUser(null) } }catch{ /* sign-out is best-effort; the local session state is already cleared by the auth listener */ } }
   const startCardEdit=(d:VyroDoc, kind:'rename'|'folder')=>{ setMenuId(null); setDeleteId(null); setCardEdit({id:d.id, kind}) }
   const commitCardEdit=(id:string, kind:'rename'|'folder', value:string)=>{ if(kind==='rename'){ if(value.trim()) setDocs(prev=>renameDoc(prev,id,value)) } else { setDocs(prev=>updateDoc(prev,id,{folder:value.trim()})) } setCardEdit(null) }
   const askDelete=(id:string)=>{ setMenuId(null); setCardEdit(null); setDeleteId(id) }
@@ -220,7 +224,8 @@ export default function App(){
   const conflictDoc=conflictId? docs.find(d=>d.id===conflictId && d.cloudConflict) ?? null : null
   const conflictModal=conflictDoc? <ConflictResolveModal doc={conflictDoc} lang={lang} onClose={()=>setConflictId(null)} onResolve={(choice: ConflictChoice)=>cloud.resolveConflict(conflictDoc.id, choice)}/> : null
   if(openDoc) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><Editor doc={openDoc} lang={lang} onLangChange={setLang} saveFailed={saveError} syncStatusText={openSyncText} onSyncStatusClick={openDoc.cloudConflict? ()=>setConflictId(openDoc.id):undefined} onBack={()=>setOpenId(null)} theme={theme} onToggleTheme={toggleTheme} onChange={(patch,content)=>patchDoc(openDoc.id,patch,content)} onPaletteOpen={openPalette} onEditorActions={setEditorActions} writingWidth={settings.writingWidth} toolbarMode={settings.toolbar} autosaveEnabled={settings.autosaveEnabled} autosaveIntervalMs={settings.autosaveIntervalMs} freshDefaults={freshDefaults?.id===openDoc.id? freshDefaults : undefined} settings={settings} onSettingsChange={(patch)=>setSettings(s=>({...s, ...patch}))} onSettingsReset={()=>setSettings(defaultSettings())} isLocal={!isSupabaseConfigured} onCreateMergedDocs={createMergedDocs} docsList={docs.filter(d=>!d.deletedAt).map(d=>({id:d.id,title:d.title,updatedAt:d.updatedAt}))} onOpenDoc={(id)=>setOpenId(id)} onNewDoc={()=>createFromTemplate('blank')} onMakeCopy={(id)=>{ const next=duplicateDoc(docs,id); if(next!==docs){ setDocs(next); setOpenId(next[0].id) } }} accountLabel={user?.email||undefined}/><CommandPalette open={paletteOpen} onClose={closePalette} commands={paletteCommands} lang={lang}/>{showPremium && <PremiumModal lang={lang} onClose={()=>setShowPremium(false)} isPremium={isPremium}/>}{conflictModal}{saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}</div>
-  if(authPageOpen && isSupabaseConfigured && !user) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><AuthScreen lang={settings.uiLang} auth={authClient} onSignedIn={refreshUser} onClose={()=>setAuthPageOpen(false)}/></div>
+  if(authPageOpen && isSupabaseConfigured && !user) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><AuthScreen lang={settings.uiLang} auth={authClient} onSignedIn={refreshUser} onClose={()=>setAuthPageOpen(false)} initialView={authInitialView}/></div>
+  if(!user && isSupabaseConfigured && !landingSeen) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><LandingPage lang={settings.uiLang} onStart={()=>{ setAuthInitialView('signup'); setAuthPageOpen(true) }} onSignIn={()=>{ setAuthInitialView('signin'); setAuthPageOpen(true) }} onContinueLocal={dismissLanding} onLangChange={setLang}/></div>
   if(profileOpen && user) return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}><ProfilePage lang={settings.uiLang} name={(user.user_metadata?.display_name)||''} email={user.email||''} username={username} memberSince={user.created_at||null} photoUrl={user.user_metadata?.avatar_url} docs={liveDocs} onClose={()=>setProfileOpen(false)} onOpenDoc={(id)=>{ setProfileOpen(false); setOpenId(id) }} onNewDoc={()=>{ setProfileOpen(false); createFromTemplate('blank') }} onSignOut={()=>{ setProfileOpen(false); void authAction('out') }}/></div>
   return <div className={`app${lang==='fa'?' fa':''}${uiSizeClass(settings.uiSize)?` ${uiSizeClass(settings.uiSize)}`:''}`} dir={dir}>
     <header className="appbar"><div className="appbar-inner">
@@ -238,26 +243,20 @@ export default function App(){
         <div className="lang-toggle" role="group" aria-label={t('language')}><button className={`rbtn${lang==='en'?' active':''}`} onClick={()=>setLang('en')}>EN</button><button className={`rbtn${lang==='fa'?' active':''}`} onClick={()=>setLang('fa')}>فارسی</button></div>
         <button className="rbtn" onClick={()=>setSettingsOpen(true)} aria-label={t('settings')} title={t('settings')}>⚙</button>
         <button className="rbtn" onClick={toggleTheme} aria-label={theme==='dark'? t('lightUi'):t('darkUi')}>{theme==='dark'?'☀':'☾'}</button>
+        {!user && isSupabaseConfigured && <button className="primary small" onClick={()=>{ setAuthInitialView('signin'); setAuthPageOpen(true) }}>{t('signIn')} / {t('signUp')}</button>}
         <button className="chip-btn" onClick={()=>setShowPremium(true)}>{isPremium? `★ ${t('premiumActive')}` : user? t('free') : t('localFree')}</button>
         {user && isSupabaseConfigured && <button className="avatar-btn" onClick={()=>setProfileOpen(true)} aria-label={t('openProfile')} title={t('profile')}><Avatar size={34} photoUrl={user.user_metadata?.avatar_url}/></button>}
       </div>
     </div></header>
     {saveError && <div className="toast" role="alert">{t('saveFailed')}</div>}
     <div className="dash-layout">
-      <aside className="sidebar">
-        <nav className="side-nav" aria-label={t('foldersHeading')}>
-          <div className="side-nav-heading">{t('foldersHeading')}</div>
-          <button className={`side-nav-item${view==='docs'&&folder===''&&!favOnly?' active':''}`} onClick={()=>{ setView('docs'); setFolder(''); setFavOnly(false) }}>{t('allDocuments')}<span className="side-nav-count">{liveDocs.length}</span></button>
-          {folders.map(f=><button key={f} className={`side-nav-item${view==='docs'&&folder===f?' active':''}`} onClick={()=>{ setView('docs'); setFolder(folder===f?'':f) }}><span dir="auto">{f}</span><span className="side-nav-count">{liveDocs.filter(d=>d.folder===f).length}</span></button>)}
-          <button className={`side-nav-item${view==='docs'&&favOnly?' active':''}`} aria-pressed={favOnly} onClick={()=>{ setView('docs'); setFavOnly(v=>!v) }}><span>★ {t('favoritesOnly')}</span><span className="side-nav-count">{liveDocs.filter(d=>d.favorite).length}</span></button>
-          <button className={`side-nav-item${view==='trash'?' active':''}`} aria-pressed={view==='trash'} onClick={()=>setView('trash')}><span>🗑 {t('trash')}</span><span className="side-nav-count">{trashed.length}</span></button>
-        </nav>
-        <div className="card sub-card"><h3>{t('profileSubscription')}</h3>
-          {!isSupabaseConfigured ? <><p><b>{t('localFree')}</b></p><p className="muted">{t('noAccount')}</p></> : user ? <><p>{user.email}</p>{username && <p className="muted">{t('usernameLabel')}: {username}</p>}<p>{(user.user_metadata?.display_name)||t('noDisplayName')}</p><p><b>{entitlement.isPremium?`${t('premiumActive')} — ${entitlement.status}`: entitlement.status==='expired'? t('premiumExpired'): t('free')}</b></p>{entitlement.premiumUntil && <p className="muted">{t('until')} {entitlement.premiumUntil.toLocaleString()}</p>}<button className="rbtn" onClick={()=>authAction('out')}>{t('signOut')}</button></> : <><p className="muted">{t('authPageInvite')}</p><button className="primary small" onClick={()=>setAuthPageOpen(true)}>{t('signIn')} / {t('signUp')}</button></>}
-          {authMsg && <p className="muted">{authMsg}</p>}
-        </div>
-      </aside>
       <main className="main">
+        <div className="filter-bar" role="navigation" aria-label={t('foldersHeading')}>
+          <button className={`filter-chip${view==='docs'&&folder===''&&!favOnly?' active':''}`} onClick={()=>{ setView('docs'); setFolder(''); setFavOnly(false) }}>{t('allDocuments')}<span className="filter-count">{liveDocs.length}</span></button>
+          {folders.map(f=><button key={f} className={`filter-chip${view==='docs'&&folder===f?' active':''}`} onClick={()=>{ setView('docs'); setFolder(folder===f?'':f) }}><span dir="auto">{f}</span><span className="filter-count">{liveDocs.filter(d=>d.folder===f).length}</span></button>)}
+          <button className={`filter-chip${view==='docs'&&favOnly?' active':''}`} aria-pressed={favOnly} onClick={()=>{ setView('docs'); setFavOnly(v=>!v) }}>★ {t('favoritesOnly')}<span className="filter-count">{liveDocs.filter(d=>d.favorite).length}</span></button>
+          <button className={`filter-chip${view==='trash'?' active':''}`} aria-pressed={view==='trash'} onClick={()=>setView('trash')}>🗑 {t('trash')}<span className="filter-count">{trashed.length}</span></button>
+        </div>
         {view==='trash' ? <section aria-label={t('trash')}>
           <div className="list-toolbar"><h2 className="section-title">{t('trash')}</h2><button className="rbtn" onClick={()=>setView('docs')}>← {t('allDocuments')}</button></div>
           {trashed.length===0

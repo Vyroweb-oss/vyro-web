@@ -94,7 +94,7 @@ input:focus,select:focus{border-color:var(--brand)}
 .appbar-actions{display:flex;align-items:center;gap:var(--sp-2);margin-inline-start:auto}
 
 /* ---------- dashboard: layout ---------- */
-.dash-layout{display:grid;grid-template-columns:272px minmax(0,1fr);grid-template-areas:'side main';gap:var(--sp-5);padding:var(--sp-5);max-width:1440px;margin:0 auto;width:100%;align-items:start}
+.dash-layout{display:grid;grid-template-columns:minmax(0,1fr);grid-template-areas:'main';gap:var(--sp-5);padding:var(--sp-5);max-width:1200px;margin:0 auto;width:100%;align-items:start}
 .sidebar{grid-area:side;display:flex;flex-direction:column;gap:var(--sp-4);position:sticky;top:calc(var(--appbar-h) + 14px)}
 .main{grid-area:main;min-width:0;display:flex;flex-direction:column;gap:var(--sp-5)}
 .section-title{font-size:16px;font-weight:800;margin:0 0 var(--sp-3);letter-spacing:.01em}
@@ -387,8 +387,7 @@ input:focus,select:focus{border-color:var(--brand)}
 
 /* ---------- responsive: tablets & phones ---------- */
 @media (max-width:900px){
-  .dash-layout{grid-template-columns:minmax(0,1fr);grid-template-areas:'nav' 'main' 'sub';gap:var(--sp-4);padding:var(--sp-4)}
-  .sidebar{display:contents}
+  .dash-layout{grid-template-columns:minmax(0,1fr);grid-template-areas:'main';gap:var(--sp-4);padding:var(--sp-4)}
   .side-nav{grid-area:nav;flex-direction:row;align-items:center;overflow-x:auto;padding:6px;scrollbar-width:none}
   .side-nav::-webkit-scrollbar{display:none}
   .side-nav-heading{display:none}
@@ -902,4 +901,103 @@ img.avatar-graphic{object-fit:cover}
   .profile-stat b{font-size:19px}
   .profile-stat span{font-size:11.5px}
   .profile-doc{padding:11px 8px;gap:9px}
+}
+
+/* Dashboard filter bar (2026-11-03, owner order): the old sidebar
+   (folders + the profile/subscription card) is gone — the profile lives
+   behind the top-bar avatar now, and folders/favorites/trash are these
+   compact chips above the documents. */
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 20px}
+.filter-chip{display:inline-flex;align-items:center;gap:7px;border:1.5px solid var(--border);background:var(--surface);color:var(--text);border-radius:99px;padding:7px 14px;font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;transition:border-color .15s,background .15s,color .15s}
+.filter-chip:hover{border-color:#6c4cf1}
+.filter-chip.active{background:linear-gradient(135deg,#7a5cff,#5a3df0);border-color:transparent;color:#fff}
+.filter-count{background:var(--surface-2);border-radius:99px;padding:0 8px;font-size:12px;line-height:20px}
+.filter-chip.active .filter-count{background:rgba(255,255,255,.25)}
+
+/* Landing page (2026-11-03, owner order): the front door for first-time
+   visitors — what Vyro is, why it is worth using, and a big "Get
+   started" into sign-up. Soft lavender brand world, a pure-CSS 3D
+   document scene, floating glass chips, gentle motion (off for
+   reduced-motion), fully responsive. */
+.lp{position:relative;min-height:100vh;min-height:100dvh;overflow:hidden;background:radial-gradient(1100px 550px at 88% -10%,#e2daff 0%,rgba(226,218,255,0) 60%),radial-gradient(900px 500px at 8% 112%,#d7e7ff 0%,rgba(215,231,255,0) 55%),linear-gradient(160deg,#f7f5ff,#edf0ff);color:#241d3f}
+.lp-bg{position:absolute;inset:0;pointer-events:none}
+.lp-orb{position:absolute;border-radius:50%;filter:blur(70px);opacity:.55}
+.lp-orb.o1{width:340px;height:340px;background:#b7a6ff;top:-90px;inset-inline-start:-70px}
+.lp-orb.o2{width:300px;height:300px;background:#93c5fd;bottom:6%;inset-inline-end:-60px}
+.lp-orb.o3{width:180px;height:180px;background:#f0abfc;top:38%;inset-inline-start:38%;opacity:.35}
+.lp-nav{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center;padding:18px 30px;max-width:1180px;margin:0 auto}
+.lp-brand{display:flex;align-items:center;gap:9px;font-size:25px;font-weight:800;color:#1d1836}
+.lp-nav-actions{display:flex;gap:10px;align-items:center}
+.lp-btn{border-radius:12px;padding:10px 22px;font:inherit;font-size:15px;font-weight:700;cursor:pointer;transition:transform .13s,box-shadow .13s,background .13s}
+.lp-btn.primary{border:none;color:#fff;background:linear-gradient(135deg,#7a5cff,#5a3df0);box-shadow:0 10px 24px rgba(108,76,241,.32)}
+.lp-btn.primary:hover{transform:translateY(-1px);box-shadow:0 14px 30px rgba(108,76,241,.4)}
+.lp-btn.ghost{background:rgba(255,255,255,.75);border:1.5px solid #ddd8f2;color:#3c3654}
+.lp-btn.ghost:hover{border-color:#6c4cf1;color:#5a3df0}
+.lp-btn.white{border:none;background:#fff;color:#5a3df0;box-shadow:0 12px 28px rgba(30,22,70,.28)}
+.lp-btn.white:hover{transform:translateY(-1px)}
+.lp-btn.big{padding:15px 36px;font-size:17px;border-radius:14px}
+.lp-main{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:8px 30px 44px}
+.lp-hero{display:grid;grid-template-columns:1.05fr .95fr;gap:34px;align-items:center;padding:26px 0 8px}
+.lp-hero-text{animation:lpUp .6s ease both}
+.lp-badge{display:inline-block;background:#fff;border:1px solid #ddd8f2;color:#5a3df0;border-radius:99px;padding:5px 14px;font-size:13px;font-weight:700;box-shadow:0 4px 14px rgba(80,60,180,.1)}
+.lp-hero h1{font-size:44px;line-height:1.35;margin:18px 0 12px;font-weight:800;color:#1d1836}
+.lp-def{font-size:17.5px;line-height:2.05;color:#4a4468;margin:0 0 24px;max-width:34em}
+.lp-cta-row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.lp-local{display:block;margin-top:16px;background:none;border:none;color:#6c4cf1;font:inherit;font-size:14px;font-weight:600;cursor:pointer;padding:0}
+.lp-local:hover{text-decoration:underline}
+.lp-scene{position:relative;height:430px;perspective:1300px;animation:lpUp .6s .12s ease both}
+.lp-doc{position:absolute;width:290px;height:392px;background:#fff;border-radius:14px;box-shadow:0 34px 70px rgba(50,35,140,.28),0 4px 14px rgba(50,35,140,.14);padding:20px 22px;box-sizing:border-box}
+.lp-doc.back{transform:rotateX(12deg) rotateY(-24deg) rotate(6deg) translate(52px,16px);background:linear-gradient(160deg,#efeaff,#e2e8ff);opacity:.85}
+.lp-doc.front{transform:rotateX(9deg) rotateY(-15deg) rotate(1.5deg);animation:lpFloat 7s ease-in-out infinite alternate}
+.lp-doc-bar{display:flex;gap:6px;margin-bottom:18px}
+.lp-doc-bar span{width:10px;height:10px;border-radius:50%;background:#ddd8f2}
+.lp-doc-bar span:first-child{background:#fda4af}
+.lp-doc-bar span:nth-child(2){background:#fcd34d}
+.lp-doc-bar span:last-child{background:#6ee7b7}
+.lp-line{height:9px;border-radius:99px;background:#e6e2f7;margin-bottom:11px}
+.lp-line.title{height:15px;width:55%;background:linear-gradient(90deg,#7a5cff,#38bdf8);margin-bottom:17px}
+.lp-line.w90{width:90%}.lp-line.w85{width:85%}.lp-line.w80{width:80%}.lp-line.w75{width:75%}.lp-line.w65{width:65%}
+.lp-imgblock{height:86px;border-radius:10px;background:linear-gradient(135deg,#c7d2fe,#7dd3fc);margin:15px 0 17px}
+.lp-chip{position:absolute;z-index:3;background:rgba(255,255,255,.82);backdrop-filter:blur(8px);border:1px solid rgba(221,216,242,.9);color:#3c3654;border-radius:99px;padding:7px 15px;font-size:13.5px;font-weight:700;box-shadow:0 12px 26px rgba(50,35,140,.18);animation:lpFloat 6s ease-in-out infinite alternate}
+.lp-chip.c1{top:26px;inset-inline-start:8px}
+.lp-chip.c2{bottom:96px;inset-inline-end:2px;animation-delay:1.2s}
+.lp-chip.c3{bottom:26px;inset-inline-start:34px;animation-delay:2s}
+.lp-shadow{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:300px;height:34px;border-radius:50%;background:radial-gradient(closest-side,rgba(50,35,140,.3),rgba(50,35,140,0));filter:blur(4px)}
+@keyframes lpFloat{from{transform:rotateX(9deg) rotateY(-15deg) rotate(1.5deg) translateY(0)}to{transform:rotateX(7deg) rotateY(-12deg) rotate(1deg) translateY(-13px)}}
+@keyframes lpUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.lp-benefits{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:52px}
+.lp-benefit{background:rgba(255,255,255,.92);border:1px solid #e7e3fa;border-radius:18px;padding:22px;box-shadow:0 10px 26px rgba(80,60,180,.08);transition:transform .15s,box-shadow .15s}
+.lp-benefit:hover{transform:translateY(-4px);box-shadow:0 18px 34px rgba(80,60,180,.14)}
+.lp-benefit-ic{display:inline-flex;width:48px;height:48px;border-radius:14px;background:#f1edff;color:#6c4cf1;align-items:center;justify-content:center;margin-bottom:12px}
+.lp-benefit h3{margin:0 0 6px;font-size:16.5px;color:#241d3f}
+.lp-benefit p{margin:0;font-size:14px;line-height:1.95;color:#6d6789}
+.lp-steps{margin-top:56px;text-align:center}
+.lp-steps h2{font-size:27px;margin:0 0 22px;color:#1d1836}
+.lp-steps-row{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.lp-step{background:rgba(255,255,255,.75);border:1px dashed #cfc6f5;border-radius:18px;padding:24px 20px}
+.lp-step-num{display:inline-flex;width:40px;height:40px;border-radius:50%;background:linear-gradient(135deg,#7a5cff,#5a3df0);color:#fff;font-weight:800;font-size:18px;align-items:center;justify-content:center;margin-bottom:12px;box-shadow:0 8px 18px rgba(108,76,241,.3)}
+.lp-step h3{margin:0 0 5px;font-size:16.5px;color:#241d3f}
+.lp-step p{margin:0;font-size:14px;line-height:1.95;color:#6d6789}
+.lp-final{margin-top:56px;background:linear-gradient(135deg,#7a5cff,#4f46e5);border-radius:24px;padding:40px 26px;text-align:center;color:#fff;box-shadow:0 24px 50px rgba(90,61,240,.35)}
+.lp-final h2{margin:0 0 20px;font-size:28px}
+.lp-footer{text-align:center;color:#8a84a8;font-size:13.5px;margin-top:30px}
+@media (max-width:920px){
+  .lp-nav{padding:14px 14px;gap:8px}
+  .lp-nav-actions{gap:6px}
+  .lp-nav .lp-btn{padding:9px 13px;font-size:14px}
+  .lp-nav .lp-btn.ghost{display:none}
+  .lp-brand{font-size:21px}
+  .lp-main{padding:4px 18px 36px}
+  .lp-hero{grid-template-columns:1fr;gap:8px;padding-top:12px}
+  .lp-hero h1{font-size:32px}
+  .lp-def{font-size:16px}
+  .lp-scene{height:360px;margin-top:10px}
+  .lp-doc{width:236px;height:322px}
+  .lp-benefits{grid-template-columns:1fr;margin-top:38px}
+  .lp-steps-row{grid-template-columns:1fr}
+  .lp-final h2{font-size:23px}
+}
+@media (prefers-reduced-motion: reduce){
+  .lp-doc.front,.lp-chip,.lp-hero-text,.lp-scene{animation:none}
+  .lp-benefit{transition:none}
 }
