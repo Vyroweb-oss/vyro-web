@@ -13,11 +13,12 @@
 // with two more, and in Phase 2, P2-39, with two more, and in
 // Phase 2, P2-40, with two more, and in
 // Phase 2, P2-41, with two more, and in
-// Phase 2, P2-42, with two more).
+// Phase 2, P2-42, with two more, and in
+// Phase 2, P2-43, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// fifty local, JSON-derivable rules — nothing is faked:
+// fifty-two local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -460,6 +461,37 @@
 //       also carries level; independent of all
 //       other heading rules, so co-firing is
 //       legitimate).
+//   (51) links whose TRIMMED visible text CONTAINS
+//       an email substring but is NOT exactly an
+//       email address (linkContainsEmail — per link
+//       RUN, as defined below; the trimmed run text
+//       matches the unanchored
+//       /[^\s@]+@[^\s@]+\.[^\s@]{2,}/ somewhere
+//       inside it, reused via containsEmailText, so
+//       'Contact info@example.com' and 'Email
+//       INFO@EXAMPLE.COM for help' flag, while a run
+//       that IS exactly an email address does NOT
+//       flag here (it is already linkTextIsEmail,
+//       rule 34), and a bare domain without '@'
+//       does NOT flag; empty runs are EXCLUDED,
+//       they are already linkEmptyText; the issue
+//       carries linkIndex, href, and the trimmed
+//       linkText; independent of all other link
+//       branches, so co-firing is legitimate).
+//   (52) images whose TRIMMED alt text CONTAINS
+//       an email substring but is NOT exactly an
+//       email address (imageAltContainsEmail — the
+//       same contains test as rule (51) on the
+//       trimmed alt, so 'Contact info@example.com
+//       today' flags, while an alt that IS exactly
+//       an email address does NOT flag here (it is
+//       already imageAltIsEmail, rule 39), and a
+//       bare domain without '@' does NOT flag;
+//       missing/empty/whitespace alt is EXCLUDED,
+//       it is already imageAltMissing; the issue
+//       carries imageIndex and the trimmed alt;
+//       independent of all other alt branches, so
+//       co-firing is legitimate).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -537,6 +569,8 @@ export type A11yIssueKind =
   | 'imageAltContainsUrl'
   | 'linkContainsUrl'
   | 'headingContainsEmail'
+  | 'linkContainsEmail'
+  | 'imageAltContainsEmail'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -556,9 +590,9 @@ export interface A11yIssue {
   linkIndex?: number
   /** Link target, for link issues ('' when the link mark has no href). */
   href?: string
-  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort / linkTextIsFilename / linkTextAllCaps / linkContainsUrl issues. */
+  /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort / linkTextIsFilename / linkTextAllCaps / linkContainsUrl / linkContainsEmail issues. */
   linkText?: string
-  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail / imageAltAllCaps / imageAltContainsUrl issues. */
+  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail / imageAltAllCaps / imageAltContainsUrl / imageAltContainsEmail issues. */
   altText?: string
 }
 
@@ -621,6 +655,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   imageAltContainsUrl: 0,
   linkContainsUrl: 0,
   headingContainsEmail: 0,
+  linkContainsEmail: 0,
+  imageAltContainsEmail: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -678,12 +714,12 @@ function containsUrlText(trimmed: string): boolean {
 }
 
 /**
- * Email-substring test for rule (50) (P2-42): the input must
+ * Email-substring test for rules (50), (51), and (52) (P2-42/P2-43): the input must
  * already be trimmed. The unanchored version of the exact-email
  * regex of rules (34)/(35)/(39) — /[^\s@]+@[^\s@]+\.[^\s@]{2,}/
  * somewhere inside the text — so an email embedded in a longer
  * sentence matches, while a bare domain without '@' does not.
- * The exact-email exclusion lives in the rule (50) pass itself,
+ * The exact-email exclusion lives in each rule pass itself,
  * which also checks the anchored regex before flagging.
  */
 function containsEmailText(trimmed: string): boolean {
@@ -1156,6 +1192,21 @@ export function analyzeDoc(docJson: any): A11yResult {
         if (!isUrlText(trimmedAlt) && containsUrlText(trimmedAlt)) {
           push({ kind: 'imageAltContainsUrl', imageIndex, altText: trimmedAlt })
         }
+        // Alt text containing an email address (P2-43, rule 52):
+        // the TRIMMED alt CONTAINS an email substring but
+        // is NOT exactly an email address, reusing
+        // containsEmailText, so 'Contact
+        // info@example.com today' flags, while an alt
+        // that IS exactly an email address does NOT flag
+        // here (it is already imageAltIsEmail, rule 39),
+        // and a bare domain without '@' does NOT flag.
+        // Missing/empty alt is excluded above (already
+        // imageAltMissing). Independent of all other
+        // alt branches — no branch suppresses another,
+        // so co-firing is legitimate.
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmedAlt) && containsEmailText(trimmedAlt)) {
+          push({ kind: 'imageAltContainsEmail', imageIndex, altText: trimmedAlt })
+        }
       }
     } else if (node.type === 'table') {
       tableIndex += 1
@@ -1497,6 +1548,25 @@ export function analyzeDoc(docJson: any): A11yResult {
           // legitimate.
           if (!isUrlText(trimmed) && containsUrlText(trimmed)) {
             push({ kind: 'linkContainsUrl', linkIndex, href: runHref, linkText: trimmed })
+          }
+          // Links whose visible text contains an email address
+          // (P2-43, rule 51): the trimmed run text
+          // CONTAINS an email substring but is NOT
+          // exactly an email address, reusing
+          // containsEmailText, so 'Contact
+          // info@example.com' and 'Email
+          // INFO@EXAMPLE.COM for help' flag, while a
+          // run that IS exactly an email address does
+          // NOT flag here (it is already
+          // linkTextIsEmail, rule 34), and a bare
+          // domain without '@' does NOT flag. Empty
+          // runs are excluded by the branch above
+          // (already linkEmptyText). Independent of
+          // all other link branches — no branch
+          // suppresses another, so co-firing is
+          // legitimate.
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmed) && containsEmailText(trimmed)) {
+            push({ kind: 'linkContainsEmail', linkIndex, href: runHref, linkText: trimmed })
           }
         }
         runHref = null
