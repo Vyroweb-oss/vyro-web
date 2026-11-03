@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
-  buildTemplate, buildResearchDoc, normalizeDigits, splitSentences,
+  buildTemplate, buildResearchDoc, assembleResearch, normalizeDigits, splitSentences,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -84,6 +84,37 @@ describe('assistant web research (owner order 2026-11-03)', () => {
   })
   it('a plain essay request without the web stays a local template', () => {
     expect(parseAssistantCommand('مقاله درباره آلودگی هوا بنویس').kind).toBe('insert-template')
+  })
+  it('parses page counts — digits and Persian number words (owner: write as many pages as asked)', () => {
+    const a = parseAssistantCommand('درباره انرژی خورشیدی در اینترنت بگرد و ۲ صفحه بنویس')
+    expect(a.kind).toBe('research')
+    if (a.kind === 'research') { expect(a.pages).toBe(2); expect(a.topic).toContain('انرژی خورشیدی') }
+    const b = parseAssistantCommand('درباره تاریخ افغانستان در اینترنت تحقیق کن و بیست صفحه بنویس')
+    expect(b.kind).toBe('research')
+    if (b.kind === 'research') expect(b.pages).toBe(20)
+    const c = parseAssistantCommand('search the web for gravity and write 1 page')
+    expect(c.kind).toBe('research')
+    if (c.kind === 'research') expect(c.pages).toBe(1)
+  })
+  it('assembleResearch fills the requested page length from several sources and credits them all', () => {
+    const sentence = 'این جمله درباره موضوع است و اطلاعات مهمی درباره آن می دهد و شرح می کند.'
+    const mk = (n: number, title: string, url: string) => ({
+      title, url, extract: Array.from({ length: n }, (_, i) => `${sentence} بخش ${i + 1} از ${title} است.`).join(' '),
+    })
+    const one = mk(30, 'موضوع الف', 'https://fa.wikipedia.org/wiki/A')
+    const two = mk(30, 'موضوع ب', 'https://fa.wikipedia.org/wiki/B')
+    const out = assembleResearch([one, two], 'fa', { pages: 2 })
+    expect(out.targetWords).toBe(960)
+    expect(out.words).toBeGreaterThanOrEqual(700)
+    const all = JSON.stringify(out.nodes)
+    expect(all).toContain('منابع:')
+    expect(all).toContain('https://fa.wikipedia.org/wiki/A')
+    expect(all).toContain('https://fa.wikipedia.org/wiki/B')
+  })
+  it('assembleResearch is honestly shorter when sources run out — never padded', () => {
+    const small = { title: 'کوچک', url: 'https://fa.wikipedia.org/wiki/S', extract: 'یک جمله کوتاه است. جمله دوم هم هست. و جمله سوم.' }
+    const out = assembleResearch([small], 'fa', { pages: 10 })
+    expect(out.words).toBeLessThan(out.targetWords)
   })
   it('buildResearchDoc assembles title, lead, body — and ALWAYS the source line', () => {
     const extract = 'آلودگی هوا یک مشکل بزرگ است. دود کارخانه ها هوا را خراب می کند. مردم مریض می شوند. دولت ها باید قانون بگذارند. در شهرهای بزرگ ترافیک زیاد است. کودکان بیشتر آسیب می بینند. انرژی پاک یک راه حل است.'

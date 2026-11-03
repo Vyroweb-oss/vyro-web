@@ -21,7 +21,7 @@ export type AssistantAction =
   | { kind: 'insert-template'; template: AssistantTemplateKind; topic?: string }
   | { kind: 'insert-page-break' }
   | { kind: 'insert-date' }
-  | { kind: 'research'; topic: string; paragraphs: number }
+  | { kind: 'research'; topic: string; paragraphs: number; pages?: number }
   | { kind: 'selection-heading'; level: 1 | 2 | 3 }
   | { kind: 'selection-bold' }
   | { kind: 'selection-cleanup' }
@@ -55,6 +55,8 @@ export function normalizeCommand(raw: string): string {
 const RESEARCH_STOP = new Set([
   'در', 'از', 'اینترنت', 'وب', 'آنلاین', 'جستجو', 'سرچ', 'تحقیق', 'بگرد', 'بنویس', 'بساز',
   'درباره', 'باره', 'مقاله', 'انشا', 'متن', 'یک', 'و', 'را', 'کن', 'پاراگراف', 'سایت',
+  'صفحه', 'صفحات', 'page', 'pages', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه',
+  'ده', 'پانزده', 'بیست', 'سی',
   'essay', 'write', 'search', 'research', 'internet', 'web', 'online', 'the', 'for',
   'about', 'make', 'an', 'a', 'article', 'text', 'find', 'paragraph', 'paragraphs', 'and',
 ])
@@ -121,7 +123,21 @@ export function parseAssistantCommand(raw: string): AssistantAction {
     const topic = extractResearchTopic(s)
     if (topic.length >= 2) {
       const pNum = s.match(/(\d+)\s*(پاراگراف|paragraph)/)
-      return { kind: 'research', topic, paragraphs: clamp(pNum ? parseInt(pNum[1], 10) : 3, 1, 6) }
+      // Length by PAGES when the user names pages (owner order
+      // 2026-11-03: 1 page = 1 page, 30 pages = 30 pages) — digits or
+      // Persian number words.
+      const pgNum = s.match(/(\d+)\s*(صفحه|صفحات|pages?)/)
+      const FA_PAGE_WORDS: Record<string, number> = {
+        یک: 1, دو: 2, سه: 3, چهار: 4, پنج: 5, شش: 6, هفت: 7, هشت: 8, نه: 9,
+        ده: 10, پانزده: 15, بیست: 20, سی: 30,
+      }
+      const pgWord = s.match(/(یک|دو|سه|چهار|پنج|شش|هفت|هشت|نه|ده|پانزده|بیست|سی)\s+صفحه/)
+      const pages = pgNum ? parseInt(pgNum[1], 10) : pgWord ? FA_PAGE_WORDS[pgWord[1]] : undefined
+      return {
+        kind: 'research', topic,
+        paragraphs: clamp(pNum ? parseInt(pNum[1], 10) : 3, 1, 6),
+        pages: pages !== undefined ? clamp(pages, 1, 30) : undefined,
+      }
     }
   }
 
@@ -264,28 +280,82 @@ export interface ResearchData {
   url: string
 }
 
-/** Assemble a research draft from a fetched article (owner order
- *  2026-11-03): title, the article's lead as the introduction, its
- *  strongest sentences (its OWN words, original order) grouped into
- *  body paragraphs — and ALWAYS a closing source line crediting where
- *  the text came from. The source line is part of the honesty
- *  contract: it is built here, in the engine, and cannot be dropped
- *  by the UI. */
-export function buildResearchDoc(data: ResearchData, lang: 'fa' | 'en', paragraphCount = 3): JsonNode[] {
-  const sentences = splitSentences(data.extract)
-  const lead = sentences.slice(0, 2)
-  const rest = sentences.slice(2).join(' ')
-  const picked = rest ? summarizeText(rest, Math.max(3, paragraphCount * 3)) : []
-  const nodes: JsonNode[] = [head(1, data.title)]
-  if (lead.length > 0) nodes.push(para(lead.join(' ')))
-  if (picked.length > 0) {
-    const perPara = Math.max(1, Math.ceil(picked.length / paragraphCount))
-    for (let i = 0; i < picked.length; i += perPara) {
-      nodes.push(para(picked.slice(i, i + perPara).join(' ')))
+export const WORDS_PER_PAGE = 480
+const WORDS_PER_PARAGRAPH = 110
+
+export interface ResearchAssembly { nodes: JsonNode[]; words: number; targetWords: number }
+
+const countWords = (s: string) => s.split(/\s+/).filter(Boolean).length
+
+/** Assemble a research draft from fetched sources (owner orders
+ *  2026-11-03: precise search; write to the LENGTH asked — pages when
+ *  pages are named, otherwise paragraphs). Title, the best source's
+ *  lead as the introduction, then the sources' strongest sentences
+ *  (their OWN words, original order) sectioned per source until the
+ *  target length is reached — and ALWAYS a closing credit of every
+ *  source used. The credit is part of the honesty contract: it is
+ *  built here, in the engine, and cannot be dropped by the UI. If the
+ *  sources run out first, the draft is honestly shorter — the caller
+ *  reports the real size; nothing is ever padded with invented text. */
+export function assembleResearch(
+  sources: ResearchData[],
+  lang: 'fa' | 'en',
+  opts: { pages?: number; paragraphs?: number } = {},
+): ResearchAssembly {
+  const targetWords = opts.pages ? opts.pages * WORDS_PER_PAGE : (opts.paragraphs ?? 3) * WORDS_PER_PARAGRAPH
+  const nodes: JsonNode[] = []
+  let words = 0
+  if (sources.length === 0) return { nodes, words, targetWords }
+  const main = sources[0]
+  nodes.push(head(1, main.title))
+  const lead = splitSentences(main.extract).slice(0, 2)
+  if (lead.length > 0) {
+    nodes.push(para(lead.join(' ')))
+    words += countWords(lead.join(' '))
+  }
+  const multiSection = sources.length > 1 && (opts.pages ?? 0) >= 2
+  sources.forEach((src, si) => {
+    if (words >= targetWords) return
+    const sentences = splitSentences(src.extract)
+    const body = si === 0 ? sentences.slice(lead.length) : sentences
+    if (body.length === 0) return
+    // This source's strongest sentences, in its own order, sized to
+    // the room left (first source gets the biggest share).
+    const roomWords = targetWords - words
+    const quota = Math.max(6, Math.ceil(roomWords / 18))
+    const picked = summarizeText(body.join(' '), quota)
+    if (picked.length === 0) return
+    if (multiSection) nodes.push(head(2, src.title))
+    let buf: string[] = []
+    let bufWords = 0
+    const flush = () => {
+      if (buf.length === 0) return
+      nodes.push(para(buf.join(' ')))
+      buf = []; bufWords = 0
+    }
+    for (const sentence of picked) {
+      if (words >= targetWords && buf.length > 0) break
+      buf.push(sentence)
+      const w = countWords(sentence)
+      bufWords += w; words += w
+      if (bufWords >= WORDS_PER_PARAGRAPH) flush()
+    }
+    flush()
+  })
+  if (sources.length === 1) {
+    nodes.push(para(lang === 'fa' ? `منبع: ویکی‌پدیا — ${main.url}` : `Source: Wikipedia — ${main.url}`))
+  } else {
+    nodes.push(para(lang === 'fa' ? 'منابع:' : 'Sources:'))
+    for (const src of sources) {
+      nodes.push(para(lang === 'fa' ? `ویکی‌پدیا — ${src.url}` : `Wikipedia — ${src.url}`))
     }
   }
-  nodes.push(para(lang === 'fa' ? `منبع: ویکی‌پدیا — ${data.url}` : `Source: Wikipedia — ${data.url}`))
-  return nodes
+  return { nodes, words, targetWords }
+}
+
+/** Single-article convenience wrapper (paragraph mode). */
+export function buildResearchDoc(data: ResearchData, lang: 'fa' | 'en', paragraphCount = 3): JsonNode[] {
+  return assembleResearch([data], lang, { paragraphs: paragraphCount }).nodes
 }
 
 /** Ready-made document structures in the app's own document format.

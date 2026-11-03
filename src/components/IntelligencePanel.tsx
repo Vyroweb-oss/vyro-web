@@ -5,7 +5,7 @@ import { usePanelFocusReturn } from './useDialogFocus'
 import { truncatePreview } from '../lib/intelligence'
 import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
-  buildTemplate, buildResearchDoc, type AssistantAction, type ResearchData,
+  buildTemplate, assembleResearch, WORDS_PER_PAGE, type AssistantAction, type ResearchData,
 } from '../lib/assistant'
 import { computeDocumentStats } from '../lib/stats'
 import { supabase } from '../lib/supabase'
@@ -159,14 +159,21 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/assistant-search`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: action.topic, lang }),
+        body: JSON.stringify({ query: action.topic, lang, pages: action.pages ?? 1 }),
       })
       if (!res.ok) { setMessage(t('assistantSearchFailed')); return }
-      const data = (await res.json()) as { found?: boolean } & Partial<ResearchData>
-      if (!data.found || !data.title || !data.extract || !data.url) { setMessage(t('assistantSearchNotFound')); return }
-      const nodes = buildResearchDoc({ title: data.title, extract: data.extract, url: data.url }, lang, action.paragraphs)
-      editor.chain().focus().insertContent(nodes as object[]).run()
-      setMessage(t('assistantResearchDone'))
+      const data = (await res.json()) as { found?: boolean; sources?: ResearchData[] } & Partial<ResearchData>
+      const sources: ResearchData[] = data.sources && data.sources.length > 0
+        ? data.sources
+        : data.title && data.extract && data.url ? [{ title: data.title, extract: data.extract, url: data.url }] : []
+      if (!data.found || sources.length === 0) { setMessage(t('assistantSearchNotFound')); return }
+      const built = assembleResearch(sources, lang, { pages: action.pages, paragraphs: action.paragraphs })
+      editor.chain().focus().insertContent(built.nodes as object[]).run()
+      const meta = t('assistantResearchMeta')
+        .replace('{w}', String(built.words))
+        .replace('{p}', String(Math.max(1, Math.round(built.words / WORDS_PER_PAGE))))
+      const short = built.words < built.targetWords * 0.85 ? ` ${t('assistantResearchShort')}` : ''
+      setMessage(`${t('assistantResearchDone')} ${meta}${short}`)
     } catch {
       setMessage(t('assistantSearchFailed'))
     } finally {
