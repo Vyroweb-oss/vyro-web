@@ -150,6 +150,15 @@ describe('flows against a fake client', () => {
   it('buildSignUpRequest trims email and keeps the password verbatim', () => {
     expect(buildSignUpRequest('  a@b.co ', ' ab cd12345 ')).toEqual({ email: 'a@b.co', password: ' ab cd12345 ' })
   })
+  it('buildSignUpRequest with a name adds ONLY user_metadata.display_name — never app_metadata or premium', () => {
+    const req = buildSignUpRequest('a@b.co', 'abcd123456', '  Najmuddin Safari  ')
+    expect(req).toEqual({ email: 'a@b.co', password: 'abcd123456', options: { data: { display_name: 'Najmuddin Safari' } } })
+    const json = JSON.stringify(req).toLowerCase()
+    expect(json).not.toContain('app_metadata')
+    expect(json).not.toContain('premium')
+    expect(buildSignUpRequest('a@b.co', 'abcd123456', '   ')).toEqual({ email: 'a@b.co', password: 'abcd123456' })
+    expect(buildSignUpRequest('a@b.co', 'abcd123456')).toEqual({ email: 'a@b.co', password: 'abcd123456' })
+  })
 })
 
 describe('source guards — wiring and invariants', () => {

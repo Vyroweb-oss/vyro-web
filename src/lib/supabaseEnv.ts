@@ -10,3 +10,18 @@ export const isSupabaseConfigured = !!(url && key)
 // inert unless this flag is EXACTLY 'true' AND Supabase is configured.
 // Off/absent = today's Local Mode behaviour, byte for byte.
 export const isCloudDocsEnabled = (import.meta.env.VITE_CLOUD_DOCS_ENABLED as string|undefined) === 'true'
+// "Remember me" preference for the auth page (SDK-free, like everything in
+// this module): remembered (the default) keeps the session in localStorage
+// across browser restarts; not remembered keeps it in sessionStorage, so
+// closing the tab signs the user out. supabase.ts routes its auth storage
+// through sessionRemembered(); AuthScreen sets the flag before sign-in.
+export const REMEMBER_FLAG_KEY = 'vyro-web-remember-v1'
+export function sessionRemembered(): boolean {
+  try { return localStorage.getItem(REMEMBER_FLAG_KEY) !== '0' } catch { return true }
+}
+export function setRememberSession(remember: boolean): void {
+  try {
+    if (remember) localStorage.removeItem(REMEMBER_FLAG_KEY)
+    else localStorage.setItem(REMEMBER_FLAG_KEY, '0')
+  } catch { /* best-effort: default behaviour is to remember */ }
+}

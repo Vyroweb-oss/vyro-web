@@ -8,10 +8,13 @@
 //   * the exact request shapes sent to Supabase Auth.
 //
 // SECURITY INVARIANTS (pinned by authFlow.test.ts):
-//   * Sign-up sends ONLY { email, password }. No options, no metadata, and
-//     never anything premium-shaped: entitlement is read exclusively from
-//     the server-owned app_metadata (see entitlement.ts), which a client
-//     can never write. Registering can therefore NEVER create Premium.
+//   * Sign-up sends { email, password } — plus, ONLY when the user typed a
+//     name on the auth page, options.data.display_name (their own
+//     user_metadata, which the account panel already displays). No
+//     app_metadata, and never anything premium-shaped: entitlement is read
+//     exclusively from the server-owned app_metadata (see entitlement.ts),
+//     which a client can never write. Registering can therefore NEVER
+//     create Premium.
 //   * Password policy (minimum 10 characters, a letter and a digit) is
 //     enforced for NEW passwords (sign-up). Sign-in deliberately does NOT
 //     enforce it: the production Auth pool is shared with Vyro Android,
@@ -38,7 +41,7 @@ export type AuthErrorKey =
 
 /** Minimal structural slice of the Supabase Auth client this flow needs. */
 export interface AuthClientLike {
-  signUp(input: { email: string; password: string }): Promise<{ data: { user: unknown; session: unknown }; error: unknown }>
+  signUp(input: { email: string; password: string; options?: { data?: { display_name?: string } } }): Promise<{ data: { user: unknown; session: unknown }; error: unknown }>
   signInWithPassword(input: { email: string; password: string }): Promise<{ data: { user: unknown; session: unknown }; error: unknown }>
   resetPasswordForEmail(email: string, options?: { redirectTo?: string }): Promise<{ error: unknown }>
 }
@@ -117,17 +120,21 @@ export function mapAuthError(error: unknown): AuthErrorKey {
   return 'authErrorGeneric'
 }
 
-/** The EXACT sign-up request. Deliberately nothing else: no options object,
- *  no user_metadata, no app_metadata — registration cannot mint Premium. */
-export function buildSignUpRequest(email: string, password: string): { email: string; password: string } {
-  return { email: email.trim(), password }
+/** The sign-up request. Without a display name it is EXACTLY
+ *  { email, password }; with one it adds ONLY options.data.display_name
+ *  (user_metadata). Never app_metadata — registration cannot mint Premium. */
+export function buildSignUpRequest(email: string, password: string, displayName?: string): { email: string; password: string; options?: { data: { display_name: string } } } {
+  const base: { email: string; password: string; options?: { data: { display_name: string } } } = { email: email.trim(), password }
+  const name = (displayName ?? '').trim().slice(0, 80)
+  if (name) base.options = { data: { display_name: name } }
+  return base
 }
 
-export async function signUpWithEmail(auth: AuthClientLike, email: string, password: string, confirm: string): Promise<AuthFlowResult> {
+export async function signUpWithEmail(auth: AuthClientLike, email: string, password: string, confirm: string, displayName?: string): Promise<AuthFlowResult> {
   const issues = validateSignUp(email, password, confirm)
   if (issues.length > 0) return { ok: false, errorKey: issues[0] }
   try {
-    const { data, error } = await auth.signUp(buildSignUpRequest(email, password))
+    const { data, error } = await auth.signUp(buildSignUpRequest(email, password, displayName))
     if (error) return { ok: false, errorKey: mapAuthError(error) }
     if (data && data.user && !data.session) return { ok: true, kind: 'confirmation-required' }
     return { ok: true, kind: 'signed-in', user: data?.user ?? null }
