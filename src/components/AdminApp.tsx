@@ -1,10 +1,14 @@
-// AdminApp — the owner-only Vyro Web admin panel (Release 2, M-plan).
-// A SEPARATE entry (/admin.html) from the public app. This page holds NO
-// privileges and NO service-role key: it signs the owner in with normal
-// Supabase Auth and calls the admin Edge Functions with the session
-// token; the FUNCTIONS verify app_metadata.role === 'admin' server-side
-// on every request and are the only place Premium can change. A 403
-// here simply means "you are not the admin" and the panel stays shut.
+// AdminApp — the owner-only Vyro Web admin panel (Release 2, M-plan;
+// simplified 2026-11-03 on the owner's model: the whole site is FREE
+// and there is NO Premium version, so the panel manages no Premium —
+// it is the owner's window on his users: stats, the searchable user
+// list and per-user cloud-document counts).
+// A SEPARATE entry (/admin.html) from the public app. This page holds
+// NO privileges and NO service-role key: it signs the owner in with
+// normal Supabase Auth and calls the admin Edge Function with the
+// session token; the FUNCTION verifies app_metadata.role === 'admin'
+// server-side on every request. A 403 here simply means "you are not
+// the admin" and the panel stays shut.
 
 import { useCallback, useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
@@ -17,42 +21,33 @@ const STR = {
     signOut: 'Sign out', notAdmin: 'This account is not an admin. Access is closed.',
     signInFailed: 'Sign-in failed. Check the email and password.',
     loading: 'Loading…', search: 'Search email, username or name…', refresh: 'Refresh',
-    totalUsers: 'Total users', newLast7d: 'New (7 days)', premiumActive: 'Premium active', cloudDocs: 'Cloud documents',
+    totalUsers: 'Total users', newLast7d: 'New (7 days)', cloudDocs: 'Cloud documents',
     user: 'User', username: 'Username', registered: 'Registered', lastSignIn: 'Last sign-in', docs: 'Docs',
-    premium: 'Premium', free: 'Free', until: 'until', never: '—',
-    activate: 'Activate 1 month', extend: 'Extend +1 month', deactivate: 'Deactivate',
-    confirmQ: 'Are you sure?', yes: 'Yes, do it', cancel: 'Cancel',
-    auditTitle: 'Admin actions (audit log)', auditEmpty: 'No admin actions yet.',
-    actionActivate: 'Premium activated', actionExtend: 'Premium extended', actionDeactivate: 'Premium deactivated',
-    loadFailed: 'Could not load the panel data.', actionFailed: 'The action failed. Nothing was changed by this click — check and retry.',
+    never: '—', loadFailed: 'Could not load the panel data.',
     notConfigured: 'Accounts are not configured on this build.',
+    allFree: 'Everything on Vyro is free for all users — there is no Premium version.',
   },
   fa: {
     title: 'پنل مدیریت وایرو', signIn: 'ورود', email: 'ایمیل', password: 'رمز عبور',
     signOut: 'خروج', notAdmin: 'این حساب مدیر نیست. دسترسی بسته است.',
     signInFailed: 'ورود ناموفق بود. ایمیل و رمز عبور را بررسی کنید.',
     loading: 'در حال بارگذاری…', search: 'جستجو: ایمیل، نام کاربری یا نام…', refresh: 'تازه‌سازی',
-    totalUsers: 'کل کاربران', newLast7d: 'ثبت‌نام ۷ روز اخیر', premiumActive: 'پرمیوم فعال', cloudDocs: 'اسناد ابری',
+    totalUsers: 'کل کاربران', newLast7d: 'ثبت‌نام ۷ روز اخیر', cloudDocs: 'اسناد ابری',
     user: 'کاربر', username: 'نام کاربری', registered: 'ثبت‌نام', lastSignIn: 'آخرین ورود', docs: 'اسناد',
-    premium: 'پرمیوم', free: 'رایگان', until: 'تا', never: '—',
-    activate: 'فعال‌سازی یک ماه', extend: 'تمدید ‎+۱ ماه', deactivate: 'غیرفعال‌کردن',
-    confirmQ: 'مطمئن هستید؟', yes: 'بله، انجام بده', cancel: 'لغو',
-    auditTitle: 'اقدامات مدیر (گزارش حسابرسی)', auditEmpty: 'هنوز هیچ اقدام مدیریتی ثبت نشده است.',
-    actionActivate: 'پرمیوم فعال شد', actionExtend: 'پرمیوم تمدید شد', actionDeactivate: 'پرمیوم غیرفعال شد',
-    loadFailed: 'داده‌های پنل بارگذاری نشد.', actionFailed: 'اقدام انجام نشد. با این کلیک چیزی تغییر نکرده — بررسی کنید و دوباره تلاش کنید.',
+    never: '—', loadFailed: 'داده‌های پنل بارگذاری نشد.',
     notConfigured: 'حساب‌ها در این نسخه پیکربندی نشده‌اند.',
+    allFree: 'همه‌چیز در وایرو برای همه کاربران رایگان است — نسخهٔ پرمیوم وجود ندارد.',
   },
 } as const
 
 interface AdminUser {
   id: string; email: string; username: string | null; displayName: string | null
-  createdAt: string; lastSignInAt: string | null; premium: boolean; premiumUntil: string | null; docs: number
+  createdAt: string; lastSignInAt: string | null; docs: number
 }
 interface PanelData {
   me: { id: string; email: string }
   stats: { totalUsers: number; newLast7d: number; premiumActive: number; totalCloudDocs: number }
   users: AdminUser[]
-  audit?: { id: number; actor_id: string; target_user_id: string; action: string; created_at: string }[]
 }
 
 const FN_BASE = `${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1`
@@ -70,9 +65,6 @@ export default function AdminApp() {
   const [formError, setFormError] = useState('')
   const [loadError, setLoadError] = useState('')
   const [q, setQ] = useState('')
-  const [confirm, setConfirm] = useState<{ userId: string; action: string } | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [actionError, setActionError] = useState('')
 
   const load = useCallback(async (query: string) => {
     if (!supabase) return
@@ -80,7 +72,7 @@ export default function AdminApp() {
     const token = sess.session?.access_token
     if (!token) { setSignedIn(false); return }
     setSignedIn(true)
-    const res = await fetch(`${FN_BASE}/admin-users?audit=1${query ? `&q=${encodeURIComponent(query)}` : ''}`, {
+    const res = await fetch(`${FN_BASE}/admin-users${query ? `?q=${encodeURIComponent(query)}` : ''}`, {
       headers: { Authorization: `Bearer ${token}`, apikey: PUB_KEY },
     })
     if (res.status === 403) { setForbidden(true); setData(null); return }
@@ -109,24 +101,7 @@ export default function AdminApp() {
     if (error) setFormError('signin')
   }
 
-  const doAction = async () => {
-    if (!supabase || !confirm) return
-    setBusy(true); setActionError('')
-    const { data: sess } = await supabase.auth.getSession()
-    const token = sess.session?.access_token
-    const res = await fetch(`${FN_BASE}/admin-set-premium`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, apikey: PUB_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: confirm.userId, action: confirm.action }),
-    })
-    setBusy(false); setConfirm(null)
-    if (!res.ok) { setActionError('action'); return }
-    await load(q)
-  }
-
   const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString(lang === 'fa' ? 'fa-AF' : 'en-GB') : t.never)
-  const emailOf = (id: string) => data?.users.find((u) => u.id === id)?.email ?? `${id.slice(0, 8)}…`
-  const auditLabel = (a: string) => (a === 'premium_activate' ? t.actionActivate : a === 'premium_extend' ? t.actionExtend : t.actionDeactivate)
 
   if (!supabase) return <div className="adm-wrap"><p className="adm-card">{t.notConfigured}</p></div>
   if (!ready) return <div className="adm-wrap"><p className="adm-muted">{t.loading}</p></div>
@@ -158,10 +133,10 @@ export default function AdminApp() {
         <p className="adm-muted">{loadError ? t.loadFailed : t.loading}</p>
       ) : (
         <>
+          <p className="adm-free-note">{t.allFree}</p>
           <section className="adm-stats">
             <div className="adm-stat"><span>{data.stats.totalUsers}</span><label>{t.totalUsers}</label></div>
             <div className="adm-stat"><span>{data.stats.newLast7d}</span><label>{t.newLast7d}</label></div>
-            <div className="adm-stat"><span>{data.stats.premiumActive}</span><label>{t.premiumActive}</label></div>
             <div className="adm-stat"><span>{data.stats.totalCloudDocs}</span><label>{t.cloudDocs}</label></div>
           </section>
 
@@ -170,12 +145,11 @@ export default function AdminApp() {
               onChange={(e) => { setQ(e.target.value); void load(e.target.value) }} />
             <button className="adm-btn ghost" onClick={() => void load(q)}>{t.refresh}</button>
           </div>
-          {actionError && <p className="adm-error">{t.actionFailed}</p>}
 
           <div className="adm-table-wrap">
             <table className="adm-table">
               <thead><tr>
-                <th>{t.user}</th><th>{t.username}</th><th>{t.registered}</th><th>{t.lastSignIn}</th><th>{t.docs}</th><th>{t.premium}</th><th></th>
+                <th>{t.user}</th><th>{t.username}</th><th>{t.registered}</th><th>{t.lastSignIn}</th><th>{t.docs}</th>
               </tr></thead>
               <tbody>
                 {data.users.map((u) => (
@@ -185,40 +159,11 @@ export default function AdminApp() {
                     <td>{fmt(u.createdAt)}</td>
                     <td>{fmt(u.lastSignInAt)}</td>
                     <td>{u.docs}</td>
-                    <td>{u.premium
-                      ? <span className="adm-badge on">{t.premium}{u.premiumUntil ? ` · ${t.until} ${fmt(u.premiumUntil)}` : ''}</span>
-                      : <span className="adm-badge">{t.free}</span>}</td>
-                    <td className="adm-actions">
-                      {confirm?.userId === u.id ? (
-                        <span className="adm-confirm">{t.confirmQ}
-                          <button className="adm-btn danger" disabled={busy} onClick={() => void doAction()}>{t.yes}</button>
-                          <button className="adm-btn ghost" onClick={() => setConfirm(null)}>{t.cancel}</button>
-                        </span>
-                      ) : (
-                        <>
-                          {!u.premium && <button className="adm-btn small" onClick={() => setConfirm({ userId: u.id, action: 'activate' })}>{t.activate}</button>}
-                          {u.premium && <button className="adm-btn small" onClick={() => setConfirm({ userId: u.id, action: 'extend' })}>{t.extend}</button>}
-                          {u.premium && <button className="adm-btn small ghost" onClick={() => setConfirm({ userId: u.id, action: 'deactivate' })}>{t.deactivate}</button>}
-                        </>
-                      )}
-                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-
-          <section className="adm-card adm-audit">
-            <h2>{t.auditTitle}</h2>
-            {!data.audit || data.audit.length === 0 ? <p className="adm-muted">{t.auditEmpty}</p> : (
-              <ul>
-                {data.audit.map((a) => (
-                  <li key={a.id}><span>{new Date(a.created_at).toLocaleString(lang === 'fa' ? 'fa-AF' : 'en-GB')}</span>
-                    <strong>{auditLabel(a.action)}</strong><span className="adm-muted">{emailOf(a.target_user_id)}</span></li>
-                ))}
-              </ul>
-            )}
-          </section>
         </>
       )}
     </div>

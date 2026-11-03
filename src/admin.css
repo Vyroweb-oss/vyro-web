@@ -26,7 +26,8 @@ body{margin:0;background:var(--adm-bg);color:var(--adm-text);font-family:system-
 .adm-login input:focus{outline:2px solid var(--adm-brand);border-color:transparent}
 .adm-error{color:var(--adm-danger);font-size:14px;margin:0}
 .adm-muted{color:var(--adm-muted);font-size:13.5px}
-.adm-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px}
+.adm-free-note{background:#ecfdf5;border:1.5px solid #6ee7b7;color:#065f46;border-radius:12px;padding:11px 15px;font-size:14px;font-weight:600;margin:0 0 16px}
+.adm-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}
 .adm-stat{background:var(--adm-surface);border:1px solid var(--adm-border);border-radius:16px;padding:18px;text-align:center;box-shadow:0 8px 22px rgba(80,60,180,.07)}
 .adm-stat span{display:block;font-size:30px;font-weight:800;color:var(--adm-brand2)}
 .adm-stat label{font-size:13.5px;color:var(--adm-muted)}

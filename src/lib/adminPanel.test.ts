@@ -23,9 +23,9 @@ describe('admin panel contract', () => {
     expect(adminHtml).toContain('/src/admin.tsx')
     expect(viteCfg).toContain("admin: 'admin.html'")
   })
-  it('talks only to the two admin edge functions', () => {
+  it('reads through the admin-users edge function only', () => {
     expect(app).toContain('/admin-users')
-    expect(app).toContain('/admin-set-premium')
+    expect(app).not.toContain('/admin-set-premium')
   })
   it('no privileged-key material anywhere in client source', () => {
     // Needles are assembled at runtime so this guard does not trip on
@@ -38,10 +38,10 @@ describe('admin panel contract', () => {
       expect(text, f).not.toContain(upper)
     }
   })
-  it('v1 offers premium actions only — no ban or delete', () => {
+  it('no premium management and no ban/delete (owner model 2026-11-03: everything is free, there is no Premium version)', () => {
     expect(app).not.toMatch(/ban|deleteUser|userDelete/i)
-    expect(app).toContain("'activate'")
-    expect(app).toContain("'extend'")
-    expect(app).toContain("'deactivate'")
+    expect(app).not.toContain("'activate'")
+    expect(app).not.toContain("'deactivate'")
+    expect(app).toContain('allFree')
   })
 })
