@@ -787,6 +787,50 @@ describe('A-01f thinking brain (owner order 2026-11-03: a reasoning layer, gener
     // Both parts' credits survive the cap unchanged.
     expect(assembled.lines.filter((l) => l.startsWith('منبع:'))).toHaveLength(2)
   })
+  it('A-12b TYPE-FIRST RELEVANCE: same-kind off-subject sentence must fall behind the on-subject sentence', () => {
+    // Live A-12 shape: the population part arrives as a follow-up
+    // («جمعیتش چقدر است؟»), and buildAnswer order puts the length
+    // sentence first. Both are quantity sentences, so only the
+    // part's own subject word (جمعیت, possessive stripped) can
+    // tell them apart — the population sentence must lead.
+    const population = assembleThoughtAnswer([
+      { question: 'پایتخت فرانسه چیست؟', lines: ['پاریس پایتخت فرانسه است.', 'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/France'], found: true },
+      { question: 'جمعیتش چقدر است؟', lines: [
+        'طول فرانسه حدود ۹۶۳ کیلومتر است.',
+        'جمعیت فرانسه بیش از ۶۹ میلیون نفر است.',
+        'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/France',
+      ], found: true },
+    ], 'fa')
+    // (Assembled order is capital part first, then this part, so
+    // the check is the relative order of the two population lines.)
+    const popJoined = population.lines.join(' ')
+    expect(popJoined.indexOf('۶۹ میلیون')).toBeLessThan(popJoined.indexOf('۹۶۳ کیلومتر'))
+    // Vice versa: a length part must lead with the length sentence,
+    // not the population sentence, even in the same sentence order.
+    const length = assembleThoughtAnswer([
+      { question: 'پایتخت فرانسه چیست؟', lines: ['پاریس پایتخت فرانسه است.', 'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/France'], found: true },
+      { question: 'طول فرانسه چقدر است؟', lines: [
+        'جمعیت فرانسه بیش از ۶۹ میلیون نفر است.',
+        'طول فرانسه حدود ۹۶۳ کیلومتر است.',
+        'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/France',
+      ], found: true },
+    ], 'fa')
+    const lenJoined = length.lines.join(' ')
+    expect(lenJoined.indexOf('۹۶۳ کیلومتر')).toBeLessThan(lenJoined.indexOf('۶۹ میلیون'))
+    // Type-matching still outranks relevance: a high-overlap
+    // description sentence (no number, so not quantity-matching)
+    // never jumps a type-matching quantity sentence.
+    const typeFirst = assembleThoughtAnswer([
+      { question: 'پایتخت فرانسه چیست؟', lines: ['پاریس پایتخت فرانسه است.', 'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/France'], found: true },
+      { question: 'جمعیت فرانسه چقدر است؟', lines: [
+        'جمعیت فرانسه کشوری زیبا در اروپا است.',
+        'طول فرانسه حدود ۹۶۳ کیلومتر است.',
+        'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/France',
+      ], found: true },
+    ], 'fa')
+    const typedJoined = typeFirst.lines.join(' ')
+    expect(typedJoined.indexOf('۹۶۳ کیلومتر')).toBeLessThan(typedJoined.indexOf('کشوری زیبا'))
+  })
   it('A-12 SINGLE-PART UNTOUCHED + France/Shahnameh regressions', () => {
     const single = assembleThoughtAnswer([
       { question: 'پایتخت فرانسه چیست؟', lines: ['الف.', 'ب.', 'ج.', 'منبع: ویکی‌پدیا — https://example.org/x'], found: true },

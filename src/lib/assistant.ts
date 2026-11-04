@@ -1927,7 +1927,17 @@ export interface ThoughtPartResult { question: string; lines: string[]; found: b
  *  leftover: up to 3 sentences per part, e.g. the 963 km line in
  *  the live multi-part France reply). Credit lines are never
  *  capped and never reordered. Single-part answers are untouched
- *  (the early return above). */
+ *  (the early return above).
+ *  A-12b TYPE-FIRST RELEVANCE: inside each group (type-matching
+ *  first, then the rest), kept lines are ordered by shared
+ *  subject-token overlap with the part's OWN question — its
+ *  specific subject words (e.g. جمعیت for a population part),
+ *  possessives stripped, generic interrogatives excluded — so a
+ *  quantity sentence about length can no longer lead a
+ *  population part merely because both are quantity sentences.
+ *  Type-matching still outranks relevance: a high-overlap
+ *  non-matching sentence never jumps a type-matching one. Ties
+ *  keep buildAnswer order (stable sort). */
 export function assembleThoughtAnswer(parts: ThoughtPartResult[], lang: 'fa' | 'en'): { lines: string[]; found: boolean } {
   if (parts.length === 0) return { lines: [], found: false }
   if (parts.length === 1) return { lines: parts[0].lines, found: parts[0].found }
@@ -1953,8 +1963,32 @@ export function assembleThoughtAnswer(parts: ThoughtPartResult[], lang: 'fa' | '
       // never saw it).
       const unseen = sentences.filter((l) => !seen.has(l))
       const analysis = analyzeQuestion(p.question)
-      const typeFirst = unseen.filter((l) => sentenceMatchesQuestionType(l, analysis))
-      const rest = unseen.filter((l) => !sentenceMatchesQuestionType(l, analysis))
+      // A-12b: relevance = distinct shared subject tokens between
+      // the sentence and the part's own question (possessives
+      // stripped, so a follow-up «جمعیتش چقدر است؟» scores its
+      // جمعیت sentence; generic interrogatives like چقدر/چند
+      // are not subject words and never count). Applied INSIDE
+      // each group, never across groups: type-matching first.
+      const GENERIC_INTERROGATIVES = new Set(['چقدر', 'چند', 'how', 'many', 'much'])
+      const subjectWords = new Set<string>()
+      for (const t of analysis.subjectTokens) {
+        if (GENERIC_INTERROGATIVES.has(t)) continue
+        const stripped = stripPossessive(t)
+        subjectWords.add(stripped)
+        stripped.split('\u200C').forEach((piece) => { if (piece) subjectWords.add(piece) })
+      }
+      const relevance = (sentence: string): number => {
+        const toks = analysisTokens(sentence)
+        let score = 0
+        subjectWords.forEach((w) => { if (toks.has(w)) score++ })
+        return score
+      }
+      const byRelevance = (group: string[]): string[] =>
+        group.map((l, i) => ({ l, i, score: relevance(l) }))
+          .sort((a, b) => b.score - a.score || a.i - b.i)
+          .map(({ l }) => l)
+      const typeFirst = byRelevance(unseen.filter((l) => sentenceMatchesQuestionType(l, analysis)))
+      const rest = byRelevance(unseen.filter((l) => !sentenceMatchesQuestionType(l, analysis)))
       const kept = [...typeFirst, ...rest].slice(0, 2)
       kept.forEach((l) => seen.add(l))
       lines.push(...kept, ...credits)
