@@ -1559,6 +1559,43 @@ export function buildAnswer(
   const isComparativeQ = analysis.answerKind === 'comparative'
   const TYPE_GATED_KINDS = new Set<AnswerKind>(['place', 'date', 'name', 'quantity'])
   const isTypeGated = TYPE_GATED_KINDS.has(analysis.answerKind)
+  // A-17 SINGLE-PART RELEVANCE ORDER (generalizes the A-12b
+  // multi-part ordering into buildAnswer's single-part result):
+  // type-matching sentences first, then distinct shared
+  // subject-token overlap with the question itself (possessives
+  // stripped, so a follow-up-style «جمعیتش» still scores its
+  // جمعیت sentence; generic interrogatives never count), then
+  // the legacy score, then document order (stable). Applied ONLY
+  // to type-gated kinds (place/date/name/quantity) — definition
+  // and other kinds keep their legacy order byte-for-byte, and
+  // credits are never reordered (they are appended after, as
+  // before). The probe that motivated it: «جمعیت فرانسه چقدر
+  // است؟» led with the ۹۶۳ km length sentence because both
+  // sentences are quantity-matching and document order won; the
+  // population sentence shares the question's own subject word
+  // جمعیت, the length sentence does not, so relevance must win.
+  const A17_GENERIC = new Set(['چقدر', 'چند', 'how', 'many', 'much'])
+  const a17SubjectWords = new Set<string>()
+  for (const t of analysis.subjectTokens) {
+    if (A17_GENERIC.has(t)) continue
+    const stripped = stripPossessive(t)
+    a17SubjectWords.add(stripped)
+    stripped.split('\u200C').forEach((piece) => { if (piece) a17SubjectWords.add(piece) })
+  }
+  const a17Relevance = (text: string): number => {
+    const toks = analysisTokens(text)
+    let score = 0
+    a17SubjectWords.forEach((w) => { if (toks.has(w)) score++ })
+    return score
+  }
+  const orderSinglePart = (group: Cand[]): Cand[] =>
+    group.map((c, i) => ({ c, i }))
+      .sort((a, b) =>
+        (Number(sentenceMatchesQuestionType(b.c.text, analysis)) - Number(sentenceMatchesQuestionType(a.c.text, analysis))) ||
+        (a17Relevance(b.c.text) - a17Relevance(a.c.text)) ||
+        (b.c.score - a.c.score) ||
+        (a.c.order - b.c.order))
+      .map(({ c }) => c)
   // A-01d3 rank markers, hoisted so the strict and A-01c passes can
   // share the wiki-ranking rule: a strong marker states a ranking
   // on its own; a weak marker («پیشرو»/leading, recency words)
@@ -1764,7 +1801,7 @@ export function buildAnswer(
       if (!aTopicSet.has(t)) aOther.add(t)
       ;(SYNONYMS[t] ?? []).forEach((s) => aOther.add(s))
     })
-    const aRanked = cands
+    const aFiltered = cands
       .filter((c) => {
         if (!sentenceMatchesQuestionType(c.text, analysis)) return false
         const toks = expandedToks(c.text)
@@ -1774,7 +1811,10 @@ export function buildAnswer(
         if ([...aOther].some((t) => toks.has(t))) return true
         return analysis.answerKind === 'quantity' || analysis.answerKind === 'date' || analysis.answerKind === 'recent' || analysis.answerKind === 'reason'
       })
-      .sort((a, b) => b.score - a.score || a.order - b.order)
+    // A-17: gated kinds are ordered by type-first + relevance
+    // (above) instead of score-then-document order; other kinds
+    // keep the legacy ordering exactly.
+    const aRanked = isTypeGated ? orderSinglePart(aFiltered) : aFiltered.sort((a, b) => b.score - a.score || a.order - b.order)
     // A-02 (general, from the benchmark's loose-secondary probe):
     // this pass's topic is defined by the TOP source's title, so
     // when the top source itself has a type-matching sentence, it
@@ -1783,9 +1823,11 @@ export function buildAnswer(
     // and displace or dilute it. When the top source has nothing
     // qualifying, other sources' sentences still answer as before.
     const aFromTop = aRanked.filter((c) => c.url === sources[0].url)
-    const aMatched = (aFromTop.length > 0 ? aFromTop : aRanked)
-      .slice(0, 2)
-      .sort((a, b) => a.order - b.order)
+    // A-17: a gated answer keeps its ranked order (the whole
+    // point is that the most on-subject sentence leads); other
+    // kinds keep the legacy document-order presentation.
+    const aMatchedRaw = (aFromTop.length > 0 ? aFromTop : aRanked).slice(0, 2)
+    const aMatched = isTypeGated ? aMatchedRaw : aMatchedRaw.sort((a, b) => a.order - b.order)
     if (aMatched.length > 0) {
       const lines = aMatched.map((c) => c.text)
       for (const url of [...new Set(aMatched.map((c) => c.url))].slice(0, 2)) {
@@ -1802,13 +1844,17 @@ export function buildAnswer(
   // it); a type-gated question's strict answer must be a sentence
   // of its own kind — otherwise the chain falls through to A-01c /
   // web / honest not-found instead of serving topical facts.
-  const best = cands
+  const bestFiltered = cands
     .filter((c) => c.score >= minScore)
     .filter((c) => !isComparativeQ || hasComparativeSignal(c.text))
     .filter((c) => !isTypeGated || sentenceMatchesQuestionType(c.text, analysis))
-    .sort((a, b) => b.score - a.score || a.order - b.order)
-    .slice(0, 3)
-    .sort((a, b) => a.order - b.order)
+  // A-17: a gated strict answer keeps its ranked order (type
+  // first, then relevance, then score) instead of being
+  // re-sorted back into document order, which would undo the
+  // fix; other kinds keep the legacy ordering exactly.
+  const best = isTypeGated
+    ? orderSinglePart(bestFiltered).slice(0, 3)
+    : bestFiltered.sort((a, b) => b.score - a.score || a.order - b.order).slice(0, 3).sort((a, b) => a.order - b.order)
   if (best.length === 0 && qTokens.size >= 2) {
     // A-01c fallback (live failure 2026-11-03: «نویسنده شاهنامه
     // کیست؟»): the true sentence «شاهنامه اثر فردوسی است» matches

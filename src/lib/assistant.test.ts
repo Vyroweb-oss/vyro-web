@@ -1687,3 +1687,58 @@ describe('A-16 research topic cleanup (general — no per-input branches)', () =
     expect(shahnameh.lines.join(' ')).toContain('فردوسی')
   })
 })
+
+describe('A-17 single-part relevance order (generalizes A-12b — no per-question branches)', () => {
+  it('quantity: the population sentence leads the length sentence in a single-part answer', () => {
+    const src = [{
+      title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France',
+      extract: 'طول فرانسه حدود ۹۶۳ کیلومتر است و این کشور در اروپا قرار دارد. جمعیت فرانسه بیش از ۶۹ میلیون نفر است و پایتخت آن پاریس است.',
+    }]
+    const ans = buildAnswer(src, 'جمعیت فرانسه چقدر است؟', 'fa')
+    expect(ans.found).toBe(true)
+    const joined = ans.lines.join(' ')
+    expect(joined.indexOf('۶۹ میلیون')).toBeLessThan(joined.indexOf('۹۶۳ کیلومتر'))
+    expect(ans.lines[0]).toContain('۶۹ میلیون')
+  })
+  it('quantity vice versa: a length question leads with the length sentence', () => {
+    const src = [{
+      title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France',
+      extract: 'جمعیت فرانسه بیش از ۶۹ میلیون نفر است و پایتخت آن پاریس است. طول فرانسه حدود ۹۶۳ کیلومتر است و این کشور در اروپا قرار دارد.',
+    }]
+    const ans = buildAnswer(src, 'طول فرانسه چقدر است؟', 'fa')
+    expect(ans.found).toBe(true)
+    const joined = ans.lines.join(' ')
+    expect(joined.indexOf('۹۶۳ کیلومتر')).toBeLessThan(joined.indexOf('۶۹ میلیون'))
+    expect(ans.lines[0]).toContain('۹۶۳ کیلومتر')
+  })
+  it('place: the most on-subject capital sentence leads even when it comes second', () => {
+    const src = [{
+      title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France',
+      extract: 'پاریس پایتخت فرانسه است و شهری بزرگ و زیبا است. پاریس پایتخت کشور فرانسه است و شهری بزرگ در اروپا است.',
+    }]
+    const ans = buildAnswer(src, 'پایتخت کشور فرانسه کجاست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('کشور فرانسه')
+  })
+  it('person: the fullest author sentence leads even when it comes second', () => {
+    const src = [{
+      title: 'شاهنامه', url: 'https://fa.wikipedia.org/wiki/Shahnameh',
+      extract: 'شاهنامه اثر فردوسی است و کتابی حماسی و کهن است. نویسنده کتاب شاهنامه، ابوالقاسم فردوسی است و شاعری بزرگ است.',
+    }]
+    const ans = buildAnswer(src, 'نویسنده کتاب شاهنامه کیست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('ابوالقاسم')
+  })
+  it('standing regressions: France capital and Shahnameh author still answer first', () => {
+    const france = buildAnswer(
+      [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: 'فرانسه کشوری در اروپای غربی است و پایتخت آن شهر پاریس می باشد.' }],
+      'پایتخت فرانسه کجاست؟', 'fa')
+    expect(france.found).toBe(true)
+    expect(france.lines[0]).toContain('پاریس')
+    const shahnameh = buildAnswer(
+      [{ title: 'شاهنامه', url: 'https://fa.wikipedia.org/wiki/Shahnameh', extract: 'شاهنامه اثر ابوالقاسم فردوسی شاعر بزرگ ایرانی است.' }],
+      'نویسنده شاهنامه کیست؟', 'fa')
+    expect(shahnameh.found).toBe(true)
+    expect(shahnameh.lines[0]).toContain('فردوسی')
+  })
+})
