@@ -901,7 +901,23 @@ export function formalizeText(text: string): string {
  *  own most central sentences (same scoring as summarizeText),
  *  kept in original order, until at least half the words are
  *  covered. A one-sentence selection cannot be halved without
- *  inventing a cut, so it is returned unchanged. */
+ *  inventing a cut, so it is returned unchanged.
+ *  A-15 sentence cap: for selections of 4+ sentences the result is
+ *  capped at half the sentences rounded up (ceil(n/2)) whenever the
+ *  capped result still covers at least half the words. The cap is
+ *  applied as a trim of the score-ordered pick, not as a second
+ *  build-up pass: picking in score order and stopping at the cap,
+ *  then extending while below half the words, is provably the same
+ *  score-order prefix the word-half rule already picks, so it could
+ *  never bite. Instead, the shortest picked sentences are dropped
+ *  one at a time (ties: lowest score first) while the remainder
+ *  still covers half the words; the moment a drop would break the
+ *  word guarantee, the extra sentences stay — the word guarantee
+ *  wins over the cap, never below the old behaviour's word count
+ *  floor. Selections of 2–3 sentences keep the word-half rule alone
+ *  (no cap). Scoring, including the first-sentence bonus, is
+ *  unchanged, and every returned sentence is the selection's own,
+ *  in original order, never cut or reworded. */
 export function shortenText(text: string): string {
   const sentences = splitSentences(text)
   if (sentences.length <= 1) return text
@@ -920,6 +936,20 @@ export function shortenText(text: string): string {
     picked.push(item)
     covered += countWords(item.sentence)
     if (covered >= target) break
+  }
+  if (sentences.length >= 4) {
+    const cap = Math.ceil(sentences.length / 2)
+    while (picked.length > cap) {
+      let drop = 0
+      for (let i = 1; i < picked.length; i++) {
+        const cw = countWords(picked[i].sentence)
+        const bw = countWords(picked[drop].sentence)
+        if (cw < bw || (cw === bw && picked[i].score < picked[drop].score)) drop = i
+      }
+      if (covered - countWords(picked[drop].sentence) < target) break
+      covered -= countWords(picked[drop].sentence)
+      picked.splice(drop, 1)
+    }
   }
   return picked.sort((a, b) => a.idx - b.idx).map((x) => x.sentence).join(' ')
 }

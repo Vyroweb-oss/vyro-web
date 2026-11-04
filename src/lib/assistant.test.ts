@@ -1593,3 +1593,58 @@ describe('A-14 research multi-source payload cap (A-03 caveat: long research shi
     expect(JSON.stringify(research.nodes)).toContain('https://fa.wikipedia.org/wiki/France')
   })
 })
+
+describe('A-15 shorten sentence-aware cap (general — no per-input branches)', () => {
+  const words = (s: string) => s.split(/\s+/).filter(Boolean).length
+  // Every output sentence is one of the input's own sentences, in original order.
+  const verbatimInOrder = (short: string, text: string) => {
+    for (const s of splitSentences(short)) expect(splitSentences(text)).toContain(s)
+    const idx = splitSentences(short).map((s) => splitSentences(text).indexOf(s))
+    expect([...idx].sort((a, b) => a - b)).toEqual(idx)
+  }
+  it('caps a 4-sentence selection at 2 sentences while keeping at least half the words', () => {
+    // All words are distinct, so every sentence scores 1.0 (first sentence
+    // 1.25 with its bonus) and the word-half pick runs in original order:
+    // the old pick alone keeps 3 sentences (4 + 4 + 10 = 18 of 28 words).
+    const text = 'Alpha bravo charlie delta. Echo foxtrot golf hotel. India juliett kilo lima mike november oscar papa quebec romeo. Sierra tango uniform victor whiskey xray yankee zulu apple banana.'
+    const short = shortenText(text)
+    expect(splitSentences(short)).toHaveLength(2)
+    expect(words(short)).toBeGreaterThanOrEqual(Math.ceil(words(text) / 2))
+    expect(short).toBe('Alpha bravo charlie delta. India juliett kilo lima mike november oscar papa quebec romeo.')
+    verbatimInOrder(short, text)
+  })
+  it('caps a 6-sentence selection at 3 sentences while keeping at least half the words', () => {
+    // Word-half pick alone keeps 4 sentences (4 + 4 + 4 + 16 = 28 of 48 words).
+    const text = 'Alpha bravo charlie delta. Echo foxtrot golf hotel. India juliett kilo lima. Mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu apple banana. Crimson velvet harbor meadow falcon river stone bridge candle garden. Thunder silver canyon willow marble feather castle ocean desert valley.'
+    const short = shortenText(text)
+    expect(splitSentences(short)).toHaveLength(3)
+    expect(words(short)).toBeGreaterThanOrEqual(Math.ceil(words(text) / 2))
+    expect(short).toBe('Alpha bravo charlie delta. India juliett kilo lima. Mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu apple banana.')
+    verbatimInOrder(short, text)
+  })
+  it('exceeds the cap when the capped pick alone would drop below half the words (word guarantee wins)', () => {
+    // Word-half pick keeps 3 sentences (6 + 6 + 6 = 18 of 26 words, cap 2);
+    // dropping any one of them would leave 12 < 13 words, so all 3 stay.
+    const text = 'Alpha bravo charlie delta echo foxtrot. Golf hotel india juliett kilo lima. Mike november oscar papa quebec romeo. Sierra tango uniform victor whiskey xray yankee zulu.'
+    const short = shortenText(text)
+    expect(splitSentences(short)).toHaveLength(3)
+    expect(words(short)).toBeGreaterThanOrEqual(Math.ceil(words(text) / 2))
+    expect(short).toBe('Alpha bravo charlie delta echo foxtrot. Golf hotel india juliett kilo lima. Mike november oscar papa quebec romeo.')
+    verbatimInOrder(short, text)
+  })
+  it('leaves 2- and 3-sentence selections on the word-half rule alone, and 1-sentence selections unchanged', () => {
+    expect(shortenText('Alpha bravo. Charlie delta echo foxtrot golf hotel india juliett.'))
+      .toBe('Alpha bravo. Charlie delta echo foxtrot golf hotel india juliett.')
+    expect(shortenText('Alpha bravo. Charlie delta. Echo foxtrot golf hotel india juliett kilo lima mike.'))
+      .toBe('Alpha bravo. Charlie delta. Echo foxtrot golf hotel india juliett kilo lima mike.')
+    expect(shortenText('Only one sentence here.')).toBe('Only one sentence here.')
+  })
+  it('France regression (existing style): the Paris selection still shortens from its own sentences, in order, at half the words or more', () => {
+    const text = 'پاریس پایتخت فرانسه است. فرانسه کشوری در اروپای غربی است. جمعیت پاریس بیش از دو میلیون نفر است. رود سن از میان پاریس می‌گذرد. برج ایفل مشهورترین نماد پاریس است. پاریس هر سال میلیون‌ها گردشگر دارد.'
+    const short = shortenText(text)
+    expect(splitSentences(short).length).toBeLessThanOrEqual(3)
+    expect(words(short)).toBeGreaterThanOrEqual(Math.ceil(words(text) / 2))
+    expect(words(short)).toBeLessThanOrEqual(Math.ceil(words(text) / 2) + 12)
+    verbatimInOrder(short, text)
+  })
+})
