@@ -70,7 +70,7 @@ const RESEARCH_STOP = new Set([
   'about', 'make', 'an', 'a', 'article', 'text', 'find', 'paragraph', 'paragraphs', 'and',
 ])
 
-const cleanToken = (w: string) => w.replace(/[،,؛;:«»"“”؟?!.\u200C]/g, '')
+const cleanToken = (w: string) => w.replace(/[،,؛;:«»"“”؟?!.\u200C\u0654]/g, '')
 
 /** The topic left after the command words are removed. */
 export function extractResearchTopic(normalized: string): string {
@@ -85,6 +85,11 @@ export function extractResearchTopic(normalized: string): string {
 const QUESTION_STOP = new Set([
   'چیست', 'چه', 'چرا', 'چگونه', 'چطور', 'کی', 'کجا', 'کجاست', 'کدام', 'آیا', 'است', 'هست',
   'می', 'شود', 'کیست', 'چی', 'بگو', 'بده', 'لطفا', 'توضیح',
+  // A-08: meaning scaffolding is not the subject — «معنی کلمهٔ
+  // آزادی» searches for آزادی, not for معنی/کلمه; same for EN
+  // «what does serendipity mean» → serendipity. «یعنی» likewise.
+  'معنی', 'کلمه', 'واژه', 'یعنی',
+  'meaning', 'mean', 'means', 'define', 'definition',
   // A-07 LIVE FIX: enumeration imperatives and list words are
   // commands, not subjects — «نام ببر» must not search for «ببر»
   // (tiger) and «فهرست» must not search for a list article.
@@ -138,7 +143,7 @@ export function isRankingOrCurrentQuestion(question: string): boolean {
 
 export type QuestionType =
   | 'definition' | 'person' | 'date' | 'place' | 'why' | 'how'
-  | 'enumeration' | 'ranking' | 'current' | 'quantity' | 'unknown'
+  | 'enumeration' | 'ranking' | 'current' | 'quantity' | 'wordMeaning' | 'unknown'
 
 export type AnswerKind =
   | 'definition' | 'name' | 'date' | 'place' | 'reason' | 'procedure'
@@ -161,7 +166,7 @@ export function analyzeQuestion(question: string): QuestionAnalysis {
   // Strip sentence punctuation from tokens: the trigger word is
   // often the LAST word («فوتوسنتز چیست؟» tokenizes as «چیست؟»,
   // which would otherwise never match «چیست»).
-  const toks = new Set(normalizeCommand(question).replace(/[؟?!.,،؛:«»"“”]/g, '').split(' ').filter(Boolean))
+  const toks = new Set(normalizeCommand(question).replace(/[؟?!.,،؛:«»"“”\u0654]/g, '').split(' ').filter(Boolean))
   const has = (...words: string[]) => words.some((w) => toks.has(w))
   const subjectTokens = searchQueryFor(question).split(' ').filter((w) => w.length > 1)
   const kind = (type: QuestionType, answerKind: AnswerKind): QuestionAnalysis =>
@@ -193,6 +198,15 @@ export function analyzeQuestion(question: string): QuestionAnalysis {
   // turns ZWNJ into a space), so the split form is checked too.
   if (has('ببر', 'ببرید', 'فهرست', 'list', 'examples', 'بشمار', 'چیزهایی', 'کدامند', 'کدام‌اند') ||
       (toks.has('کدام') && toks.has('اند'))) return kind('enumeration', 'enumeration')
+  // A-08 WORD MEANING: «معنی کلمهٔ X چیست» / «X یعنی چه» /
+  // "what does X mean" / "define X" — the subject is the WORD
+  // itself (searchQueryFor already stripped the scaffolding), and
+  // the answer kind is a definition, so the analysis pass prefers
+  // definition-shaped sentences for it. Gated on a non-empty
+  // subject so a bare «معنی چیست؟» never becomes a word question.
+  if (subjectTokens.length > 0 && has('معنی', 'کلمه', 'واژه', 'یعنی', 'meaning', 'mean', 'means', 'define', 'definition')) {
+    return kind('wordMeaning', 'definition')
+  }
   if (has('چیست', 'what', 'تعریف', 'یعنی')) return kind('definition', 'definition')
   return kind('unknown', 'any')
 }
@@ -217,6 +231,25 @@ export function searchQueriesFor(question: string): string[] {
     }
   }
   return [...new Set([primary, ...variants.filter((v) => v && v !== primary)])]
+}
+
+// ---- A-08 word meaning ----------------------------------------------------
+// The word a meaning question asks about, or null when the input is
+// not a meaning question at all. General by question shape (FA/EN
+// meaning scaffolding), never a per-word branch: the panels already
+// search searchQueryFor(question), which after the A-08 QUESTION_STOP
+// additions IS this word, so callers need no special search path —
+// this export exists so tests and future callers can name the target
+// directly. A bare meaning phrase with no word left returns null.
+const MEANING_TOKENS = new Set([
+  'معنی', 'کلمه', 'واژه', 'یعنی',
+  'meaning', 'mean', 'means', 'define', 'definition',
+])
+export function extractWordMeaningTarget(question: string): string | null {
+  const toks = normalizeCommand(question).replace(/[؟?!.,،؛:«»"“”\u0654]/g, '').split(' ').filter(Boolean)
+  if (!toks.some((t) => MEANING_TOKENS.has(t))) return null
+  const target = searchQueryFor(question)
+  return target.length >= 2 ? target : null
 }
 
 /** Sentence tokens with ZWNJ-joined words also counted as their
@@ -327,9 +360,22 @@ export function sentenceMatchesQuestionType(sentence: string, analysis: Question
       return [...toks].some((t) => COMPARATIVE_MARKERS.has(t))
     case 'recent':
       return ['جدیدترین', 'آخرین', 'latest', 'newest', 'recent'].some((t) => toks.has(t)) || YEAR_RE.test(norm)
-    case 'definition':
-      return analysis.subjectTokens.some((t) => toks.has(t)) &&
-        ['است', 'هست', 'می باشد', 'می‌باشد', 'is', 'are'].some((t) => toks.has(t) || norm.includes(t))
+    case 'definition': {
+      const hasSubject = analysis.subjectTokens.some((t) => toks.has(t))
+      if (!hasSubject) return false
+      if (analysis.type === 'wordMeaning') {
+        // A-08: dictionary-shaped answers count too, not only
+        // copula sentences — a meaning gloss («به معنای …»),
+        // an EN gloss («means / refers to / denotes»), or a
+        // headword-led lead («همدلی، توانایی …») all define the
+        // word, and all are the source's own words, never invented.
+        if (['است', 'هست', 'می باشد', 'می‌باشد', 'is', 'are'].some((t) => toks.has(t) || norm.includes(t))) return true
+        if (toks.has('معنا') || toks.has('معنی') || /means|mean|refers to|denotes|defined as/.test(norm)) return true
+        const words = norm.replace(/\u200C/g, ' ').split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+        return words.length > 0 && analysis.subjectTokens.includes(words[0])
+      }
+      return ['است', 'هست', 'می باشد', 'می‌باشد', 'is', 'are'].some((t) => toks.has(t) || norm.includes(t))
+    }
     case 'reason': {
       // A-02 (general, from the benchmark's loose-secondary probe):
       // the old explicit-marker rule stays (any چون/زیرا/… counts),
@@ -557,7 +603,7 @@ export function parseAssistantCommand(raw: string): AssistantAction {
   // (2) a ؟ anywhere (not only at the end) marks a question. Known
   // commands are all matched ABOVE this block, so nothing here can
   // hijack a command — it only rescues questions that used to die.
-  const QUESTION_WORD = /(?:^|\s)(?:چیست|کیست|چه|چرا|چگونه|چطور|کی|کجا|کجاست|کدام|چند|چقدر|آیا|تفاوت|فرق|مقایسه|ببر|ببرید|بشمار|فهرست|لیست)(?=\s|$)|(?:^|\s)(?:what|why|how|when|where|who|which|is|are|can|does|do|difference|compare|list)(?=\s|$)/
+  const QUESTION_WORD = /(?:^|\s)(?:چیست|کیست|چه|چرا|چگونه|چطور|کی|کجا|کجاست|کدام|چند|چقدر|آیا|تفاوت|فرق|مقایسه|ببر|ببرید|بشمار|فهرست|لیست|معنی|یعنی|کلمه|واژه)(?=\s|$)|(?:^|\s)(?:what|why|how|when|where|who|which|is|are|can|does|do|difference|compare|list|meaning|mean|means|define)(?=\s|$)/
   if (/[؟?]/.test(s) || QUESTION_WORD.test(s)) {
     return { kind: 'answer', question: input }
   }

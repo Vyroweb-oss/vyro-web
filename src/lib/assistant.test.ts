@@ -14,6 +14,7 @@ import {
   decomposeQuestion, subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
   detectFollowUp, expandResearchOpts, researchBodyText,
   splitComparison, assembleComparisonAnswer, extractListItems, extractRequestedCount,
+  extractWordMeaningTarget,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -1202,5 +1203,68 @@ describe('A-07 more answer types (general by question type — no per-question b
     const ans = buildAnswer(src, 'ده میوه معروف نام ببر', 'fa')
     expect(ans.found).toBe(true)
     expect(ans.lines).toEqual(['سیب', 'موز', 'انگور', 'پرتقال', expect.stringContaining('منبع: ویکی‌پدیا')])
+  })
+})
+
+describe('A-08 word meaning — «معنی کلمهٔ X چیست» / "what does X mean"', () => {
+  it('searchQueryFor strips meaning scaffolding so the query IS the word', () => {
+    expect(searchQueryFor('معنی کلمهٔ آزادی چیست؟')).toBe('آزادی')
+    expect(searchQueryFor('معنی واژه همدلی چیست؟')).toBe('همدلی')
+    expect(searchQueryFor('What does serendipity mean?')).toBe('serendipity')
+    expect(searchQueryFor('define serendipity')).toBe('serendipity')
+    expect(searchQueryFor('آزادی یعنی چه؟')).toBe('آزادی')
+  })
+  it('extractWordMeaningTarget names the word, or null for non-meaning questions', () => {
+    expect(extractWordMeaningTarget('معنی کلمهٔ آزادی چیست؟')).toBe('آزادی')
+    expect(extractWordMeaningTarget('What does serendipity mean?')).toBe('serendipity')
+    expect(extractWordMeaningTarget('پایتخت فرانسه کجاست؟')).toBeNull()
+    expect(extractWordMeaningTarget('نویسنده شاهنامه کیست؟')).toBeNull()
+  })
+  it('analyzeQuestion classifies meaning questions as wordMeaning with a definition kind', () => {
+    expect(analyzeQuestion('معنی کلمهٔ آزادی چیست؟').type).toBe('wordMeaning')
+    expect(analyzeQuestion('معنی کلمهٔ آزادی چیست؟').answerKind).toBe('definition')
+    expect(analyzeQuestion('What does serendipity mean?').type).toBe('wordMeaning')
+    // A plain definition question keeps its old type.
+    expect(analyzeQuestion('فوتوسنتز چیست؟').type).toBe('definition')
+  })
+  it('meaning questions parse as answers even without «؟»', () => {
+    expect(parseAssistantCommand('معنی کلمه آزادی').kind).toBe('answer')
+    expect(parseAssistantCommand('معنی کلمهٔ آزادی چیست؟').kind).toBe('answer')
+    expect(parseAssistantCommand('define serendipity').kind).toBe('answer')
+    expect(parseAssistantCommand('What does serendipity mean').kind).toBe('answer')
+  })
+  it('buildAnswer answers a word-meaning question from the word article, credited', () => {
+    const src = [{
+      title: 'آزادی', url: 'https://fa.wikipedia.org/wiki/Freedom',
+      extract: 'آزادی به معنای رهایی از قید و بند و توانایی انتخاب است. آزادی در فلسفه و سیاست بحث می‌شود.',
+    }]
+    const ans = buildAnswer(src, 'معنی کلمهٔ آزادی چیست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('آزادی')
+    expect(ans.lines[ans.lines.length - 1]).toContain('منبع: ویکی‌پدیا')
+    const en = [{
+      title: 'Serendipity', url: 'https://en.wikipedia.org/wiki/Serendipity',
+      extract: 'Serendipity is the occurrence of events by chance in a happy or beneficial way. The term was coined by Horace Walpole.',
+    }]
+    const enAns = buildAnswer(en, 'What does serendipity mean?', 'en')
+    expect(enAns.found).toBe(true)
+    expect(enAns.lines[0]).toContain('Serendipity')
+    expect(enAns.lines[enAns.lines.length - 1]).toContain('Source: Wikipedia')
+  })
+  it('buildAnswer accepts a headword-led dictionary lead with no copula', () => {
+    const src = [{
+      title: 'همدلی', url: 'https://fa.wikipedia.org/wiki/Empathy',
+      extract: 'همدلی، توانایی درک احساسات و دیدگاه دیگران است. همدلی در روابط انسانی نقش مهمی دارد.',
+    }]
+    const ans = buildAnswer(src, 'معنی واژه همدلی چیست؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines[0]).toContain('همدلی')
+  })
+  it('buildAnswer honestly finds nothing when no source mentions the word', () => {
+    const src = [{
+      title: 'پاریس', url: 'https://fa.wikipedia.org/wiki/Paris',
+      extract: 'پاریس پایتخت و پرجمعیت‌ترین شهر فرانسه است. رود سن از میان این شهر می‌گذرد.',
+    }]
+    expect(buildAnswer(src, 'معنی کلمهٔ زقزق چیست؟', 'fa').found).toBe(false)
   })
 })
