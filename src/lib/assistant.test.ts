@@ -1154,6 +1154,19 @@ describe('A-07 more answer types (general by question type — no per-question b
     const alone = buildAnswer([offTopic], 'سه میوه استوایی نام ببر', 'fa')
     expect(alone.found).toBe(false)
   })
+  it('extractListItems: a parenthetical gloss followed by another item splits there (A-07b live failure)', () => {
+    expect(extractListItems('میوه‌های استوایی عبارتند از: زاپوته (Quararibea cordata)، نیسپرو (چیکو) نارانجیلا، توت طلایی، انبه.'))
+      .toEqual(['زاپوته (Quararibea cordata)', 'نیسپرو (چیکو)', 'نارانجیلا', 'توت طلایی', 'انبه'])
+  })
+  it('buildAnswer enumeration: glued parenthetical items count separately against the asked count', () => {
+    const src = [{
+      title: 'میوه استوایی', url: 'https://fa.wikipedia.org/wiki/Tropical_fruit',
+      extract: 'میوه‌های استوایی در مناطق گرم می‌رویند. میوه‌های استوایی عبارتند از: زاپوته (Quararibea cordata)، نیسپرو (چیکو) نارانجیلا، توت طلایی، انبه.',
+    }]
+    const ans = buildAnswer(src, 'سه میوه استوایی نام ببر', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines).toEqual(['زاپوته (Quararibea cordata)', 'نیسپرو (چیکو)', 'نارانجیلا', expect.stringContaining('منبع: ویکی‌پدیا')])
+  })
   it('extractRequestedCount: FA words, Persian digits, Latin digits, EN words, none', () => {
     expect(extractRequestedCount('سه میوه استوایی نام ببر')).toBe(3)
     expect(extractRequestedCount('۵ رنگ اصلی را نام ببر')).toBe(5)

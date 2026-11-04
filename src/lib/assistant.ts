@@ -1292,8 +1292,41 @@ export function extractListItems(sentence: string): string[] | null {
       parts.splice(parts.length - 1, 1, ...split)
     }
   }
-  const items = parts
-    .map((p) => p.replace(/^[«"“'(\s]+/, '').replace(/[\s.!؟?،,؛;:»"”'\)]+$/, '').trim())
+  // A-07b LIVE FIX: a list item can glue two items together when the
+  // source omits the comma after a parenthetical gloss — the live
+  // «سه میوه استوایی نام ببر» answer came back as the single item
+  // «نیسپرو (چیکو) نارانجیلا», which then counted as one item
+  // against the asked three while naming two fruits. A parenthetical
+  // glosses the name before it, so text after its closing paren is
+  // a NEW item, not a continuation: split there (repeatedly, so
+  // «a (x) b (y) c» yields three items). Honest trade-off, recorded:
+  // a genuinely descriptive continuation after a gloss («سیب (قرمز)
+  // خوشمزه») would split too — but inside a comma-list sentence
+  // that shape is rare, while the glued-items shape is the observed
+  // live failure, so the split is the safer reading.
+  const splitParts: string[] = []
+  for (const p of parts) {
+    let rest = p
+    for (let i = 0; i < 4; i++) {
+      const m = rest.match(/^(.+?\([^)]*\))\s+(.+)$/)
+      if (!m) break
+      splitParts.push(m[1].trim())
+      rest = m[2].trim()
+    }
+    splitParts.push(rest)
+  }
+  const items = splitParts
+    .map((p) => {
+      let item = p.replace(/^[«"“'(\s]+/, '').replace(/[\s.!؟?،,؛;:»"”'\)]+$/, '').trim()
+      // The trailing strip above eats a closing paren, so a glossed
+      // item («زاپوته (Quararibea cordata)») would come out
+      // unbalanced — restore it when the item opens a paren it
+      // never closes. Only repairs, never invents content.
+      const open = (item.match(/\(/g) ?? []).length
+      const close = (item.match(/\)/g) ?? []).length
+      if (open > close) item += ')'
+      return item
+    })
     .filter((p) => wordsOf(p) >= 1 && wordsOf(p) <= 6)
   return items.length >= 3 ? items : null
 }
