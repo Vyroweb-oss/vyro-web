@@ -61,8 +61,12 @@ export function normalizeCommand(raw: string): string {
 }
 
 const RESEARCH_STOP = new Set([
-  'در', 'از', 'اینترنت', 'وب', 'آنلاین', 'جستجو', 'سرچ', 'تحقیق', 'بگرد', 'بنویس', 'بساز',
-  'درباره', 'باره', 'مقاله', 'انشا', 'متن', 'یک', 'و', 'را', 'کن', 'پاراگراف', 'سایت',
+  'در', 'از', 'اینترنت', 'وب', 'آنلاین', 'جستجو', 'سرچ', 'تحقیق', 'پژوهش', 'بگرد', 'بنویس', 'بساز',
+  'درباره', 'باره', 'مورد', 'مقاله', 'انشا', 'متن', 'یک', 'و', 'را', 'کن', 'پاراگراف', 'سایت',
+  // A-11: «دو صفحه‌ای» normalizes to «دو صفحه ای» — the lone «ای»
+  // is the adjective tail, never part of the topic; «چیست» guards
+  // «تحقیق درباره چیست؟» from becoming research about «چیست».
+  'ای', 'چیست',
   'صفحه', 'صفحات', 'page', 'pages', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه',
   'ده', 'پانزده', 'بیست', 'سی', 'تایپ', 'درج', 'نشان', 'نمایش', 'سند', 'فقط', 'بده',
   'نکن', 'ننویس', 'نکنید',
@@ -471,9 +475,18 @@ export function parseAssistantCommand(raw: string): AssistantAction {
   // The panel calls our own Supabase function; the draft is assembled
   // from the source's own sentences WITH the source credited.
   const tokens = s.split(' ')
+  // A-11: the research noun itself + an about-phrase is an explicit
+  // research request too — «تحقیق درباره فرانسه», «پژوهش در مورد
+  // فرانسه» used to fall through to an empty essay template, and
+  // «درباره فرانسه یک تحقیق دو صفحه‌ای بنویس» to unknown. The
+  // about-phrase requirement keeps «تحقیق چیست؟» a definition
+  // question (it has no about-phrase, so it falls to the question
+  // branch below), and مقاله requests still reach the essay
+  // template branch (pinned test) because مقاله alone is not here.
   if (tokens.includes('اینترنت') || tokens.includes('وب') || tokens.includes('search') ||
       has('internet', 'online', 'آنلاین') ||
-      /(تحقیق کن|سرچ کن|جستجو کن|search for|research)/.test(s)) {
+      /(تحقیق کن|سرچ کن|جستجو کن|search for|research)/.test(s) ||
+      (has('تحقیق', 'پژوهش') && has('درباره', 'در مورد', 'در باره', 'about'))) {
     const topic = extractResearchTopic(s)
     if (topic.length >= 2) {
       const pNum = s.match(/(\d+)\s*(پاراگراف|paragraph)/)
@@ -519,8 +532,13 @@ export function parseAssistantCommand(raw: string): AssistantAction {
   }
   // Free-writing requests → the essay template, honestly offered: the
   // assistant builds the structure; it does not invent the essay text.
-  const essayTopic = s.match(/(?:مقاله|انشا|متن|تحقیق)(?:ای|ي)?\s+(?:درباره|در باره|about)\s+(.+?)(?:\s+(?:بنویس|بساز|بنویسى|write))?$/) ??
-                     s.match(/(?:درباره|در باره|about)\s+(.+?)\s*(?:مقاله|انشا|متن|تحقیق)?\s*(?:بنویس|بساز|write)$/)
+  // A-11: «در مورد» is a full synonym of درباره here, so
+  // «در مورد فرانسه بنویس» reaches the honest essay template like
+  // «درباره فرانسه بنویس» instead of unknown. (تحقیق/پژوهش +
+  // about-phrase requests are already caught by the research
+  // branch above, so this branch keeps مقاله free-writing.)
+  const essayTopic = s.match(/(?:مقاله|انشا|متن|تحقیق)(?:ای|ي)?\s+(?:درباره|در باره|در مورد|about)\s+(.+?)(?:\s+(?:بنویس|بساز|بنویسى|write))?$/) ??
+                     s.match(/(?:درباره|در باره|در مورد|about)\s+(.+?)\s*(?:مقاله|انشا|متن|تحقیق)?\s*(?:بنویس|بساز|write)$/)
   if (essayTopic || (has('مقاله', 'انشا', 'essay') && has('بنویس', 'بساز', 'write', 'قالب', 'ساختار'))) {
     const topic = essayTopic?.[1]?.trim()
     return { kind: 'insert-template', template: 'essay', topic: topic || undefined }

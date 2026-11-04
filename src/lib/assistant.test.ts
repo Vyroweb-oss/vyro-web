@@ -1268,3 +1268,44 @@ describe('A-08 word meaning — «معنی کلمهٔ X چیست» / "what does 
     expect(buildAnswer(src, 'معنی کلمهٔ زقزق چیست؟', 'fa').found).toBe(false)
   })
 })
+
+describe('A-11 research phrasing (audit 2026-11-04: natural research phrasings must not give an empty template or unknown)', () => {
+  it('«تحقیق درباره X» routes to research with a clean topic', () => {
+    const a = parseAssistantCommand('تحقیق درباره فرانسه')
+    expect(a.kind).toBe('research')
+    if (a.kind === 'research') expect(a.topic).toBe('فرانسه')
+  })
+  it('«درباره X یک تحقیق دو صفحه‌ای بنویس» routes to research with pages = 2', () => {
+    const a = parseAssistantCommand('دربارهٔ فرانسه یک تحقیق دو صفحه‌ای بنویس')
+    expect(a.kind).toBe('research')
+    if (a.kind === 'research') { expect(a.topic).toBe('فرانسه'); expect(a.pages).toBe(2) }
+  })
+  it('«در مورد X تحقیق کن» routes to research without «مورد» in the topic', () => {
+    const a = parseAssistantCommand('در مورد فرانسه تحقیق کن')
+    expect(a.kind).toBe('research')
+    if (a.kind === 'research') expect(a.topic).toBe('فرانسه')
+  })
+  it('«پژوهش در مورد X» routes to research', () => {
+    const a = parseAssistantCommand('پژوهش در مورد فرانسه')
+    expect(a.kind).toBe('research')
+    if (a.kind === 'research') expect(a.topic).toBe('فرانسه')
+  })
+  it('«در مورد X بنویس» reaches the essay template like «درباره X بنویس», not unknown', () => {
+    const a = parseAssistantCommand('در مورد فرانسه بنویس')
+    expect(a.kind).toBe('insert-template')
+    if (a.kind === 'insert-template') { expect(a.template).toBe('essay'); expect(a.topic).toContain('فرانسه') }
+  })
+  it('«مقاله در مورد X بنویس» stays an essay template', () => {
+    const a = parseAssistantCommand('مقاله در مورد آلودگی هوا بنویس')
+    expect(a.kind).toBe('insert-template')
+    if (a.kind === 'insert-template') expect(a.template).toBe('essay')
+  })
+  it('«تحقیق چیست؟» stays a definition question, not research about «چیست»', () => {
+    expect(parseAssistantCommand('تحقیق چیست؟').kind).toBe('answer')
+  })
+  it('digit page form «تحقیق درباره X، ۳ صفحه‌ای» parses pages = 3', () => {
+    const a = parseAssistantCommand('تحقیق درباره فرانسه ۳ صفحه‌ای بنویس')
+    expect(a.kind).toBe('research')
+    if (a.kind === 'research') { expect(a.topic).toBe('فرانسه'); expect(a.pages).toBe(3) }
+  })
+})
