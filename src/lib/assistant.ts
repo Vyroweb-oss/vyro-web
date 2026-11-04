@@ -30,6 +30,7 @@ export type AssistantAction =
   | { kind: 'selection-heading'; level: 1 | 2 | 3 }
   | { kind: 'selection-bold' }
   | { kind: 'selection-cleanup' }
+  | { kind: 'document-cleanup' }
   | { kind: 'selection-summarize' }
   | { kind: 'document-summarize' }
   | { kind: 'document-keypoints' }
@@ -367,7 +368,21 @@ export function parseAssistantCommand(raw: string): AssistantAction {
     return { kind: 'selection-heading', level: lvl as 1 | 2 | 3 }
   }
   if (has('درشت', 'پررنگ', 'bold', 'توپر')) return { kind: 'selection-bold' }
-  if (has('تمیز', 'پاکسازی', 'پاک سازی', 'فاصله ها', 'مرتبش', 'clean', 'cleanup')) {
+  // A-05 Dari cleanup. Document scope is checked BEFORE the
+  // selection return: a cleanup trigger plus a document-scope
+  // token (as a whole word, so «مشکل» never counts as «کل»)
+  // cleans the whole document; anything else cleans the selection.
+  // The Dari trigger is a COMBINATION (دری/فارسی + کن/سازی/تمیز)
+  // — a bare «دری» alone never triggers cleanup, so «نامه رسمی
+  // دری بنویس» still reaches the template branch below.
+  const scopeWords = new Set(s.replace(/[،,؛;:«»"“”؟?!.\u200C]/g, '').split(' ').filter(Boolean))
+  const hasDocScope = ['سند', 'کل', 'تمام', 'document', 'whole', 'entire'].some((w) => scopeWords.has(w))
+  const hasDariCleanup = has('دری', 'فارسی') && has('کن', 'سازی', 'تمیز')
+  const hasCleanupTrigger = has('تمیز', 'پاکسازی', 'پاک سازی', 'clean', 'cleanup', 'نیم فاصله') || hasDariCleanup
+  if (hasCleanupTrigger && hasDocScope) {
+    return { kind: 'document-cleanup' }
+  }
+  if (has('تمیز', 'پاکسازی', 'پاک سازی', 'فاصله ها', 'مرتبش', 'clean', 'cleanup', 'نیم فاصله') || hasDariCleanup) {
     return { kind: 'selection-cleanup' }
   }
 
@@ -588,10 +603,79 @@ export function researchBodyText(nodes: unknown[]): string {
 
 // ---- Text algorithms (all local, all honest) ------------------------------
 
+// A-05: Persian letters (Arabic-script letters used in Dari/Persian,
+// after the Arabic→Persian map below). Used by the ZWNJ repairs so
+// they only ever join Persian-letter tokens — Latin text is untouched.
+const FA_LETTER = '\\u0621-\\u064A\\u067E\\u0686\\u0698\\u06A9\\u06AF\\u06CC'
+const FA = `[${FA_LETTER}]`
+const FA_BOUNDARY = `(?<![${FA_LETTER}\\u200C])`
+const FA_TAIL = `(?![${FA_LETTER}\\u200C])`
+
+/** A-05 Dari cleanup (pure, deterministic, conservative): unify the
+ *  seven Arabic letter forms to Persian, then repair half-spaces
+ *  (ZWNJ): (a) strip spaces adjacent to an existing ZWNJ; (b) join
+ *  a spaced می/نمی prefix to the following Persian word; (c) join a
+ *  spaced ها/تر/ترین suffix to the preceding Persian word; (d) join
+ *  a spaced ezafe ی to the preceding Persian word. Already-glued
+ *  words are never de-glued, and a standalone word that merely
+ *  equals a suffix (no preceding word) is left alone — every repair
+ *  requires a whole Persian-letter token on both sides. */
+export function normalizeDariText(text: string): string {
+  let out = text
+    .replace(/ي/g, 'ی').replace(/ك/g, 'ک').replace(/ة/g, 'ه').replace(/ؤ/g, 'و')
+    .replace(/ى/g, 'ی').replace(/أ/g, 'ا').replace(/إ/g, 'ا')
+  // (a) spaces adjacent to a ZWNJ go away — the ZWNJ itself stays.
+  out = out.replace(/[ \t]*\u200C[ \t]*/g, '\u200C')
+  // (b) spaced verb prefix: «می شود» → «می‌شود», «نمی روم» → «نمی‌روم».
+  // One-or-more spaces/tabs (never a newline) so a double-spaced
+  // input still joins — the later space-collapse must not run first.
+  out = out.replace(new RegExp(`${FA_BOUNDARY}(نمی|می)[ \t]+(${FA}+)`, 'g'), '$1\u200C$2')
+  // (c) spaced suffix (ترین before تر, or «ترین» would split):
+  // «کتاب ها» → «کتاب‌ها», «بزرگ تر» → «بزرگ‌تر».
+  out = out.replace(new RegExp(`${FA_BOUNDARY}(${FA}+)[ \t]+(ترین|تر|ها)${FA_TAIL}`, 'g'), '$1\u200C$2')
+  // (d) spaced ezafe: «خانه ی من» → «خانه‌ی من».
+  out = out.replace(new RegExp(`${FA_BOUNDARY}(${FA}+)[ \t]+ی${FA_TAIL}`, 'g'), '$1\u200Cی')
+  return out
+}
+
+/** A-05: clean one text node's text the way cleanupDocJson does —
+ *  Dari normalization, collapse space runs, no space before
+ *  punctuation, one space after it. Edge spaces are NOT trimmed:
+ *  a space at a node's edge can be meaningful between marked runs. */
+function cleanDocTextNodeText(text: string): string {
+  return normalizeDariText(text)
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ ([،؛:!؟.,;])/g, '$1')
+    .replace(/([،؛:!؟.,;])(?=[^\s])/g, '$1 ')
+}
+
+/** A-05: deep-copy a TipTap JSON doc and clean every text node's
+ *  text in place. Node types, attrs and marks are preserved exactly;
+ *  nodes are never merged or split. The input doc is not mutated. */
+export function cleanupDocJson<T>(doc: T): T {
+  const walk = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(walk)
+    if (node && typeof node === 'object') {
+      const rec = node as Record<string, unknown>
+      const out: Record<string, unknown> = {}
+      for (const [k, v] of Object.entries(rec)) {
+        out[k] = k === 'text' && rec.type === 'text' && typeof v === 'string'
+          ? cleanDocTextNodeText(v)
+          : walk(v)
+      }
+      return out
+    }
+    return node
+  }
+  return walk(doc) as T
+}
+
 /** Tidy spacing/punctuation: collapse runs of spaces, remove the space
- *  before punctuation, ensure one space after it, drop 3+ blank lines. */
+ *  before punctuation, ensure one space after it, drop 3+ blank lines.
+ *  A-05: Dari normalization runs FIRST, existing behaviour after it
+ *  is unchanged. */
 export function cleanupText(text: string): string {
-  return text
+  return normalizeDariText(text)
     .replace(/[ \t]+/g, ' ')
     .replace(/ +([،.,؛؛:!؟?٪%])/g, '$1')
     .replace(/([،؛:!؟?٪%])(?=[^\s\d])/g, '$1 ')

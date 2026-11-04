@@ -5,7 +5,7 @@
 // placeholders, never invented content.
 import { describe, it, expect } from 'vitest'
 import {
-  parseAssistantCommand, cleanupText, summarizeText, keyPoints,
+  parseAssistantCommand, cleanupText, normalizeDariText, cleanupDocJson, summarizeText, keyPoints,
   buildTemplate, buildResearchDoc, assembleResearch, parseSections, cleanWikiText,
   buildAnswer, searchQueryFor, normalizeDigits, splitSentences, sourceSiteName,
   isRankingOrCurrentQuestion, estimateResearchPages,
@@ -926,5 +926,74 @@ describe('A-04 follow-up context (last research remembered; general method only)
     const summary = summarizeText(body, 3)
     expect(summary.length).toBeLessThanOrEqual(3)
     expect(summary.join(' ')).not.toContain('ویکی‌پدیا')
+  })
+})
+
+describe('A-05 Dari cleanup', () => {
+  const Z = '\u200C'
+  it('maps all seven Arabic letters to Persian and leaves Latin untouched', () => {
+    // Separated by '|' so the spaced-ezafe rule (which would rightly
+    // join «و ی») does not merge two single-letter test tokens.
+    expect(normalizeDariText('ي|ك|ة|ؤ|ى|أ|إ')).toBe('ی|ک|ه|و|ی|ا|ا')
+    expect(normalizeDariText('Hello world')).toBe('Hello world')
+    expect(normalizeDariText('Hello می شود')).toBe(`Hello می${Z}شود`)
+  })
+  it('repairs ZWNJ: می/نمی prefix, ها/تر/ترین suffix, ezafe ی, spaces around an existing ZWNJ', () => {
+    expect(normalizeDariText('می شود')).toBe(`می${Z}شود`)
+    expect(normalizeDariText('نمی روم')).toBe(`نمی${Z}روم`)
+    expect(normalizeDariText('کتاب ها')).toBe(`کتاب${Z}ها`)
+    expect(normalizeDariText('بزرگ تر')).toBe(`بزرگ${Z}تر`)
+    expect(normalizeDariText('بزرگ ترین')).toBe(`بزرگ${Z}ترین`)
+    expect(normalizeDariText('خانه ی من')).toBe(`خانه${Z}ی من`)
+    expect(normalizeDariText(`می${Z} شود`)).toBe(`می${Z}شود`)
+    expect(normalizeDariText(`کتاب ${Z}ها`)).toBe(`کتاب${Z}ها`)
+  })
+  it('never de-glues glued words and never touches a standalone suffix word', () => {
+    expect(normalizeDariText(`می${Z}شود`)).toBe(`می${Z}شود`)
+    expect(normalizeDariText('ها')).toBe('ها')
+    expect(normalizeDariText('تر')).toBe('تر')
+  })
+  it('cleanupText gains Dari normalization while keeping a Latin punctuation case', () => {
+    expect(cleanupText('می شود ،خوبی ؟')).toBe(`می${Z}شود، خوبی؟`)
+    expect(cleanupText('a  b ?c')).toBe('a b? c')
+  })
+  it('cleanupDocJson preserves a heading and a bold-marked node while cleaning their text', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'كتاب  ها ،خوبی ؟' }] },
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: 'می شود', marks: [{ type: 'bold' }] },
+            { type: 'text', text: ' و کتاب ها ' },
+          ],
+        },
+      ],
+    }
+    const cleaned = cleanupDocJson(doc)
+    expect(cleaned).toEqual({
+      type: 'doc',
+      content: [
+        { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: `کتاب${Z}ها، خوبی؟` }] },
+        {
+          type: 'paragraph',
+          content: [
+            { type: 'text', text: `می${Z}شود`, marks: [{ type: 'bold' }] },
+            { type: 'text', text: ` و کتاب${Z}ها ` },
+          ],
+        },
+      ],
+    })
+    // The input doc is not mutated (deep copy).
+    expect(doc.content[0].content[0].text).toBe('كتاب  ها ،خوبی ؟')
+  })
+  it('parses document-cleanup, extended selection-cleanup, and keeps bare دری on the template branch', () => {
+    expect(parseAssistantCommand('کل سند را تمیز کن')).toEqual({ kind: 'document-cleanup' })
+    expect(parseAssistantCommand('سند را دری کن')).toEqual({ kind: 'document-cleanup' })
+    expect(parseAssistantCommand('clean up the document')).toEqual({ kind: 'document-cleanup' })
+    expect(parseAssistantCommand('متن را تمیز کن')).toEqual({ kind: 'selection-cleanup' })
+    expect(parseAssistantCommand('نیم فاصله را درست کن')).toEqual({ kind: 'selection-cleanup' })
+    expect(parseAssistantCommand('نامه رسمی دری بنویس')).toEqual({ kind: 'insert-template', template: 'letter' })
   })
 })

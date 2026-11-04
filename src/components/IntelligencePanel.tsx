@@ -4,7 +4,7 @@ import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import { usePanelFocusReturn } from './useDialogFocus'
 import { truncatePreview } from '../lib/intelligence'
 import {
-  parseAssistantCommand, cleanupText, summarizeText, keyPoints,
+  parseAssistantCommand, cleanupText, cleanupDocJson, summarizeText, keyPoints,
   buildTemplate, assembleResearch, buildAnswer, searchQueryFor, estimateResearchPages,
   subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
   detectFollowUp, expandResearchOpts, researchBodyText,
@@ -125,6 +125,12 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         const cleaned = cleanupText(selectedText)
         const nodes = cleaned.split('\n').map((l) => ({ type: 'paragraph', content: l ? [{ type: 'text', text: l }] : [] }))
         editor.chain().focus().insertContentAt({ from: sel!.from, to: sel!.to }, nodes).run()
+        setResult(null)
+        return setMessage(t('assistantDoneCleanup'))
+      }
+      case 'document-cleanup': {
+        if (!docText()) return setMessage(t('assistantEmptyDoc'))
+        editor.chain().focus().setContent(cleanupDocJson(editor.getJSON())).run()
         setResult(null)
         return setMessage(t('assistantDoneCleanup'))
       }
