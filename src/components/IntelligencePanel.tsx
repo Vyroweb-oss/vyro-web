@@ -4,7 +4,7 @@ import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import { usePanelFocusReturn } from './useDialogFocus'
 import { truncatePreview } from '../lib/intelligence'
 import {
-  parseAssistantCommand, cleanupText, cleanupDocJson, summarizeText, keyPoints,
+  parseAssistantCommand, cleanupText, cleanupDocJson, summarizeText, keyPoints, formalizeText, shortenText,
   buildTemplate, assembleResearch, buildAnswer, searchQueryFor, estimateResearchPages,
   subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
   detectFollowUp, expandResearchOpts, researchBodyText,
@@ -133,6 +133,22 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         editor.chain().focus().setContent(cleanupDocJson(editor.getJSON())).run()
         setResult(null)
         return setMessage(t('assistantDoneCleanup'))
+      }
+      case 'selection-formalize': {
+        if (!hasSelection) return needsSelection()
+        const formal = formalizeText(selectedText)
+        const nodes = formal.split('\n').map((l) => ({ type: 'paragraph', content: l ? [{ type: 'text', text: l }] : [] }))
+        editor.chain().focus().insertContentAt({ from: sel!.from, to: sel!.to }, nodes).run()
+        setResult(null)
+        return setMessage(t('assistantDoneFormalize'))
+      }
+      case 'selection-shorten': {
+        if (!hasSelection) return needsSelection()
+        const short = shortenText(selectedText)
+        const nodes = short.split('\n').map((l) => ({ type: 'paragraph', content: l ? [{ type: 'text', text: l }] : [] }))
+        editor.chain().focus().insertContentAt({ from: sel!.from, to: sel!.to }, nodes).run()
+        setResult(null)
+        return setMessage(t('assistantDoneShorten'))
       }
       case 'selection-summarize': {
         if (!hasSelection) return needsSelection()

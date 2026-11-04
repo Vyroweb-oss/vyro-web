@@ -31,6 +31,8 @@ export type AssistantAction =
   | { kind: 'selection-bold' }
   | { kind: 'selection-cleanup' }
   | { kind: 'document-cleanup' }
+  | { kind: 'selection-formalize' }
+  | { kind: 'selection-shorten' }
   | { kind: 'selection-summarize' }
   | { kind: 'document-summarize' }
   | { kind: 'document-keypoints' }
@@ -386,6 +388,18 @@ export function parseAssistantCommand(raw: string): AssistantAction {
     return { kind: 'selection-cleanup' }
   }
 
+  // A-06 selection transforms. Formalize needs the verb (کن/بکن) or
+  // an English formalize verb — a bare «رسمی» never fires, so
+  // «نامه رسمی دری بنویس» still reaches the template branch below.
+  // Shorten needs the verb too, or an English shorten verb.
+  if ((has('رسمی') && has('کن', 'بکن')) || has('formalize', 'formalise') ||
+      (has('formal') && has('make'))) {
+    return { kind: 'selection-formalize' }
+  }
+  if ((has('کوتاه') && has('کن', 'بکن')) || has('shorten', 'shorter')) {
+    return { kind: 'selection-shorten' }
+  }
+
   // Summaries / key points / stats.
   if (has('خلاصه', 'summar', 'summary')) {
     if (has('انتخاب', 'این متن', 'این پاراگراف', 'پاراگراف', 'selection', 'selected')) {
@@ -728,6 +742,92 @@ export function summarizeText(text: string, maxSentences = 3): string[] {
 
 export function keyPoints(text: string, maxPoints = 5): string[] {
   return summarizeText(text, maxPoints)
+}
+
+// ---- A-06 selection transforms (rule-based, never invented text) ----
+
+/** Colloquial → formal, keyed by the token with ZWNJ stripped, so
+ *  «می‌خوام», «میخوام» and «می خوام» (joined by normalizeDariText)
+ *  all map to the same formal form. Words not in the dictionary are
+ *  left exactly as they are — this is a fixed replacement list, not
+ *  rewriting, and it never adds, drops or reorders words. */
+const FORMALIZE_MAP: Record<string, string> = {
+  // Want / know / say / go / come, all persons.
+  میخوام: 'می‌خواهم', میخوای: 'می‌خواهی', میخواد: 'می‌خواهد',
+  میخوایم: 'می‌خواهیم', میخواین: 'می‌خواهید', میخوان: 'می‌خواهند',
+  نمیخوام: 'نمی‌خواهم', نمیخوای: 'نمی‌خواهی', نمیخواد: 'نمی‌خواهد',
+  نمیخوایم: 'نمی‌خواهیم', نمیخواین: 'نمی‌خواهید', نمیخوان: 'نمی‌خواهند',
+  میشه: 'می‌شود', نمیشه: 'نمی‌شود',
+  میگم: 'می‌گویم', میگی: 'می‌گویی', میگه: 'می‌گوید',
+  میگیم: 'می‌گوییم', میگین: 'می‌گویید', میگن: 'می‌گویند',
+  میرم: 'می‌روم', میری: 'می‌روی', میره: 'می‌رود',
+  میریم: 'می‌رویم', میرین: 'می‌روید', میرن: 'می‌روند',
+  میدونم: 'می‌دانم', میدونی: 'می‌دانی', میدونه: 'می‌داند',
+  میدونیم: 'می‌دانیم', میدونین: 'می‌دانید', میدونن: 'می‌دانند',
+  نمیدونم: 'نمی‌دانم',
+  اومدم: 'آمدم', اومدی: 'آمدی', اومد: 'آمد',
+  اومدیم: 'آمدیم', اومدین: 'آمدید', اومدن: 'آمدند',
+  // Glued standard verb prefixes gain their written ZWNJ.
+  میکنم: 'می‌کنم', میکنی: 'می‌کنی', میکنه: 'می‌کند',
+  میکنیم: 'می‌کنیم', میکنید: 'می‌کنید', میکنن: 'می‌کنند',
+  نمیکنم: 'نمی‌کنم', نمیکنی: 'نمی‌کنی', نمیکنه: 'نمی‌کند',
+  نمیکنیم: 'نمی‌کنیم', نمیکنید: 'نمی‌کنید', نمیکنن: 'نمی‌کنند',
+  // Copula / possession / place / demonstratives.
+  داره: 'دارد', دارن: 'دارند',
+  هستش: 'است', نیستش: 'نیست',
+  خونه: 'خانه', اونجا: 'آنجا', دیگه: 'دیگر',
+  اینا: 'این‌ها', اونا: 'آن‌ها',
+  اینجوری: 'این‌گونه', اونجوری: 'آن‌گونه', همینجوری: 'همین‌گونه',
+  چیه: 'چیست', کیه: 'کیست',
+  بذار: 'بگذار', بزار: 'بگذار',
+  // English informal → formal (case of the first letter preserved).
+  wanna: 'want to', gonna: 'going to', gotta: 'have to',
+  kinda: 'rather', yeah: 'yes', nope: 'no',
+}
+
+/** Formalize a selection: Dari normalization first (so Arabic
+ *  letters and spaced prefixes reach the dictionary), then the
+ *  fixed dictionary above, token by token. Punctuation, numbers
+ *  and unknown words pass through untouched. */
+export function formalizeText(text: string): string {
+  const normalized = normalizeDariText(text)
+  return normalized.replace(/[\u0600-\u06FF\u200C]+|[A-Za-z]+/g, (token) => {
+    const key = token.replace(/\u200C/g, '')
+    const hit = FORMALIZE_MAP[key] ?? FORMALIZE_MAP[key.toLowerCase()]
+    if (!hit) return token
+    // English: keep a sentence-initial capital («Yeah» → «Yes»).
+    if (/^[A-Z]/.test(token) && /^[a-z]/.test(hit)) {
+      return hit.charAt(0).toUpperCase() + hit.slice(1)
+    }
+    return hit
+  })
+}
+
+/** Extractive compression to about half the words: the selection's
+ *  own most central sentences (same scoring as summarizeText),
+ *  kept in original order, until at least half the words are
+ *  covered. A one-sentence selection cannot be halved without
+ *  inventing a cut, so it is returned unchanged. */
+export function shortenText(text: string): string {
+  const sentences = splitSentences(text)
+  if (sentences.length <= 1) return text
+  const countWords = (s: string) => s.split(/\s+/).filter(Boolean).length
+  const totalWords = sentences.reduce((acc, s) => acc + countWords(s), 0)
+  const target = Math.max(1, Math.ceil(totalWords / 2))
+  const freq = wordFreq(text)
+  const scored = sentences.map((sentence, idx) => {
+    const words = sentence.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !STOPWORDS.has(w))
+    const score = words.length === 0 ? 0 : words.reduce((acc, w) => acc + (freq.get(w) ?? 0), 0) / words.length
+    return { sentence, idx, score: score + (idx === 0 ? 0.25 : 0) }
+  })
+  const picked: typeof scored = []
+  let covered = 0
+  for (const item of [...scored].sort((a, b) => b.score - a.score)) {
+    picked.push(item)
+    covered += countWords(item.sentence)
+    if (covered >= target) break
+  }
+  return picked.sort((a, b) => a.idx - b.idx).map((x) => x.sentence).join(' ')
 }
 
 // ---- Templates (TipTap JSON) ----------------------------------------------

@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseAssistantCommand, cleanupText, normalizeDariText, cleanupDocJson, summarizeText, keyPoints,
+  formalizeText, shortenText,
   buildTemplate, buildResearchDoc, assembleResearch, parseSections, cleanWikiText,
   buildAnswer, searchQueryFor, normalizeDigits, splitSentences, sourceSiteName,
   isRankingOrCurrentQuestion, estimateResearchPages,
@@ -994,6 +995,46 @@ describe('A-05 Dari cleanup', () => {
     expect(parseAssistantCommand('clean up the document')).toEqual({ kind: 'document-cleanup' })
     expect(parseAssistantCommand('متن را تمیز کن')).toEqual({ kind: 'selection-cleanup' })
     expect(parseAssistantCommand('نیم فاصله را درست کن')).toEqual({ kind: 'selection-cleanup' })
+    expect(parseAssistantCommand('نامه رسمی دری بنویس')).toEqual({ kind: 'insert-template', template: 'letter' })
+  })
+})
+
+describe('A-06 selection transforms (rule-based only — no rewriting, no invented words)', () => {
+  const Z = '\u200C'
+  it('formalizes colloquial Dari across persons, with or without ZWNJ, and leaves unknown words alone', () => {
+    expect(formalizeText('من میخوام برم خونه دیگه')).toBe(`من می${Z}خواهم برم خانه دیگر`)
+    // «برم» is not in the dictionary: it stays, proving no guessing.
+    expect(formalizeText(`می‌خوای اونجا بمونی؟`)).toBe(`می${Z}خواهی آنجا بمونی؟`)
+    expect(formalizeText('داره میره اومدن')).toBe(`دارد می${Z}رود آمدند`)
+    expect(formalizeText('میدونم چیه')).toBe(`می${Z}دانم چیست`)
+    expect(formalizeText('سلام دنیا')).toBe('سلام دنیا')
+  })
+  it('formalizes glued verb prefixes and English informal forms', () => {
+    expect(formalizeText('میکنم این کار را')).toBe(`می${Z}کنم این کار را`)
+    expect(formalizeText('I wanna go, yeah')).toBe('I want to go, yes')
+    expect(formalizeText('Yeah, I gotta go')).toBe('Yes, I have to go')
+  })
+  it('shortens a multi-sentence selection to about half its words, in original order, from its own sentences', () => {
+    const text = 'پاریس پایتخت فرانسه است. فرانسه کشوری در اروپای غربی است. جمعیت پاریس بیش از دو میلیون نفر است. رود سن از میان پاریس می‌گذرد. برج ایفل مشهورترین نماد پاریس است. پاریس هر سال میلیون‌ها گردشگر دارد.'
+    const short = shortenText(text)
+    const words = (s: string) => s.split(/\s+/).filter(Boolean).length
+    expect(words(short)).toBeLessThanOrEqual(Math.ceil(words(text) / 2) + 12)
+    expect(words(short)).toBeGreaterThanOrEqual(1)
+    // Every output sentence is one of the input's own sentences.
+    for (const s of splitSentences(short)) expect(splitSentences(text)).toContain(s)
+    // Original order preserved.
+    const idx = splitSentences(short).map((s) => splitSentences(text).indexOf(s))
+    expect([...idx].sort((a, b) => a - b)).toEqual(idx)
+  })
+  it('leaves a one-sentence selection unchanged (halving it would invent a cut)', () => {
+    expect(shortenText('فقط یک جمله است.')).toBe('فقط یک جمله است.')
+  })
+  it('parses formalize and shorten commands, and keeps a bare رسمی on the template branch', () => {
+    expect(parseAssistantCommand('متن انتخاب‌شده را رسمی‌اش کن')).toEqual({ kind: 'selection-formalize' })
+    expect(parseAssistantCommand('رسمیش کن')).toEqual({ kind: 'selection-formalize' })
+    expect(parseAssistantCommand('make it formal')).toEqual({ kind: 'selection-formalize' })
+    expect(parseAssistantCommand('متن را کوتاه‌اش کن')).toEqual({ kind: 'selection-shorten' })
+    expect(parseAssistantCommand('shorten this text')).toEqual({ kind: 'selection-shorten' })
     expect(parseAssistantCommand('نامه رسمی دری بنویس')).toEqual({ kind: 'insert-template', template: 'letter' })
   })
 })

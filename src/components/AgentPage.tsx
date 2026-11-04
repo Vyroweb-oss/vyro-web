@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/react'
 import { tr, type UiLang, type I18nKey } from '../lib/i18n'
 import {
-  parseAssistantCommand, cleanupText, cleanupDocJson, summarizeText, keyPoints,
+  parseAssistantCommand, cleanupText, cleanupDocJson, summarizeText, keyPoints, formalizeText, shortenText,
   assembleResearch, buildAnswer, searchQueryFor, estimateResearchPages,
   subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
   detectFollowUp, expandResearchOpts, researchBodyText,
@@ -226,7 +226,8 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
 
   const runWithEditor = (action: AssistantAction): boolean => {
     // Selection and whole-document commands need the open document.
-    const needsDoc = ['selection-heading', 'selection-bold', 'selection-cleanup', 'selection-summarize',
+    const needsDoc = ['selection-heading', 'selection-bold', 'selection-cleanup', 'selection-formalize',
+      'selection-shorten', 'selection-summarize',
       'document-cleanup', 'document-summarize', 'document-keypoints', 'document-stats'].includes(action.kind)
     if (!needsDoc) return false
     if (!editor) { push({ from: 'agent', text: t('agentNeedDoc') }); return true }
@@ -253,6 +254,20 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
         if (!editor.getText().trim()) { push({ from: 'agent', text: t('assistantEmptyDoc') }); return true }
         editor.chain().focus().setContent(cleanupDocJson(editor.getJSON())).run()
         push({ from: 'agent', text: t('assistantDoneCleanup') }); return true
+      }
+      case 'selection-formalize': {
+        if (!hasSelection) { push({ from: 'agent', text: t('assistantNeedsSelection') }); return true }
+        const formal = formalizeText(selectedText)
+        const nodes = formal.split('\n').map((l) => ({ type: 'paragraph', content: l ? [{ type: 'text', text: l }] : [] }))
+        editor.chain().focus().insertContentAt({ from, to }, nodes).run()
+        push({ from: 'agent', text: t('assistantDoneFormalize') }); return true
+      }
+      case 'selection-shorten': {
+        if (!hasSelection) { push({ from: 'agent', text: t('assistantNeedsSelection') }); return true }
+        const short = shortenText(selectedText)
+        const nodes = short.split('\n').map((l) => ({ type: 'paragraph', content: l ? [{ type: 'text', text: l }] : [] }))
+        editor.chain().focus().insertContentAt({ from, to }, nodes).run()
+        push({ from: 'agent', text: t('assistantDoneShorten') }); return true
       }
       case 'selection-summarize':
         if (!hasSelection) { push({ from: 'agent', text: t('assistantNeedsSelection') }); return true }
