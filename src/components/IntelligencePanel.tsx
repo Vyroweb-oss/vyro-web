@@ -12,6 +12,7 @@ import {
   type AssistantAction, type ResearchData,
 } from '../lib/assistant'
 import { formatResultLines } from '../lib/agentPage'
+import { assistantCacheKey, getCachedAssistantSources, setCachedAssistantSources } from '../lib/assistantCache'
 import { computeDocumentStats } from '../lib/stats'
 import { supabase } from '../lib/supabase'
 import {
@@ -202,19 +203,29 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
     setResult(null)
     setPendingResearch(null)
     try {
-      const { data: sess } = await supabase.auth.getSession()
-      const token = sess.session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/assistant-search`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: action.topic, lang, pages: action.pages ?? 1 }),
-      })
-      if (!res.ok) { setMessage(t('assistantSearchFailed')); return }
-      const data = (await res.json()) as { found?: boolean; sources?: ResearchData[] } & Partial<ResearchData>
-      const sources: ResearchData[] = data.sources && data.sources.length > 0
-        ? data.sources
-        : data.title && data.extract && data.url ? [{ title: data.title, extract: data.extract, url: data.url }] : []
-      if (!data.found || sources.length === 0) { setMessage(t('assistantSearchNotFound')); return }
+      // A-10: a repeated research topic in this page session replays
+      // its sources from memory instead of searching again.
+      const cacheKey = assistantCacheKey({ query: action.topic, lang, pages: action.pages ?? 1, mode: 'research' })
+      let sources: ResearchData[]
+      const cached = getCachedAssistantSources(cacheKey)
+      if (cached) {
+        sources = cached
+      } else {
+        const { data: sess } = await supabase.auth.getSession()
+        const token = sess.session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/assistant-search`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: action.topic, lang, pages: action.pages ?? 1 }),
+        })
+        if (!res.ok) { setMessage(t('assistantSearchFailed')); return }
+        const data = (await res.json()) as { found?: boolean; sources?: ResearchData[] } & Partial<ResearchData>
+        sources = data.sources && data.sources.length > 0
+          ? data.sources
+          : data.title && data.extract && data.url ? [{ title: data.title, extract: data.extract, url: data.url }] : []
+        if (!data.found || sources.length === 0) { setMessage(t('assistantSearchNotFound')); return }
+        setCachedAssistantSources(cacheKey, sources)
+      }
       const built = assembleResearch(sources, lang, { pages: action.pages, paragraphs: action.paragraphs })
       // Report the word count with the app's OWN statistics engine,
       // so the number always matches the document's status bar.
@@ -260,6 +271,11 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
     try {
       const fetchAnswer = async (query: string, qLang: UiLang = lang): Promise<ResearchData[] | 'failed' | 'notfound'> => {
         if (!supabase) return 'failed'
+        // A-10: a repeated question in this page session replays its
+        // sources from memory instead of searching again.
+        const cacheKey = assistantCacheKey({ query, lang: qLang, mode: 'answer' })
+        const cached = getCachedAssistantSources(cacheKey)
+        if (cached) return cached
         const { data: sess } = await supabase.auth.getSession()
         const token = sess.session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
         const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/assistant-search`, {
@@ -273,6 +289,7 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
           ? data.sources
           : data.title && data.extract && data.url ? [{ title: data.title, extract: data.extract, url: data.url }] : []
         if (!data.found || sources.length === 0) return 'notfound'
+        setCachedAssistantSources(cacheKey, sources)
         return sources
       }
       // A-01g: answer in the user's own language; trim to their

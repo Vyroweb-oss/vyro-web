@@ -12,6 +12,7 @@ import {
 import { nodesForBuildAction, linesToNodes, nodesToText } from '../lib/agentPage'
 import { computeDocumentStats } from '../lib/stats'
 import { supabase } from '../lib/supabase'
+import { assistantCacheKey, getCachedAssistantSources, setCachedAssistantSources } from '../lib/assistantCache'
 import {
   recordFeedback, feedbackPreference, applyDetailPreference, countAnswerWords,
   recordWeakQuestion, getWeakQuestions, clearWeakQuestions,
@@ -128,6 +129,15 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
 
   const fetchSources = async (body: Record<string, unknown>): Promise<ResearchData[] | 'offline' | 'failed' | 'notfound'> => {
     if (!supabase) return 'offline'
+    // A-10: a repeated question/topic in this page session replays
+    // its sources from memory instead of searching again.
+    const cacheKey = assistantCacheKey({
+      query: String(body.query ?? ''), lang: String(body.lang ?? ''),
+      pages: typeof body.pages === 'number' ? body.pages : 1,
+      mode: body.mode === 'answer' ? 'answer' : 'research',
+    })
+    const cached = getCachedAssistantSources(cacheKey)
+    if (cached) return cached
     try {
       const { data: sess } = await supabase.auth.getSession()
       const token = sess.session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
@@ -142,6 +152,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
         ? data.sources
         : data.title && data.extract && data.url ? [{ title: data.title, extract: data.extract, url: data.url }] : []
       if (!data.found || sources.length === 0) return 'notfound'
+      setCachedAssistantSources(cacheKey, sources)
       return sources
     } catch {
       return 'failed'
