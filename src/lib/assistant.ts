@@ -521,6 +521,71 @@ export function parseAssistantCommand(raw: string): AssistantAction {
   return { kind: 'unknown', input }
 }
 
+// ---- A-04 follow-up context -------------------------------------------
+// The panels remember the last research (topic + sources + nodes) so
+// a short follow-up — «بیشتر بنویس», «ادامه بده», «خلاصه‌اش کن» —
+// acts on THAT research instead of starting over. Detection is an
+// anchored full-phrase match (never a substring): a longer sentence
+// containing these words keeps its old meaning, and the plain
+// «خلاصه کن» / "summarize" forms keep their existing document-summary
+// meaning — only the possessive «اش / it / this» forms refer to the
+// last result. Panels apply the follow-up ONLY when a last research
+// exists; otherwise they fall through to the normal command parse.
+
+export type FollowUpKind = 'expand' | 'summarize'
+
+export function detectFollowUp(raw: string): FollowUpKind | null {
+  const s = normalizeCommand(raw)
+    .replace(/^لطفا\s+|\s+لطفا$/g, '')
+    .replace(/^please\s+|\s+please$/g, '')
+    .replace(/[؟?!.]+$/g, '')
+    .trim()
+  if (/^(بیشتر بنویس|بیشترش کن|بیشتر کن|بیشتر|ادامه بده|ادامه اش بده|ادامه ش بده|ادامه|write more|tell me more|continue|go on|expand it|expand)$/.test(s)) return 'expand'
+  if (/^(خلاصه اش کن|خلاصه ش کن|خلاصه اش را بگو|خلاصه اش بگو|summarize it|summarize this|summarise it|summarise this)$/.test(s)) return 'summarize'
+  return null
+}
+
+/** The next research target when expanding the last research: one
+ *  more page than asked before, and at least one page beyond what was
+ *  actually built (a paragraph-mode research has no page count, so the
+ *  word-based leg is what guarantees growth) — capped at 30 pages,
+ *  the same ceiling as a fresh research request. The panels re-run
+ *  assembleResearch with these pages against the SAME sources, so an
+ *  expansion never invents new material and never re-searches. */
+export function expandResearchOpts(last: { pages?: number; words: number }): { pages: number } {
+  const fromPages = (last.pages ?? 0) + 1
+  const fromWords = Math.ceil((last.words + WORDS_PER_PAGE) / WORDS_PER_PAGE)
+  return { pages: clamp(Math.max(fromPages, fromWords), 1, 30) }
+}
+
+/** Body paragraphs of an assembled research draft, for «خلاصه‌اش کن»:
+ *  title, section headings, the TOC list and the closing credit
+ *  paragraphs are excluded, so a summary of the research can never
+ *  surface a heading, a TOC item or a «منبع: … — URL» credit line as
+ *  if it were content. Credit lines are recognised both by their
+ *  «منبع:/منابع:/Source:/Sources:» lead and by the «— URL» shape of
+ *  multi-source credit lines. */
+export function researchBodyText(nodes: unknown[]): string {
+  const walk = (n: unknown): string => {
+    if (!n || typeof n !== 'object') return ''
+    const node = n as { type?: unknown; content?: unknown; text?: unknown }
+    if (node.type === 'text') return typeof node.text === 'string' ? node.text : ''
+    const content = Array.isArray(node.content) ? node.content : []
+    return content.map(walk).join(' ')
+  }
+  const out: string[] = []
+  for (const n of nodes) {
+    const node = n as { type?: unknown }
+    if (!node || node.type !== 'paragraph') continue
+    const text = walk(n).trim()
+    if (!text) continue
+    if (/^(منبع|منابع|Source|Sources)\s*:/.test(text)) continue
+    if (/—\s*https?:\/\//.test(text)) continue
+    out.push(text)
+  }
+  return out.join('\n')
+}
+
 // ---- Text algorithms (all local, all honest) ------------------------------
 
 /** Tidy spacing/punctuation: collapse runs of spaces, remove the space

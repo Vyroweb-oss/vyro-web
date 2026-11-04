@@ -11,6 +11,7 @@ import {
   isRankingOrCurrentQuestion, estimateResearchPages,
   analyzeQuestion, sentenceMatchesQuestionType, searchQueriesFor,
   decomposeQuestion, subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
+  detectFollowUp, expandResearchOpts, researchBodyText,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -865,5 +866,65 @@ describe('A-03 long-document structure (TOC for long research only)', () => {
     const last = nodeTextAll(out.nodes[out.nodes.length - 1])
     expect(last).toContain('Source: Wikipedia')
     expect(last).toContain('https://en.wikipedia.org/wiki/X')
+  })
+})
+
+describe('A-04 follow-up context (last research remembered; general method only)', () => {
+  it('detects the three spec phrases as follow-ups, FA + EN, with and without the ZWNJ form', () => {
+    expect(detectFollowUp('بیشتر بنویس')).toBe('expand')
+    expect(detectFollowUp('ادامه بده')).toBe('expand')
+    expect(detectFollowUp('ادامه')).toBe('expand')
+    expect(detectFollowUp('write more')).toBe('expand')
+    expect(detectFollowUp('continue')).toBe('expand')
+    expect(detectFollowUp('خلاصه‌اش کن')).toBe('summarize')
+    expect(detectFollowUp('خلاصه اش کن')).toBe('summarize')
+    expect(detectFollowUp('summarize it')).toBe('summarize')
+  })
+  it('does NOT hijack longer sentences or the plain document-summary forms', () => {
+    // A longer sentence keeps its old meaning (anchored match only).
+    expect(detectFollowUp('ادامه مقاله را بنویس')).toBeNull()
+    expect(detectFollowUp('بیشتر درباره فرانسه بگو')).toBeNull()
+    // Plain «خلاصه کن» / "summarize" stay document-summary commands.
+    expect(detectFollowUp('خلاصه کن')).toBeNull()
+    expect(detectFollowUp('summarize')).toBeNull()
+    expect(detectFollowUp('پایتخت فرانسه کجاست؟')).toBeNull()
+    expect(detectFollowUp('جدول ۳×۴ بساز')).toBeNull()
+  })
+  it('expand target: one more page than asked, at least one page beyond what was built, capped at 30', () => {
+    expect(expandResearchOpts({ pages: 2, words: 500 })).toEqual({ pages: 3 })
+    expect(expandResearchOpts({ pages: 1, words: 290 })).toEqual({ pages: 2 })
+    // Paragraph-mode research (no page count): the word leg guarantees growth.
+    expect(expandResearchOpts({ words: 330 }).pages).toBeGreaterThan(1)
+    expect(expandResearchOpts({ pages: 30, words: 9000 })).toEqual({ pages: 30 })
+  })
+  it('expanding from the SAME sources raises the target but invents nothing new', () => {
+    const sent = (i: number) =>
+      `جمله شماره ${i} درباره موضوع است و اطلاعات مهم و دقیقی درباره آن ارائه می کند و شرح می دهد و توضیح می دهد.`
+    const src = { title: 'موضوع', url: 'https://fa.wikipedia.org/wiki/X', extract: Array.from({ length: 30 }, (_, i) => sent(i)).join(' ') }
+    const first = assembleResearch([src], 'fa', { pages: 1 })
+    const expanded = assembleResearch([src], 'fa', expandResearchOpts({ pages: 1, words: first.words }))
+    expect(expanded.targetWords).toBeGreaterThan(first.targetWords)
+    // Every expanded sentence still comes from the one source extract.
+    const body = researchBodyText(expanded.nodes)
+    expect(body).toContain('درباره موضوع است')
+    expect(body).not.toContain('https://fa.wikipedia.org/wiki/X')
+  })
+  it('researchBodyText keeps body paragraphs only — no title, headings, TOC or credit lines', () => {
+    const sent = (i: number) =>
+      `جمله شماره ${i} درباره موضوع است و اطلاعات مهم و دقیقی درباره آن ارائه می کند و شرح می دهد و توضیح می دهد.`
+    const extract = [
+      `${sent(1)} ${sent(2)} ${sent(3)}`,
+      '== تاریخچه ==',
+      Array.from({ length: 40 }, (_, i) => sent(100 + i)).join(' '),
+    ].join('\n')
+    const out = assembleResearch([{ title: 'موضوع', url: 'https://fa.wikipedia.org/wiki/X', extract }], 'fa', { pages: 3 })
+    const body = researchBodyText(out.nodes)
+    expect(body).toContain('درباره موضوع است')
+    expect(body).not.toContain('منبع:')
+    expect(body).not.toContain('https://fa.wikipedia.org/wiki/X')
+    // A summary built from the body is short and credit-free.
+    const summary = summarizeText(body, 3)
+    expect(summary.length).toBeLessThanOrEqual(3)
+    expect(summary.join(' ')).not.toContain('ویکی‌پدیا')
   })
 })

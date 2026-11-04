@@ -5,6 +5,7 @@ import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
   assembleResearch, buildAnswer, searchQueryFor, estimateResearchPages,
   subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
+  detectFollowUp, expandResearchOpts, researchBodyText,
   type AssistantAction, type ResearchData,
 } from '../lib/assistant'
 import { nodesForBuildAction, linesToNodes, nodesToText } from '../lib/agentPage'
@@ -54,6 +55,13 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
   // device-local weak-question list shown on this page.
   const [voted, setVoted] = useState<number[]>([])
   const [weakList, setWeakList] = useState<WeakEntry[]>([])
+  // A-04 follow-up context: the last research (topic + its SAME
+  // sources + nodes), so «بیشتر بنویس» / «ادامه بده» /
+  // «خلاصه‌اش کن» act on it without a new search.
+  const [lastResearch, setLastResearch] = useState<{
+    topic: string; pages?: number; paragraphs?: number; words: number
+    sources: ResearchData[]; nodes: object[]
+  } | null>(null)
   const refreshWeak = () => setWeakList(getWeakQuestions())
   const idRef = useRef(0)
   const historyRef = useRef<HTMLDivElement | null>(null)
@@ -148,6 +156,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
         .replace('{w}', String(trueWords))
         .replace('{p}', String(estimateResearchPages(built.nodes)))
       const short = built.words < built.targetWords * 0.85 ? ` ${t('assistantResearchShort')}` : ''
+      setLastResearch({ topic: action.topic, pages: action.pages, paragraphs: action.paragraphs, words: trueWords, sources, nodes: built.nodes as object[] })
       // The Agent page ALWAYS prepares the result here first (it is the
       // one place for requests); inserting or creating a document is
       // the user's tap on the result's own buttons.
@@ -276,6 +285,29 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
     setNotice(t('assistantFeedbackThanks'))
   }
 
+  // A-04 follow-up on the last research: expand re-assembles from
+  // the SAME sources with a larger page target (no new search, no
+  // invented text — the short note says so if the sources run out);
+  // summarize extracts the draft's own body sentences. The result is
+  // prepared here first, like every Agent-page result: nothing is
+  // typed into a document until the user taps insert or create.
+  const doFollowUp = (kind: 'expand' | 'summarize') => {
+    if (!lastResearch) return
+    if (kind === 'summarize') {
+      push({ from: 'agent', title: t('assistantSummaryTitle'), lines: summarizeText(researchBodyText(lastResearch.nodes), 3) })
+      return
+    }
+    const pages = expandResearchOpts(lastResearch).pages
+    const built = assembleResearch(lastResearch.sources, lang, { pages })
+    const trueWords = computeDocumentStats({ type: 'doc', content: built.nodes }).words
+    const meta = t('assistantResearchMeta')
+      .replace('{w}', String(trueWords))
+      .replace('{p}', String(estimateResearchPages(built.nodes)))
+    const short = built.words < built.targetWords * 0.85 ? ` ${t('assistantResearchShort')}` : ''
+    push({ from: 'agent', title: lastResearch.sources[0].title, text: `${meta}${short}`, nodes: built.nodes as object[] })
+    setLastResearch({ ...lastResearch, pages, words: trueWords, nodes: built.nodes as object[] })
+  }
+
   const runCommand = (raw: string) => {
     const text = raw.trim()
     if (!text || busy) return
@@ -289,6 +321,14 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
     const replyLang = preferredReplyLanguage(text) ?? lang
     const social = detectSocial(text)
     if (social) { push({ from: 'agent', text: tr(replyLang, social === 'greeting' ? 'assistantGreeting' : 'assistantThanksReply') }); return }
+    // A-04: a follow-up phrase acts on the last research when there
+    // is one; with none yet it says so honestly instead of guessing.
+    const follow = detectFollowUp(text)
+    if (follow) {
+      if (!lastResearch) { push({ from: 'agent', text: t('assistantFollowUpNoResearch') }); return }
+      doFollowUp(follow)
+      return
+    }
     const action = parseAssistantCommand(text)
     if (action.kind === 'answer') {
       const lastTopic = [...entries].reverse().find((e) => e.question)?.question ?? null
@@ -378,6 +418,22 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
               <span key={w.q} className="find-meta" dir="auto">{w.q}</span>
             ))}
             <button type="button" className="rbtn small" onClick={() => { clearWeakQuestions(); refreshWeak() }}>{t('assistantWeakClear')}</button>
+          </div>
+        </div>
+      )}
+      {lastResearch && (
+        <div className="agent-chips">
+          <span className="find-preview-label" dir="auto">{t('assistantFollowUpTitle')}: {lastResearch.topic}</span>
+          <div className="intelligence-actions">
+            <button type="button" className="rbtn small" disabled={busy} onClick={() => runCommand(lang === 'fa' ? 'بیشتر بنویس' : 'write more')}>
+              {t('assistantFollowUpMore')}
+            </button>
+            <button type="button" className="rbtn small" disabled={busy} onClick={() => runCommand(lang === 'fa' ? 'ادامه بده' : 'continue')}>
+              {t('assistantFollowUpContinue')}
+            </button>
+            <button type="button" className="rbtn small" disabled={busy} onClick={() => runCommand(lang === 'fa' ? 'خلاصه‌اش کن' : 'summarize it')}>
+              {t('assistantFollowUpSummarize')}
+            </button>
           </div>
         </div>
       )}

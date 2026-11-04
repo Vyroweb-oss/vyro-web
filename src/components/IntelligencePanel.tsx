@@ -7,6 +7,7 @@ import {
   parseAssistantCommand, cleanupText, summarizeText, keyPoints,
   buildTemplate, assembleResearch, buildAnswer, searchQueryFor, estimateResearchPages,
   subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
+  detectFollowUp, expandResearchOpts, researchBodyText,
   type AssistantAction, type ResearchData,
 } from '../lib/assistant'
 import { computeDocumentStats } from '../lib/stats'
@@ -40,6 +41,13 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
   // the current answer already received feedback (local only).
   const [lastQuestion, setLastQuestion] = useState('')
   const [votedResult, setVotedResult] = useState(false)
+  // A-04 follow-up context: the last research (topic + its SAME
+  // sources + nodes), so «بیشتر بنویس» / «ادامه بده» /
+  // «خلاصه‌اش کن» act on it without a new search.
+  const [lastResearch, setLastResearch] = useState<{
+    topic: string; pages?: number; paragraphs?: number; words: number
+    sources: ResearchData[]; nodes: object[]
+  } | null>(null)
 
   const sel = useEditorState({
     editor,
@@ -188,6 +196,7 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         .replace('{w}', String(trueWords))
         .replace('{p}', String(estimateResearchPages(built.nodes)))
       const short = built.words < built.targetWords * 0.85 ? ` ${t('assistantResearchShort')}` : ''
+      setLastResearch({ topic: action.topic, pages: action.pages, paragraphs: action.paragraphs, words: trueWords, sources, nodes: built.nodes as object[] })
       if (action.insert) {
         editor.chain().focus().insertContent(built.nodes as object[]).run()
         setPendingResearch(null)
@@ -297,6 +306,33 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
     setMessage(t('assistantFeedbackThanks'))
   }
 
+  // A-04 follow-up on the last research: expand re-assembles from
+  // the SAME sources with a larger page target (no new search, no
+  // invented text) and stays a preview — the user taps insert;
+  // summarize shows the draft's own body sentences as the result.
+  const doFollowUp = (kind: 'expand' | 'summarize') => {
+    if (!lastResearch) return
+    if (kind === 'summarize') {
+      setMessage('')
+      setResult({ title: t('assistantSummaryTitle'), lines: summarizeText(researchBodyText(lastResearch.nodes), 3), asList: false })
+      return
+    }
+    const pages = expandResearchOpts(lastResearch).pages
+    const built = assembleResearch(lastResearch.sources, lang, { pages })
+    const trueWords = computeDocumentStats({ type: 'doc', content: built.nodes }).words
+    const meta = t('assistantResearchMeta')
+      .replace('{w}', String(trueWords))
+      .replace('{p}', String(estimateResearchPages(built.nodes)))
+    const short = built.words < built.targetWords * 0.85 ? ` ${t('assistantResearchShort')}` : ''
+    setPendingResearch(built.nodes as object[])
+    const preview = built.nodes
+      .map((n) => (n as { content?: { text?: string }[] }).content?.map((c) => c.text ?? '').join(' ') ?? '')
+      .filter(Boolean).slice(0, 3)
+    setResult({ title: lastResearch.sources[0].title, lines: preview, asList: false })
+    setMessage(`${t('assistantPreviewReady')} ${meta}${short}`)
+    setLastResearch({ ...lastResearch, pages, words: trueWords, nodes: built.nodes as object[] })
+  }
+
   const runCommand = (raw: string) => {
     if (!raw.trim() || busy) return
     // A-01g behaviour learning, before any search: remember the
@@ -308,6 +344,16 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
     if (social) {
       setResult(null)
       setMessage(tr(replyLang, social === 'greeting' ? 'assistantGreeting' : 'assistantThanksReply'))
+      setCommand('')
+      return
+    }
+    // A-04: a follow-up phrase acts on the last research when there
+    // is one; with none yet it says so honestly instead of guessing.
+    const follow = detectFollowUp(raw)
+    if (follow) {
+      if (!lastResearch) { setResult(null); setMessage(t('assistantFollowUpNoResearch')); setCommand(''); return }
+      setVotedResult(false)
+      doFollowUp(follow)
       setCommand('')
       return
     }
@@ -400,6 +446,22 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
           ))}
         </div>
       </div>
+      {lastResearch && (
+        <div className="find-row">
+          <span className="find-preview-label" dir="auto">{t('assistantFollowUpTitle')}: {lastResearch.topic}</span>
+          <div className="intelligence-actions">
+            <button type="button" className="rbtn small" onClick={() => runCommand(lang === 'fa' ? 'بیشتر بنویس' : 'write more')}>
+              {t('assistantFollowUpMore')}
+            </button>
+            <button type="button" className="rbtn small" onClick={() => runCommand(lang === 'fa' ? 'ادامه بده' : 'continue')}>
+              {t('assistantFollowUpContinue')}
+            </button>
+            <button type="button" className="rbtn small" onClick={() => runCommand(lang === 'fa' ? 'خلاصه‌اش کن' : 'summarize it')}>
+              {t('assistantFollowUpSummarize')}
+            </button>
+          </div>
+        </div>
+      )}
       {message && <div className="find-meta assistant-message" role="status" dir="auto">{message}</div>}
       {result && (
         <div className="intelligence-compare">
