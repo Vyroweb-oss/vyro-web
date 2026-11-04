@@ -367,18 +367,33 @@ export function sentenceMatchesQuestionType(sentence: string, analysis: Question
     case 'definition': {
       const hasSubject = analysis.subjectTokens.some((t) => toks.has(t))
       if (!hasSubject) return false
+      // A-13c (general, not per-word): the copula test is TOKEN
+      // based, never a substring test. The old
+      // `norm.includes('is')` passed on any word containing those
+      // letters («division», «history»), so a Wikipedia sentence
+      // that merely MENTIONED the queried word counted as a
+      // definition and pre-empted the Wiktionary gloss. Single-word
+      // copulas are token membership; the two-word FA copula
+      // «می باشد» / «می‌باشد» (ZWNJ-split to می + باشد by the
+      // word split below) is an adjacent word-pair check. The
+      // same two lines were the ONLY occurrences of this
+      // toks.has || norm.includes pattern in the file, so both
+      // branches are fixed together; the EN gloss regex in this
+      // branch is likewise word-boundary anchored.
+      const words = norm.replace(/\u200C/g, ' ').split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+      const hasCopula = toks.has('است') || toks.has('هست') || toks.has('is') || toks.has('are') ||
+        words.some((w, i) => w === 'می' && words[i + 1] === 'باشد')
       if (analysis.type === 'wordMeaning') {
         // A-08: dictionary-shaped answers count too, not only
         // copula sentences — a meaning gloss («به معنای …»),
         // an EN gloss («means / refers to / denotes»), or a
         // headword-led lead («همدلی، توانایی …») all define the
         // word, and all are the source's own words, never invented.
-        if (['است', 'هست', 'می باشد', 'می‌باشد', 'is', 'are'].some((t) => toks.has(t) || norm.includes(t))) return true
-        if (toks.has('معنا') || toks.has('معنی') || /means|mean|refers to|denotes|defined as/.test(norm)) return true
-        const words = norm.replace(/\u200C/g, ' ').split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+        if (hasCopula) return true
+        if (toks.has('معنا') || toks.has('معنی') || /\bmeans\b|\bmean\b|\bmeaning\b|\brefers to\b|\bdenotes\b|\bdefined as\b/.test(norm)) return true
         return words.length > 0 && analysis.subjectTokens.includes(words[0])
       }
-      return ['است', 'هست', 'می باشد', 'می‌باشد', 'is', 'are'].some((t) => toks.has(t) || norm.includes(t))
+      return hasCopula
     }
     case 'reason': {
       // A-02 (general, from the benchmark's loose-secondary probe):

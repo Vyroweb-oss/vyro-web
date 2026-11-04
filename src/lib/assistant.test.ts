@@ -1492,3 +1492,56 @@ describe('A-13 Wiktionary meaning leg (engine side; the function leg appends the
     expect(ans.lines.join(' ')).toContain('Source: Wiktionary — https://en.wiktionary.org/wiki/psithurism')
   })
 })
+
+describe('A-13c meaning-gate substring fix (general sense rule, not per-word)', () => {
+  const q = 'what does erinaceous mean?'
+  const meaning = analyzeQuestion(q)
+  it('a mention-only sentence with an «is»-substring word does NOT pass the wordMeaning definition gate', () => {
+    // The A-13b live sentence: «division» contains «is» as a
+    // substring, but there is no copula token in the sentence.
+    expect(sentenceMatchesQuestionType(
+      "The sale of the firm's facilities management division to Erinaceous for £10 million was announced.",
+      meaning)).toBe(false)
+    expect(sentenceMatchesQuestionType(
+      'Historians have written about erinaceous creatures in old histories.',
+      meaning)).toBe(false)
+  })
+  it('a true copula definition still passes (EN is/are, FA است, and the two-word می باشد)', () => {
+    expect(sentenceMatchesQuestionType('Serendipity is the occurrence of events by chance in a happy way.', analyzeQuestion('What does serendipity mean?'))).toBe(true)
+    expect(sentenceMatchesQuestionType('آزادی به معنای رهایی از قید و بند است.', analyzeQuestion('معنی کلمهٔ آزادی چیست؟'))).toBe(true)
+    expect(sentenceMatchesQuestionType('پاریس پایتخت فرانسه می باشد.', analyzeQuestion('فرانسه چیست؟'))).toBe(true)
+    expect(sentenceMatchesQuestionType('پاریس پایتخت فرانسه می‌باشد.', analyzeQuestion('فرانسه چیست؟'))).toBe(true)
+  })
+  it('Wiktionary gloss wins when Wikipedia only mentions the word (erinaceous fixture)', () => {
+    const wiki = {
+      title: 'ISG Ltd', url: 'https://en.wikipedia.org/wiki/ISG_Ltd',
+      extract: "The sale of the firm's facilities management division to Erinaceous for £10 million was announced.",
+    }
+    const wikt = {
+      title: 'erinaceous', url: 'https://en.wiktionary.org/wiki/erinaceous',
+      extract: 'erinaceous: Of, pertaining to, or resembling a hedgehog.',
+    }
+    const ans = buildAnswer([wiki, wikt], q, 'en')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('hedgehog')
+    expect(ans.lines.join(' ')).toContain('Source: Wiktionary — https://en.wiktionary.org/wiki/erinaceous')
+    expect(ans.lines.join(' ')).not.toContain('ISG_Ltd')
+  })
+  it('France, Shahnameh and آزادی regressions still pass', () => {
+    const france = buildAnswer(
+      [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: 'فرانسه کشوری در اروپای غربی است. پاریس پایتخت فرانسه است و این شهر بزرگ است.' }],
+      'پایتخت فرانسه کجاست؟', 'fa')
+    expect(france.found).toBe(true)
+    expect(france.lines.join(' ')).toContain('پاریس')
+    const shahnameh = buildAnswer(
+      [{ title: 'شاهنامه', url: 'https://fa.wikipedia.org/wiki/Shahnameh', extract: 'شاهنامه اثر ابوالقاسم فردوسی شاعر بزرگ ایرانی است.' }],
+      'نویسنده شاهنامه کیست؟', 'fa')
+    expect(shahnameh.found).toBe(true)
+    expect(shahnameh.lines.join(' ')).toContain('فردوسی')
+    const azadi = buildAnswer(
+      [{ title: 'آزادی', url: 'https://fa.wikipedia.org/wiki/Freedom', extract: 'آزادی به معنای رهایی از قید و بند و توانایی انتخاب است.' }],
+      'معنی کلمهٔ آزادی چیست؟', 'fa')
+    expect(azadi.found).toBe(true)
+    expect(azadi.lines.join(' ')).toContain('آزادی')
+  })
+})
