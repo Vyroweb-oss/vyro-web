@@ -7,6 +7,7 @@ import {
   parseAssistantCommand, cleanupText, cleanupDocJson, summarizeText, keyPoints, formalizeText, shortenText,
   buildTemplate, assembleResearch, buildAnswer, searchQueryFor, estimateResearchPages,
   subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
+  splitComparison, assembleComparisonAnswer,
   detectFollowUp, expandResearchOpts, researchBodyText,
   type AssistantAction, type ResearchData,
 } from '../lib/assistant'
@@ -272,6 +273,27 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
       // A-01g: answer in the user's own language; trim to their
       // feedback-derived detail; mine not-found questions locally.
       const qLang = preferredReplyLanguage(action.question) ?? lang
+      // A-07: a two-topic comparison question is answered per topic
+      // and assembled side by side, each side separately credited;
+      // no multi-hop retry here — each side stands on its own search.
+      const cmp = splitComparison(action.question)
+      if (cmp) {
+        const sides: { lines: string[]; found: boolean }[] = []
+        for (const topic of cmp) {
+          const sources = await fetchAnswer(searchQueryFor(topic), qLang)
+          if (sources === 'failed') { setMessage(t('assistantSearchFailed')); return }
+          if (sources === 'notfound') { sides.push({ lines: [], found: false }); continue }
+          sides.push(buildAnswer(sources, topic, qLang))
+        }
+        const compared = assembleComparisonAnswer(cmp as [string, string], sides, qLang)
+        if (!compared.found) { recordWeakQuestion(action.question, 'not-found'); setMessage(t('assistantAnswerNotFound')); return }
+        setMessage('')
+        // No applyDetailPreference here: its short mode keeps only
+        // the first sentence plus credits, which would break the
+        // two-side structure.
+        setResult({ title: t('assistantAnswerTitle'), lines: compared.lines, asList: false, question: action.question })
+        return
+      }
       const subs = subQuestionQueries(action.question)
       if (subs.length === 1) {
         const sources = await fetchAnswer(searchQueryFor(action.question), qLang)

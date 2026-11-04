@@ -5,6 +5,7 @@ import {
   parseAssistantCommand, cleanupText, cleanupDocJson, summarizeText, keyPoints, formalizeText, shortenText,
   assembleResearch, buildAnswer, searchQueryFor, estimateResearchPages,
   subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
+  splitComparison, assembleComparisonAnswer,
   detectFollowUp, expandResearchOpts, researchBodyText,
   type AssistantAction, type ResearchData,
 } from '../lib/assistant'
@@ -177,6 +178,28 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
       // A-01g: a Dari-speaking user's question is searched and
       // answered in Dari even when the UI language is English.
       const qLang = preferredReplyLanguage(action.question) ?? lang
+      // A-07: a two-topic comparison question is answered per topic
+      // and assembled side by side, each side separately credited;
+      // no multi-hop retry here — each side stands on its own search.
+      const cmp = splitComparison(action.question)
+      if (cmp) {
+        const sides: { lines: string[]; found: boolean }[] = []
+        for (const topic of cmp) {
+          const sources = await fetchSources({ query: searchQueryFor(topic), lang: qLang, pages: 1, mode: 'answer' })
+          if (typeof sources === 'string') {
+            if (sources === 'notfound') { sides.push({ lines: [], found: false }); continue }
+            push({ from: 'agent', text: failText(sources) }); return
+          }
+          sides.push(buildAnswer(sources, topic, qLang))
+        }
+        const compared = assembleComparisonAnswer(cmp as [string, string], sides, qLang)
+        if (!compared.found) { recordWeakQuestion(action.question, 'not-found'); push({ from: 'agent', text: t('assistantAnswerNotFound') }); return }
+        // No applyDetailPreference here: its short mode keeps only
+        // the first sentence plus credits, which would break the
+        // two-side structure.
+        push({ from: 'agent', title: t('assistantAnswerTitle'), lines: compared.lines, question: action.question })
+        return
+      }
       const subs = subQuestionQueries(action.question)
       if (subs.length === 1) {
         const sources = await fetchSources({ query: searchQueryFor(action.question), lang: qLang, pages: 1, mode: 'answer' })

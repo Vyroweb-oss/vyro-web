@@ -177,14 +177,17 @@ export function analyzeQuestion(question: string): QuestionAnalysis {
   if (has('کجاست', 'کجا', 'where', 'پایتخت', 'capital', 'located')) {
     return kind('place', 'place')
   }
-  if (has('when', 'سال', 'سالی', 'چه سالی')) return kind('date', 'date')
+  if (has('when', 'year', 'سال', 'سالی', 'چه سالی', 'زمانی')) return kind('date', 'date')
   if (has('چند', 'چقدر', 'how many', 'how much', 'سرعت', 'speed', 'قیمت', 'price',
     'طول', 'length', 'ارتفاع', 'height', 'وزن', 'weight', 'فاصله', 'distance', 'تعداد')) {
     return kind('quantity', 'quantity')
   }
   if (has('چرا', 'why')) return kind('why', 'reason')
   if (has('چگونه', 'چطور', 'how')) return kind('how', 'procedure')
-  if (has('ببر', 'ببرید', 'فهرست', 'list', 'examples', 'بشمار')) return kind('enumeration', 'enumeration')
+  // A-07: «کدام‌اند» tokenizes as کدام + اند (normalizeCommand
+  // turns ZWNJ into a space), so the split form is checked too.
+  if (has('ببر', 'ببرید', 'فهرست', 'list', 'examples', 'بشمار', 'چیزهایی', 'کدامند', 'کدام‌اند') ||
+      (toks.has('کدام') && toks.has('اند'))) return kind('enumeration', 'enumeration')
   if (has('چیست', 'what', 'تعریف', 'یعنی')) return kind('definition', 'definition')
   return kind('unknown', 'any')
 }
@@ -542,7 +545,7 @@ export function parseAssistantCommand(raw: string): AssistantAction {
   // (2) a ؟ anywhere (not only at the end) marks a question. Known
   // commands are all matched ABOVE this block, so nothing here can
   // hijack a command — it only rescues questions that used to die.
-  const QUESTION_WORD = /(?:^|\s)(?:چیست|کیست|چه|چرا|چگونه|چطور|کی|کجا|کجاست|کدام|چند|چقدر|آیا)(?=\s|$)|(?:^|\s)(?:what|why|how|when|where|who|which|is|are|can|does|do)(?=\s|$)/
+  const QUESTION_WORD = /(?:^|\s)(?:چیست|کیست|چه|چرا|چگونه|چطور|کی|کجا|کجاست|کدام|چند|چقدر|آیا|تفاوت|فرق|مقایسه)(?=\s|$)|(?:^|\s)(?:what|why|how|when|where|who|which|is|are|can|does|do|difference|compare)(?=\s|$)/
   if (/[؟?]/.test(s) || QUESTION_WORD.test(s)) {
     return { kind: 'answer', question: input }
   }
@@ -1142,6 +1145,147 @@ export function buildResearchDoc(data: ResearchData, lang: 'fa' | 'en', paragrap
   return assembleResearch([data], lang, { paragraphs: paragraphCount }).nodes
 }
 
+// ---- A-07 more answer types -------------------------------------------
+// General by question TYPE (Hard Rule 9) — no per-question branches:
+// (1) two-topic comparison questions split into their two topics so
+// the panels can search each side separately and credit each side
+// separately; (2) enumeration questions are answered from real list
+// sentences in the sources; (3) date/person answers ride the
+// existing analysis passes, widened only by trigger words.
+
+const COMPARISON_TRIGGERS = new Set([
+  'تفاوت', 'فرق', 'مقایسه', 'difference', 'differences', 'compare', 'comparison',
+  'versus', 'vs', 'بهتر', 'better',
+])
+// Frame words stripped from the FRONT of the first topic: the
+// comparison trigger itself, its preposition, and the question frame
+// around it («What is the difference between cats…» → cats).
+const COMPARISON_LEADING = new Set([
+  'تفاوت', 'فرق', 'مقایسه', 'بین', 'difference', 'between', 'compare', 'comparison',
+  'what', 'is', 'the', 'a', 'an', 'are', 'was', 'were', 'کدام', 'چه', 'بهتر', 'better', 'است', 'در',
+])
+const COMPARISON_SEPARATORS = new Set(['و', 'با', 'and', 'vs', 'versus', 'یا', 'or'])
+// Frame words stripped from the END of a topic: the question tail
+// («… چیست؟», «… which is better?»). 'which'/'better' are frame
+// here, never topic content, so they join the tail set.
+const COMPARISON_TAIL = new Set([
+  'چیست', 'دارد', 'دارند', 'چه', 'تفاوتی', 'فرقی', 'است', 'کدام', 'بهتر', 'در',
+  'is', 'are', 'was', 'were', 'difference', 'differences', 'which', 'better',
+])
+const COMPARISON_QUESTION_WORDS = new Set([
+  'چیست', 'کیست', 'کجاست', 'کجا', 'چقدر', 'چند', 'چرا', 'چگونه', 'چطور',
+  'what', 'who', 'where', 'when', 'why', 'how',
+])
+
+/** Split a two-topic comparison question into its two topic phrases,
+ *  or null when it is not one: no comparison trigger, no separator,
+ *  a topic that is empty / over 6 tokens / equal to the other, or a
+ *  topic still holding a question word after tail-stripping. The
+ *  split is on the FIRST separator token; 'یا'/'or' only count as a
+ *  separator when a بهتر/better/کدام trigger is present, so a plain
+ *  «X و Y» enumeration is never mistaken for a comparison. */
+export function splitComparison(question: string): string[] | null {
+  const toks = normalizeCommand(question).replace(/[؟?!.,،؛:«»"“”]/g, '').split(' ').map(cleanToken).filter(Boolean)
+  if (!toks.some((t) => COMPARISON_TRIGGERS.has(t))) return null
+  const hasBetterOrWhich = toks.some((t) => t === 'بهتر' || t === 'better' || t === 'کدام')
+  const sepIdx = toks.findIndex((t) =>
+    COMPARISON_SEPARATORS.has(t) && ((t !== 'یا' && t !== 'or') || hasBetterOrWhich))
+  if (sepIdx <= 0 || sepIdx >= toks.length - 1) return null
+  let first = toks.slice(0, sepIdx)
+  while (first.length > 0 && COMPARISON_LEADING.has(first[0])) first = first.slice(1)
+  while (first.length > 0 && COMPARISON_TAIL.has(first[first.length - 1])) first = first.slice(0, -1)
+  let second = toks.slice(sepIdx + 1)
+  while (second.length > 0 && COMPARISON_TAIL.has(second[second.length - 1])) second = second.slice(0, -1)
+  if (first.length === 0 || second.length === 0) return null
+  if (first.length > 6 || second.length > 6) return null
+  const a = first.join(' ')
+  const b = second.join(' ')
+  if (a === b) return null
+  if ([...first, ...second].some((t) => COMPARISON_QUESTION_WORDS.has(t))) return null
+  return [a, b]
+}
+
+/** Assemble a comparison answer: per side in order, a bare label line
+ *  (the topic text) followed by that side's own lines — which already
+ *  end with that side's source-credit line, so each side stays
+ *  separately credited. A side with no answer contributes one honest
+ *  line naming only that side. No side found at all → found false,
+ *  no lines (mirroring assembleThoughtAnswer's honest-empty shape). */
+export function assembleComparisonAnswer(
+  topics: [string, string],
+  sides: { lines: string[]; found: boolean }[],
+  lang: 'fa' | 'en',
+): { lines: string[]; found: boolean } {
+  const lines: string[] = []
+  let anyFound = false
+  topics.forEach((topic, i) => {
+    const side = sides[i]
+    if (side && side.found) {
+      anyFound = true
+      lines.push(topic)
+      lines.push(...side.lines)
+    } else {
+      lines.push(lang === 'fa'
+        ? `برای «${topic}» پاسخی در منابع پیدا نشد.`
+        : `No answer was found in the sources for "${topic}".`)
+    }
+  })
+  if (!anyFound) return { lines: [], found: false }
+  return { lines, found: true }
+}
+
+/** Extract the items of a list sentence: the text after «:» when
+ *  present, else after عبارتند از / عبارت‌اند از / شامل / include /
+ *  includes / such as; split on ، , ؛ ;, then split the last segment
+ *  on « و » / ' and ' when that yields exactly two short parts (a
+ *  leading «و » / 'and ' on the last segment counts as one item).
+ *  Items of 1–6 words survive, trailing punctuation stripped; null
+ *  unless at least 3 items survive. */
+export function extractListItems(sentence: string): string[] | null {
+  const colonAt = (() => {
+    const a = sentence.indexOf(':')
+    const b = sentence.indexOf('：')
+    if (a === -1) return b
+    if (b === -1) return a
+    return Math.min(a, b)
+  })()
+  let tail: string | null = null
+  if (colonAt >= 0) {
+    tail = sentence.slice(colonAt + 1)
+  } else {
+    const lower = sentence.toLowerCase()
+    const MARKERS = ['عبارتند از', 'عبارت‌اند از', 'عبارت اند از', 'شامل', 'includes', 'include', 'such as']
+    let bestIdx = -1
+    let bestLen = 0
+    for (const m of MARKERS) {
+      const idx = lower.indexOf(m)
+      if (idx >= 0 && (bestIdx === -1 || idx < bestIdx || (idx === bestIdx && m.length > bestLen))) {
+        bestIdx = idx
+        bestLen = m.length
+      }
+    }
+    if (bestIdx >= 0) tail = sentence.slice(bestIdx + bestLen)
+  }
+  if (tail === null) return null
+  const wordsOf = (s: string) => s.split(/\s+/).filter(Boolean).length
+  const parts = tail.split(/[،,؛;]/).map((p) => p.trim()).filter(Boolean)
+  if (parts.length === 0) return null
+  const last = parts[parts.length - 1]
+  const leadAnd = last.match(/^(و|and)\s+/i)
+  if (leadAnd) {
+    parts[parts.length - 1] = last.slice(leadAnd[0].length).trim()
+  } else {
+    const split = last.split(/\s+و\s+|\s+and\s+/).map((p) => p.trim()).filter(Boolean)
+    if (split.length === 2 && split.every((p) => wordsOf(p) >= 1 && wordsOf(p) <= 6)) {
+      parts.splice(parts.length - 1, 1, ...split)
+    }
+  }
+  const items = parts
+    .map((p) => p.replace(/^[«"“'(\s]+/, '').replace(/[\s.!؟?،,؛;:»"”'\)]+$/, '').trim())
+    .filter((p) => wordsOf(p) >= 1 && wordsOf(p) <= 6)
+  return items.length >= 3 ? items : null
+}
+
 /** Answer a free-form question from the fetched sources (owner order
  *  2026-11-03: any kind of question, answered in seconds). The
  *  answer is the sources' own sentences that best match the
@@ -1351,6 +1495,23 @@ export function buildAnswer(
     }
     const webLines = webFallback()
     if (webLines) return { lines: webLines, found: true }
+  }
+  // A-07 ENUMERATION PASS (before the analysis pass): for a
+  // list/enumeration question, a real list sentence from the
+  // sources answers directly — a high-overlap generic sentence that
+  // merely mentions the topic must not win over it. Up to 2 list
+  // sentences, in document order, with the same credit pattern as
+  // the other passes (max 2 distinct URLs).
+  if (analysis.answerKind === 'enumeration') {
+    const listed = cands.filter((c) => extractListItems(c.text) !== null).slice(0, 2)
+    if (listed.length > 0) {
+      const lines = listed.map((c) => c.text)
+      for (const url of [...new Set(listed.map((c) => c.url))].slice(0, 2)) {
+        const cand = listed.find((c) => c.url === url) as Cand
+        lines.push(lang === 'fa' ? `منبع: ${sourceSiteName({ url, site: cand.site }, lang)} — ${url}` : `Source: ${sourceSiteName({ url, site: cand.site }, lang)} — ${url}`)
+      }
+      return { lines, found: true }
+    }
   }
   // A-01e QUESTION-ANALYSIS PASS (runs before the generic strict
   // pass, after the ranking branch above): a type-matching sentence

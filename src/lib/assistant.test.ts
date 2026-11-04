@@ -13,6 +13,7 @@ import {
   analyzeQuestion, sentenceMatchesQuestionType, searchQueriesFor,
   decomposeQuestion, subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
   detectFollowUp, expandResearchOpts, researchBodyText,
+  splitComparison, assembleComparisonAnswer, extractListItems,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -1036,5 +1037,92 @@ describe('A-06 selection transforms (rule-based only — no rewriting, no invent
     expect(parseAssistantCommand('متن را کوتاه‌اش کن')).toEqual({ kind: 'selection-shorten' })
     expect(parseAssistantCommand('shorten this text')).toEqual({ kind: 'selection-shorten' })
     expect(parseAssistantCommand('نامه رسمی دری بنویس')).toEqual({ kind: 'insert-template', template: 'letter' })
+  })
+})
+
+describe('A-07 more answer types (general by question type — no per-question branches)', () => {
+  it('splitComparison: FA and EN two-topic comparisons split cleanly', () => {
+    expect(splitComparison('تفاوت تهران و اصفهان چیست؟')).toEqual(['تهران', 'اصفهان'])
+    expect(splitComparison('تفاوت هوش مصنوعی با انسان چیست؟')).toEqual(['هوش مصنوعی', 'انسان'])
+    expect(splitComparison('آیفون بهتر است یا سامسونگ؟')).toEqual(['آیفون', 'سامسونگ'])
+    expect(splitComparison('What is the difference between cats and dogs?')).toEqual(['cats', 'dogs'])
+    const vs = splitComparison('cats vs dogs')
+    expect(vs).not.toBeNull()
+    expect(vs).toHaveLength(2)
+    expect(vs).toEqual(['cats', 'dogs'])
+  })
+  it('splitComparison: null for ranking, multi-part, single-topic and trigger-less questions', () => {
+    expect(splitComparison('کدام هوش مصنوعی در کدنویسی قوی‌تر است؟')).toBeNull()
+    expect(splitComparison('پایتخت فرانسه چیست و جمعیتش چقدر است؟')).toBeNull()
+    expect(splitComparison('تفاوت تهران چیست؟')).toBeNull()
+    expect(splitComparison('پایتخت فرانسه و آلمان چیست؟')).toBeNull()
+  })
+  it('assembleComparisonAnswer: both sides found keep both sentences and both separate credit lines', () => {
+    const out = assembleComparisonAnswer(
+      ['تهران', 'اصفهان'],
+      [
+        { lines: ['تهران پایتخت ایران است.', 'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/Tehran'], found: true },
+        { lines: ['اصفهان شهری تاریخی در ایران است.', 'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/Isfahan'], found: true },
+      ],
+      'fa',
+    )
+    expect(out.found).toBe(true)
+    expect(out.lines).toEqual([
+      'تهران',
+      'تهران پایتخت ایران است.',
+      'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/Tehran',
+      'اصفهان',
+      'اصفهان شهری تاریخی در ایران است.',
+      'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/Isfahan',
+    ])
+  })
+  it('assembleComparisonAnswer: one side not-found yields the honest line for that side only', () => {
+    const out = assembleComparisonAnswer(
+      ['تهران', 'اصفهان'],
+      [
+        { lines: ['تهران پایتخت ایران است.', 'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/Tehran'], found: true },
+        { lines: [], found: false },
+      ],
+      'fa',
+    )
+    expect(out.found).toBe(true)
+    expect(out.lines.join(' ')).toContain('تهران پایتخت ایران است.')
+    expect(out.lines.join(' ')).toContain('برای «اصفهان» پاسخی در منابع پیدا نشد.')
+    expect(out.lines.join(' ')).not.toContain('برای «تهران» پاسخی در منابع پیدا نشد.')
+    const en = assembleComparisonAnswer(['cats', 'dogs'], [{ lines: [], found: false }, { lines: [], found: false }], 'en')
+    expect(en.found).toBe(false)
+    expect(en.lines).toEqual([])
+  })
+  it('extractListItems: FA colon list, FA عبارتند از list, EN includes list', () => {
+    expect(extractListItems('میوه‌های معروف: سیب، موز، انگور، پرتقال.')).toEqual(['سیب', 'موز', 'انگور', 'پرتقال'])
+    expect(extractListItems('عناصر اصلی عبارتند از کربن، هیدروژن، اکسیژن، نیتروژن.')).toEqual(['کربن', 'هیدروژن', 'اکسیژن', 'نیتروژن'])
+    expect(extractListItems('The main colors include red, blue, green, and yellow.')).toEqual(['red', 'blue', 'green', 'yellow'])
+    expect(extractListItems('رنگ‌ها: قرمز، آبی و سبز.')).toEqual(['قرمز', 'آبی', 'سبز'])
+  })
+  it('extractListItems: a 2-item sentence is null; an over-long item is dropped', () => {
+    expect(extractListItems('میوه‌ها: سیب، موز.')).toBeNull()
+    const items = extractListItems('موارد: سیب، موز، انگور، این یک مورد بسیار طولانی با کلمات زیاد است.')
+    expect(items).not.toBeNull()
+    expect(items).toEqual(['سیب', 'موز', 'انگور'])
+  })
+  it('buildAnswer enumeration pass: a real list sentence beats a high-overlap generic sentence', () => {
+    const src = [{
+      title: 'میوه', url: 'https://fa.wikipedia.org/wiki/Fruit',
+      extract: 'میوه‌ها خوراکی‌های معروفی هستند که مردم در سراسر جهان دوست دارند و در بازارها فروخته می‌شوند. میوه‌های معروف عبارتند از: سیب، موز، انگور، پرتقال.',
+    }]
+    const ans = buildAnswer(src, 'میوه‌های معروف کدامند؟', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('عبارتند از: سیب، موز، انگور، پرتقال')
+    expect(ans.lines[ans.lines.length - 1]).toContain('منبع: ویکی‌پدیا')
+  })
+  it('analyzeQuestion: چه زمانی → date, کدامند → enumeration', () => {
+    expect(analyzeQuestion('چه زمانی جنگ جهانی دوم آغاز شد؟').type).toBe('date')
+    expect(analyzeQuestion('چه زمانی جنگ جهانی دوم آغاز شد؟').answerKind).toBe('date')
+    expect(analyzeQuestion('عناصر جدول تناوبی کدامند؟').type).toBe('enumeration')
+    expect(analyzeQuestion('میوه‌های معروف کدام‌اند؟').type).toBe('enumeration')
+  })
+  it('parseAssistantCommand rescues bare comparison phrases to answer', () => {
+    expect(parseAssistantCommand('تفاوت تهران و اصفهان').kind).toBe('answer')
+    expect(parseAssistantCommand('What is the difference between cats and dogs').kind).toBe('answer')
   })
 })
