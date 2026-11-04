@@ -1396,3 +1396,99 @@ describe('A-11 research phrasing (audit 2026-11-04: natural research phrasings m
     if (a.kind === 'research') { expect(a.topic).toBe('فرانسه'); expect(a.pages).toBe(3) }
   })
 })
+
+describe('A-13 Wiktionary meaning leg (engine side; the function leg appends the gloss AFTER Wikipedia)', () => {
+  const q = 'معنی کلمه همدلی چیست؟'
+  // The panels send meaning:true exactly when this holds, so the
+  // flag condition itself is pinned here, not just the answers.
+  it('meaning flag condition: a meaning question names its word, a plain question does not', () => {
+    expect(extractWordMeaningTarget(q)).toBe('همدلی')
+    expect(analyzeQuestion(q).type).toBe('wordMeaning')
+    expect(extractWordMeaningTarget('پایتخت فرانسه کجاست؟')).toBeNull()
+    expect(extractWordMeaningTarget('فرانسه چیست؟')).toBeNull()
+  })
+  it('(a) a Wiktionary gloss answers a meaning question whose Wikipedia source has no usable definition, credited as ویکی‌واژه', () => {
+    const wiki = {
+      title: 'همدلی',
+      url: 'https://fa.wikipedia.org/wiki/همدلی',
+      extract: 'پژوهشگران درباره همدلی کتاب‌های بسیاری نوشته‌اند و در دانشگاه‌ها درباره آن سخنرانی می‌کنند.',
+    }
+    const wikt = {
+      title: 'همدلی',
+      url: 'https://fa.wiktionary.org/wiki/همدلی',
+      extract: 'همدلی، توانایی درک احساسات دیگران است.',
+    }
+    const ans = buildAnswer([wiki, wikt], q, 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('توانایی درک احساسات دیگران')
+    expect(ans.lines.join(' ')).toContain('منبع: ویکی‌واژه — https://fa.wiktionary.org/wiki/همدلی')
+    expect(ans.lines.join(' ')).not.toContain('ویکی‌پدیا')
+  })
+  it('(b) when Wikipedia HAS a usable definition, the Wikipedia answer still wins over the Wiktionary gloss', () => {
+    const wiki = {
+      title: 'همدلی',
+      url: 'https://fa.wikipedia.org/wiki/همدلی',
+      extract: 'همدلی، توانایی درک احساسات دیگران است.',
+    }
+    const wikt = {
+      title: 'همدلی',
+      url: 'https://fa.wiktionary.org/wiki/همدلی',
+      extract: 'همدلی به معنای همراهی با احساسات دیگران است.',
+    }
+    const ans = buildAnswer([wiki, wikt], q, 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('توانایی درک احساسات دیگران')
+    expect(ans.lines.join(' ')).not.toContain('همراهی')
+    expect(ans.lines.join(' ')).not.toContain('wiktionary.org')
+    expect(ans.lines.join(' ')).toContain('منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/همدلی')
+  })
+  it('(c) a word with no usable definition in either source is honestly not-found', () => {
+    const wiki = {
+      title: 'روان‌شناسی',
+      url: 'https://fa.wikipedia.org/wiki/روان‌شناسی',
+      extract: 'روان‌شناسی دانش مطالعه رفتار انسان است و پژوهشگران آن را در دانشگاه‌ها بررسی می‌کنند.',
+    }
+    const wikt = {
+      title: 'همدلی',
+      url: 'https://fa.wiktionary.org/wiki/همدلی',
+      extract: 'هم‌معنی: دلسوزی، شفقت و توجه به احساسات دیگران.',
+    }
+    expect(buildAnswer([wiki, wikt], q, 'fa').found).toBe(false)
+    expect(buildAnswer([wiki], q, 'fa').found).toBe(false)
+  })
+  it('(d) France and Shahnameh regressions still pass', () => {
+    const france = buildAnswer(
+      [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: 'فرانسه کشوری در اروپای غربی است. پاریس پایتخت فرانسه است و این شهر بزرگ است.' }],
+      'پایتخت فرانسه کجاست؟', 'fa')
+    expect(france.found).toBe(true)
+    expect(france.lines.join(' ')).toContain('پاریس')
+    const shahnameh = buildAnswer(
+      [{ title: 'شاهنامه', url: 'https://fa.wikipedia.org/wiki/Shahnameh', extract: 'شاهنامه اثر ابوالقاسم فردوسی شاعر بزرگ ایرانی است.' }],
+      'نویسنده شاهنامه کیست؟', 'fa')
+    expect(shahnameh.found).toBe(true)
+    expect(shahnameh.lines.join(' ')).toContain('فردوسی')
+  })
+  it('(e) sourceSiteName: wiktionary.org URL → ویکی‌واژه in FA, Wiktionary in EN, even with a site field', () => {
+    expect(sourceSiteName({ url: 'https://fa.wiktionary.org/wiki/همدلی' }, 'fa')).toBe('ویکی‌واژه')
+    expect(sourceSiteName({ url: 'https://en.wiktionary.org/wiki/serendipity' }, 'en')).toBe('Wiktionary')
+    expect(sourceSiteName({ url: 'https://en.wiktionary.org/wiki/serendipity', site: 'Wiktionary' }, 'fa')).toBe('ویکی‌واژه')
+    expect(sourceSiteName({ url: 'https://en.wikipedia.org/wiki/Serendipity' }, 'en')).toBe('Wikipedia')
+    expect(sourceSiteName({ url: 'https://www.example-blog.com/post' }, 'fa')).toBe('example-blog.com')
+  })
+  it('(f) the live Wiktionary shape — headword-labelled bare gloss — answers an EN meaning question with a Wiktionary credit', () => {
+    const wiki = {
+      title: 'Psithurism',
+      url: 'https://en.wikipedia.org/wiki/Psithurism',
+      extract: 'Researchers have written many books about the sound of wind and have discussed it at universities.',
+    }
+    const wikt = {
+      title: 'psithurism',
+      url: 'https://en.wiktionary.org/wiki/psithurism',
+      extract: 'psithurism: The sound of rustling leaves or wind in the trees.',
+    }
+    const ans = buildAnswer([wiki, wikt], 'what does psithurism mean?', 'en')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('rustling leaves')
+    expect(ans.lines.join(' ')).toContain('Source: Wiktionary — https://en.wiktionary.org/wiki/psithurism')
+  })
+})

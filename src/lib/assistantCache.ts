@@ -22,6 +22,11 @@ export type AssistantCacheBody = {
   lang: string
   pages?: number
   mode?: 'answer' | 'research'
+  /** A-13: a meaning fetch returns a different source list (with
+   *  the Wiktionary gloss appended) than a plain fetch of the same
+   *  word, so it gets its own cache entry. Absent/false keeps the
+   *  exact old key — existing entries are untouched. */
+  meaning?: boolean
 }
 
 // Normalize so the same question asked with different casing,
@@ -40,7 +45,7 @@ export function normalizeCacheQuery(query: string): string {
 export function assistantCacheKey(body: AssistantCacheBody): string {
   const mode = body.mode ?? 'research'
   const pages = mode === 'research' ? Math.max(1, Math.floor(body.pages ?? 1)) : 1
-  return `${mode}|${body.lang}|${pages}|${normalizeCacheQuery(body.query)}`
+  return `${mode}|${body.lang}|${pages}|${normalizeCacheQuery(body.query)}${body.meaning === true ? '|meaning' : ''}`
 }
 
 const cache = new Map<string, ResearchData[]>()

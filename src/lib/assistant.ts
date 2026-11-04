@@ -930,12 +930,16 @@ export interface ResearchData {
 }
 
 /** Display name for a source's credit line (A-01d): a wikipedia.org
- *  URL is always «ویکی‌پدیا» / «Wikipedia»; otherwise the source's
- *  own site field, else its bare hostname without www. */
+ *  URL is always «ویکی‌پدیا» / «Wikipedia»; A-13: a wiktionary.org
+ *  URL is always «ویکی‌واژه» / «Wiktionary», by the same URL-first
+ *  rule, so the credit holds even when the source carries no site
+ *  field; otherwise the source's own site field, else its bare
+ *  hostname without www. */
 export function sourceSiteName(src: Pick<ResearchData, 'url' | 'site'>, lang: 'fa' | 'en'): string {
   try {
     const host = new URL(src.url).hostname
     if (host.endsWith('wikipedia.org')) return lang === 'fa' ? 'ویکی‌پدیا' : 'Wikipedia'
+    if (host.endsWith('wiktionary.org')) return lang === 'fa' ? 'ویکی‌واژه' : 'Wiktionary'
     if (src.site) return src.site
     return host.replace(/^www\./, '')
   } catch {

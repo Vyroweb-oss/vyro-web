@@ -7,6 +7,7 @@ import {
   subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
   splitComparison, assembleComparisonAnswer,
   detectFollowUp, expandResearchOpts, researchBodyText,
+  extractWordMeaningTarget,
   type AssistantAction, type ResearchData,
 } from '../lib/assistant'
 import { nodesForBuildAction, linesToNodes, nodesToText } from '../lib/agentPage'
@@ -135,16 +136,22 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
       query: String(body.query ?? ''), lang: String(body.lang ?? ''),
       pages: typeof body.pages === 'number' ? body.pages : 1,
       mode: body.mode === 'answer' ? 'answer' : 'research',
+      meaning: body.meaning === true ? true : undefined,
     })
     const cached = getCachedAssistantSources(cacheKey)
     if (cached) return cached
     try {
       const { data: sess } = await supabase.auth.getSession()
       const token = sess.session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
+      // A-13: the meaning flag travels on the wire ONLY as
+      // meaning:true for word-meaning questions; a false flag is
+      // stripped here so non-meaning requests are unchanged.
+      const requestBody = { ...body }
+      if (requestBody.meaning !== true) delete requestBody.meaning
       const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/assistant-search`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify(requestBody),
       })
       if (!res.ok) return 'failed'
       const data = (await res.json()) as { found?: boolean; sources?: ResearchData[] } & Partial<ResearchData>
@@ -204,7 +211,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
       if (cmp) {
         const sides: { lines: string[]; found: boolean }[] = []
         for (const topic of cmp) {
-          const sources = await fetchSources({ query: searchQueryFor(topic), lang: qLang, pages: 1, mode: 'answer' })
+          const sources = await fetchSources({ query: searchQueryFor(topic), lang: qLang, pages: 1, mode: 'answer', meaning: extractWordMeaningTarget(topic) !== null })
           if (typeof sources === 'string') {
             if (sources === 'notfound') { sides.push({ lines: [], found: false }); continue }
             push({ from: 'agent', text: failText(sources) }); return
@@ -221,7 +228,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
       }
       const subs = subQuestionQueries(action.question)
       if (subs.length === 1) {
-        const sources = await fetchSources({ query: searchQueryFor(action.question), lang: qLang, pages: 1, mode: 'answer' })
+        const sources = await fetchSources({ query: searchQueryFor(action.question), lang: qLang, pages: 1, mode: 'answer', meaning: extractWordMeaningTarget(action.question) !== null })
         if (typeof sources === 'string') {
           if (sources === 'notfound') recordWeakQuestion(action.question, 'not-found')
           push({ from: 'agent', text: failText(sources) }); return
@@ -235,7 +242,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
       }
       const results: { question: string; lines: string[]; found: boolean }[] = []
       for (const sub of subs) {
-        let sources = await fetchSources({ query: searchQueryFor(sub.query), lang: qLang, pages: 1, mode: 'answer' })
+        let sources = await fetchSources({ query: searchQueryFor(sub.query), lang: qLang, pages: 1, mode: 'answer', meaning: extractWordMeaningTarget(sub.query) !== null })
         if (typeof sources === 'string') {
           if (sources === 'notfound') { results.push({ question: sub.question, lines: [], found: false }); continue }
           push({ from: 'agent', text: failText(sources) }); return
@@ -248,7 +255,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
           if (tried.has(refined)) break
           tried.add(refined)
           attempts += 1
-          const next = await fetchSources({ query: refined, lang: qLang, pages: 1, mode: 'answer' })
+          const next = await fetchSources({ query: refined, lang: qLang, pages: 1, mode: 'answer', meaning: extractWordMeaningTarget(sub.query) !== null })
           if (typeof next === 'string') break
           sources = next
           answer = buildAnswer(sources, refined, qLang)

@@ -9,6 +9,7 @@ import {
   subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
   splitComparison, assembleComparisonAnswer,
   detectFollowUp, expandResearchOpts, researchBodyText,
+  extractWordMeaningTarget,
   type AssistantAction, type ResearchData,
 } from '../lib/assistant'
 import { formatResultLines } from '../lib/agentPage'
@@ -269,11 +270,11 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
     setResult(null)
     setPendingResearch(null)
     try {
-      const fetchAnswer = async (query: string, qLang: UiLang = lang): Promise<ResearchData[] | 'failed' | 'notfound'> => {
+      const fetchAnswer = async (query: string, qLang: UiLang = lang, meaning = false): Promise<ResearchData[] | 'failed' | 'notfound'> => {
         if (!supabase) return 'failed'
         // A-10: a repeated question in this page session replays its
         // sources from memory instead of searching again.
-        const cacheKey = assistantCacheKey({ query, lang: qLang, mode: 'answer' })
+        const cacheKey = assistantCacheKey({ query, lang: qLang, mode: 'answer', meaning: meaning ? true : undefined })
         const cached = getCachedAssistantSources(cacheKey)
         if (cached) return cached
         const { data: sess } = await supabase.auth.getSession()
@@ -281,7 +282,9 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL as string}/functions/v1/assistant-search`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, lang: qLang, pages: 1, mode: 'answer' }),
+          // A-13: the meaning flag travels ONLY as meaning:true for
+          // word-meaning questions; non-meaning requests are unchanged.
+          body: JSON.stringify({ query, lang: qLang, pages: 1, mode: 'answer', ...(meaning ? { meaning: true } : {}) }),
         })
         if (!res.ok) return 'failed'
         const data = (await res.json()) as { found?: boolean; sources?: ResearchData[] } & Partial<ResearchData>
@@ -302,7 +305,7 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
       if (cmp) {
         const sides: { lines: string[]; found: boolean }[] = []
         for (const topic of cmp) {
-          const sources = await fetchAnswer(searchQueryFor(topic), qLang)
+          const sources = await fetchAnswer(searchQueryFor(topic), qLang, extractWordMeaningTarget(topic) !== null)
           if (sources === 'failed') { setMessage(t('assistantSearchFailed')); return }
           if (sources === 'notfound') { sides.push({ lines: [], found: false }); continue }
           sides.push(buildAnswer(sources, topic, qLang))
@@ -318,7 +321,7 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
       }
       const subs = subQuestionQueries(action.question)
       if (subs.length === 1) {
-        const sources = await fetchAnswer(searchQueryFor(action.question), qLang)
+        const sources = await fetchAnswer(searchQueryFor(action.question), qLang, extractWordMeaningTarget(action.question) !== null)
         if (sources === 'failed') { setMessage(t('assistantSearchFailed')); return }
         if (sources === 'notfound') { recordWeakQuestion(action.question, 'not-found'); setMessage(t('assistantSearchNotFound')); return }
         const conflict = findNumericConflict(sources, action.question, qLang)
@@ -331,7 +334,7 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
       }
       const results: { question: string; lines: string[]; found: boolean }[] = []
       for (const sub of subs) {
-        let sources = await fetchAnswer(searchQueryFor(sub.query), qLang)
+        let sources = await fetchAnswer(searchQueryFor(sub.query), qLang, extractWordMeaningTarget(sub.query) !== null)
         if (sources === 'failed') { setMessage(t('assistantSearchFailed')); return }
         if (sources === 'notfound') { results.push({ question: sub.question, lines: [], found: false }); continue }
         let answer = buildAnswer(sources, sub.query, qLang)
@@ -342,7 +345,7 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
           if (tried.has(refined)) break
           tried.add(refined)
           attempts += 1
-          const next = await fetchAnswer(refined, qLang)
+          const next = await fetchAnswer(refined, qLang, extractWordMeaningTarget(sub.query) !== null)
           if (typeof next === 'string') break
           sources = next
           answer = buildAnswer(sources, refined, qLang)
