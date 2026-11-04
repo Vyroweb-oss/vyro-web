@@ -85,8 +85,13 @@ export function extractResearchTopic(normalized: string): string {
 const QUESTION_STOP = new Set([
   'چیست', 'چه', 'چرا', 'چگونه', 'چطور', 'کی', 'کجا', 'کجاست', 'کدام', 'آیا', 'است', 'هست',
   'می', 'شود', 'کیست', 'چی', 'بگو', 'بده', 'لطفا', 'توضیح',
+  // A-07 LIVE FIX: enumeration imperatives and list words are
+  // commands, not subjects — «نام ببر» must not search for «ببر»
+  // (tiger) and «فهرست» must not search for a list article.
+  'ببر', 'ببرید', 'بشمار', 'نام', 'فهرست', 'لیست',
   'what', 'why', 'how', 'when', 'where', 'who', 'which', 'is', 'are', 'can', 'does', 'do',
   'the', 'a', 'an', 'of', 'in', 'on', 'please', 'tell', 'me', 'about',
+  'list', 'name',
 ])
 
 /** The searchable subject of a free-form question (owner order
@@ -1506,11 +1511,21 @@ export function buildAnswer(
   // A-07 ENUMERATION PASS (before the analysis pass): for a
   // list/enumeration question, a real list sentence from the
   // sources answers directly — a high-overlap generic sentence that
-  // merely mentions the topic must not win over it. Up to 2 list
+  // merely mentions the topic must not win over it. A-07 LIVE FIX:
+  // the pass used to take the FIRST list-shaped sentence regardless
+  // of topic, so an off-topic source's list (a marsupial genus's
+  // members for a tropical-fruit question) won live. A list sentence
+  // now counts only when it shares a CONTENT token with the question
+  // (ZWNJ-split matching, as in the other passes). Up to 2 list
   // sentences, in document order, with the same credit pattern as
   // the other passes (max 2 distinct URLs).
   if (analysis.answerKind === 'enumeration') {
-    const listed = cands.filter((c) => extractListItems(c.text) !== null).slice(0, 2)
+    const enumContent = [...qTokens].filter((t) => t !== 'تر' && !FUNCTION_WORDS.has(t))
+    const listed = cands.filter((c) => {
+      if (extractListItems(c.text) === null) return false
+      const toks = expandedToks(c.text)
+      return enumContent.some((t) => toks.has(t))
+    }).slice(0, 2)
     if (listed.length > 0) {
       const lines = listed.map((c) => c.text)
       for (const url of [...new Set(listed.map((c) => c.url))].slice(0, 2)) {

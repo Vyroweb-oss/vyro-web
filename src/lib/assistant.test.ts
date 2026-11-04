@@ -1132,4 +1132,24 @@ describe('A-07 more answer types (general by question type — no per-question b
     expect(parseAssistantCommand('یک لیست بساز').kind).toBe('insert-list')
     expect(parseAssistantCommand('فهرست: سیب، موز').kind).toBe('insert-list')
   })
+  it('searchQueryFor strips enumeration imperatives so the query keeps only the subject', () => {
+    expect(searchQueryFor('سه میوه استوایی نام ببر')).toBe('سه میوه استوایی')
+    expect(searchQueryFor('List three primary colors')).toBe('three primary colors')
+  })
+  it('buildAnswer enumeration pass rejects an off-topic list sentence (A-07 live failure)', () => {
+    const offTopic = {
+      title: 'فاسکوگال', url: 'https://fa.wikipedia.org/wiki/Phascogale',
+      extract: 'فاسکوگال سرده‌ای از کیسه‌داران است. اعضای این سرده عبارتند از: راسوی کیسه‌دار دم‌قلمویی، راسوی کیسه‌دار دم‌قرمز، راسوی کیسه‌دار دم‌سیاه.',
+    }
+    const onTopic = {
+      title: 'میوه استوایی', url: 'https://fa.wikipedia.org/wiki/Tropical_fruit',
+      extract: 'میوه‌های استوایی در مناطق گرم می‌رویند. میوه‌های استوایی معروف عبارتند از: انبه، موز، آناناس، پاپایا.',
+    }
+    const ans = buildAnswer([offTopic, onTopic], 'سه میوه استوایی نام ببر', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines.join(' ')).toContain('انبه')
+    expect(ans.lines.join(' ')).not.toContain('راسوی')
+    const alone = buildAnswer([offTopic], 'سه میوه استوایی نام ببر', 'fa')
+    expect(alone.found).toBe(false)
+  })
 })
