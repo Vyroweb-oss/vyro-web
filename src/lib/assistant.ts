@@ -67,6 +67,14 @@ const RESEARCH_STOP = new Set([
   // is the adjective tail, never part of the topic; «چیست» guards
   // «تحقیق درباره چیست؟» from becoming research about «چیست».
   'ای', 'چیست',
+  // A-16: request-verb fragments and colloquial determiners are
+  // commands, not topics — «می‌خوام» normalizes (ZWNJ → space) to
+  // the tokens «می» + «خوام», so both fragments must be stopped,
+  // plus the joined forms and «یه»/«لطفا»/«بنویسید». Each entry is
+  // a function/request word: a lone «می» is never a topic, and a
+  // content word like «میوه» is a different token and survives.
+  'می', 'خوام', 'خواهم', 'میخوام', 'میخواهم', 'یه', 'لطفا', 'بنویسید',
+  'please', 'want', 'wanna',
   'صفحه', 'صفحات', 'page', 'pages', 'دو', 'سه', 'چهار', 'پنج', 'شش', 'هفت', 'هشت', 'نه',
   'ده', 'پانزده', 'بیست', 'سی', 'تایپ', 'درج', 'نشان', 'نمایش', 'سند', 'فقط', 'بده',
   'نکن', 'ننویس', 'نکنید',

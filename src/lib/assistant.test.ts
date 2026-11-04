@@ -1648,3 +1648,42 @@ describe('A-15 shorten sentence-aware cap (general — no per-input branches)', 
     verbatimInOrder(short, text)
   })
 })
+
+describe('A-16 research topic cleanup (general — no per-input branches)', () => {
+  const researchTopic = (input: string) => {
+    const a = parseAssistantCommand(input)
+    expect(a.kind).toBe('research')
+    if (a.kind === 'research') return a.topic
+    return ''
+  }
+  it('«تحقیق درباره فرانسه می‌خوام» yields exactly «فرانسه», not «فرانسه می خوام»', () => {
+    expect(researchTopic('تحقیق درباره فرانسه می‌خوام')).toBe('فرانسه')
+  })
+  it('«یه تحقیق درباره فرانسه بنویس» yields exactly «فرانسه», not «یه فرانسه»', () => {
+    expect(researchTopic('یه تحقیق درباره فرانسه بنویس')).toBe('فرانسه')
+  })
+  it('«درباره فرانسه تحقیق می‌خوام» yields exactly «فرانسه»', () => {
+    expect(researchTopic('درباره فرانسه تحقیق می‌خوام')).toBe('فرانسه')
+  })
+  it('«لطفا درباره فرانسه تحقیق بنویس» yields exactly «فرانسه»', () => {
+    expect(researchTopic('لطفا درباره فرانسه تحقیق بنویس')).toBe('فرانسه')
+  })
+  it('EN «please research France» yields the bare normalized topic «france»', () => {
+    expect(researchTopic('please research France')).toBe('france')
+  })
+  it('«تحقیق درباره میوه» keeps «میوه»: the «می» stop word never eats a content word', () => {
+    expect(researchTopic('تحقیق درباره میوه')).toBe('میوه')
+  })
+  it('standing regressions: France question (پاریس) and Shahnameh (فردوسی) still answer', () => {
+    const france = buildAnswer(
+      [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: 'فرانسه کشوری در اروپای غربی است. پاریس پایتخت فرانسه است و این شهر بزرگ است.' }],
+      'پایتخت فرانسه کجاست؟', 'fa')
+    expect(france.found).toBe(true)
+    expect(france.lines.join(' ')).toContain('پاریس')
+    const shahnameh = buildAnswer(
+      [{ title: 'شاهنامه', url: 'https://fa.wikipedia.org/wiki/Shahnameh', extract: 'شاهنامه اثر ابوالقاسم فردوسی شاعر بزرگ ایرانی است.' }],
+      'نویسنده شاهنامه کیست؟', 'fa')
+    expect(shahnameh.found).toBe(true)
+    expect(shahnameh.lines.join(' ')).toContain('فردوسی')
+  })
+})
