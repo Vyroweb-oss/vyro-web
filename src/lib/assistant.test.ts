@@ -1125,4 +1125,11 @@ describe('A-07 more answer types (general by question type — no per-question b
     expect(parseAssistantCommand('تفاوت تهران و اصفهان').kind).toBe('answer')
     expect(parseAssistantCommand('What is the difference between cats and dogs').kind).toBe('answer')
   })
+  it('parseAssistantCommand rescues bare enumeration phrases to answer, keeps list builds', () => {
+    expect(parseAssistantCommand('سه میوه استوایی نام ببر').kind).toBe('answer')
+    expect(parseAssistantCommand('فهرست سه سیاره نزدیک به خورشید').kind).toBe('answer')
+    expect(parseAssistantCommand('List three primary colors').kind).toBe('answer')
+    expect(parseAssistantCommand('یک لیست بساز').kind).toBe('insert-list')
+    expect(parseAssistantCommand('فهرست: سیب، موز').kind).toBe('insert-list')
+  })
 })

@@ -496,8 +496,15 @@ export function parseAssistantCommand(raw: string): AssistantAction {
   }
 
   // List: «فهرست: سیب، موز» / «لیست بساز» / "list: a, b"
+  // A-07 LIVE FIX: the old branch hijacked ANY input containing
+  // فهرست/لیست/list — including list QUESTIONS («فهرست سه سیاره…»,
+  // "List three primary colors"), which became empty insert-list
+  // commands instead of answers. A bare list word now builds only
+  // with a build verb (بساز/بنویس/…) or the colon form; a bare
+  // list question falls through to the question check below, whose
+  // QUESTION_WORD rescues it as an answer.
   const listMatch = input.match(/(?:فهرست|لیست|list)\s*[:：]\s*(.+)/i)
-  if (listMatch || has('فهرست', 'لیست', 'list')) {
+  if (listMatch || (has('فهرست', 'لیست', 'list') && has('بساز', 'بنویس', 'اضافه', 'add', 'insert', 'create', 'make'))) {
     const ordered = has('شماره', 'number', 'مرقم', 'عددی')
     const items = listMatch
       ? listMatch[1].split(/[،,؛;\n]/).map((x) => x.trim()).filter(Boolean)
@@ -545,7 +552,7 @@ export function parseAssistantCommand(raw: string): AssistantAction {
   // (2) a ؟ anywhere (not only at the end) marks a question. Known
   // commands are all matched ABOVE this block, so nothing here can
   // hijack a command — it only rescues questions that used to die.
-  const QUESTION_WORD = /(?:^|\s)(?:چیست|کیست|چه|چرا|چگونه|چطور|کی|کجا|کجاست|کدام|چند|چقدر|آیا|تفاوت|فرق|مقایسه)(?=\s|$)|(?:^|\s)(?:what|why|how|when|where|who|which|is|are|can|does|do|difference|compare)(?=\s|$)/
+  const QUESTION_WORD = /(?:^|\s)(?:چیست|کیست|چه|چرا|چگونه|چطور|کی|کجا|کجاست|کدام|چند|چقدر|آیا|تفاوت|فرق|مقایسه|ببر|ببرید|بشمار|فهرست|لیست)(?=\s|$)|(?:^|\s)(?:what|why|how|when|where|who|which|is|are|can|does|do|difference|compare|list)(?=\s|$)/
   if (/[؟?]/.test(s) || QUESTION_WORD.test(s)) {
     return { kind: 'answer', question: input }
   }
