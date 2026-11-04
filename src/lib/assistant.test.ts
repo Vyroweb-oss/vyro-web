@@ -13,7 +13,7 @@ import {
   analyzeQuestion, sentenceMatchesQuestionType, searchQueriesFor,
   decomposeQuestion, subQuestionQueries, refineQuery, assembleThoughtAnswer, findNumericConflict,
   detectFollowUp, expandResearchOpts, researchBodyText,
-  splitComparison, assembleComparisonAnswer, extractListItems,
+  splitComparison, assembleComparisonAnswer, extractListItems, extractRequestedCount,
 } from './assistant'
 
 describe('assistant command parsing — create/build', () => {
@@ -1112,8 +1112,9 @@ describe('A-07 more answer types (general by question type — no per-question b
     }]
     const ans = buildAnswer(src, 'میوه‌های معروف کدامند؟', 'fa')
     expect(ans.found).toBe(true)
-    expect(ans.lines.join(' ')).toContain('عبارتند از: سیب، موز، انگور، پرتقال')
-    expect(ans.lines[ans.lines.length - 1]).toContain('منبع: ویکی‌پدیا')
+    // A-07b SUPERSEDES the old prose expectation: the answer is the
+    // extracted items as separate lines, with the credit after them.
+    expect(ans.lines).toEqual(['سیب', 'موز', 'انگور', 'پرتقال', expect.stringContaining('منبع: ویکی‌پدیا')])
   })
   it('analyzeQuestion: چه زمانی → date, کدامند → enumeration', () => {
     expect(analyzeQuestion('چه زمانی جنگ جهانی دوم آغاز شد؟').type).toBe('date')
@@ -1147,9 +1148,46 @@ describe('A-07 more answer types (general by question type — no per-question b
     }
     const ans = buildAnswer([offTopic, onTopic], 'سه میوه استوایی نام ببر', 'fa')
     expect(ans.found).toBe(true)
-    expect(ans.lines.join(' ')).toContain('انبه')
+    // A-07b: exactly the asked 3 items as lines, on-topic only.
+    expect(ans.lines).toEqual(['انبه', 'موز', 'آناناس', expect.stringContaining('منبع: ویکی‌پدیا')])
     expect(ans.lines.join(' ')).not.toContain('راسوی')
     const alone = buildAnswer([offTopic], 'سه میوه استوایی نام ببر', 'fa')
     expect(alone.found).toBe(false)
+  })
+  it('extractRequestedCount: FA words, Persian digits, Latin digits, EN words, none', () => {
+    expect(extractRequestedCount('سه میوه استوایی نام ببر')).toBe(3)
+    expect(extractRequestedCount('۵ رنگ اصلی را نام ببر')).toBe(5)
+    expect(extractRequestedCount('Name 4 primary colors')).toBe(4)
+    expect(extractRequestedCount('Name three primary colors')).toBe(3)
+    expect(extractRequestedCount('میوه‌های معروف کدامند؟')).toBeNull()
+    expect(extractRequestedCount('What are the main colors?')).toBeNull()
+  })
+  it('buildAnswer enumeration: EN count cap, no-count default cap of 10', () => {
+    const colors = [{
+      title: 'Color', url: 'https://en.wikipedia.org/wiki/Color',
+      extract: 'Colors are everywhere. The main colors include red, blue, green, yellow, purple.',
+    }]
+    const three = buildAnswer(colors, 'List three primary colors', 'en')
+    expect(three.found).toBe(true)
+    expect(three.lines).toEqual(['red', 'blue', 'green', expect.stringContaining('Source: Wikipedia')])
+    const many = [{
+      title: 'Fruit', url: 'https://en.wikipedia.org/wiki/Fruit',
+      extract: 'Fruits grow worldwide. Common fruits include apple, banana, cherry, date, elderberry, fig, grape, honeydew, kiwi, lemon, mango, nectarine.',
+    }]
+    const capped = buildAnswer(many, 'List common fruits', 'en')
+    expect(capped.found).toBe(true)
+    // No count named: all extracted items, capped at 10, then credit.
+    expect(capped.lines).toHaveLength(11)
+    expect(capped.lines.slice(0, 10)).toEqual(['apple', 'banana', 'cherry', 'date', 'elderberry', 'fig', 'grape', 'honeydew', 'kiwi', 'lemon'])
+    expect(capped.lines[10]).toContain('Source: Wikipedia')
+  })
+  it('buildAnswer enumeration: a named count above the extracted items is never padded', () => {
+    const src = [{
+      title: 'میوه', url: 'https://fa.wikipedia.org/wiki/Fruit',
+      extract: 'میوه‌های معروف عبارتند از: سیب، موز، انگور، پرتقال.',
+    }]
+    const ans = buildAnswer(src, 'ده میوه معروف نام ببر', 'fa')
+    expect(ans.found).toBe(true)
+    expect(ans.lines).toEqual(['سیب', 'موز', 'انگور', 'پرتقال', expect.stringContaining('منبع: ویکی‌پدیا')])
   })
 })

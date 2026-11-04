@@ -1298,6 +1298,37 @@ export function extractListItems(sentence: string): string[] | null {
   return items.length >= 3 ? items : null
 }
 
+// ---- A-07b enumeration presentation --------------------------------------
+// A count the question itself names, in any of the forms users write
+// it: Persian number words (یک تا ده), Latin digits, or Persian
+// digits (normalizeCommand already folds Persian digits to Latin,
+// so one digit branch covers both). English one–ten likewise. The
+// FIRST number token wins — an enumeration question names its count
+// up front («سه میوه…», «Name three colors»). Null when the
+// question names no count, so the caller falls back to the sane
+// maximum. A count above the items actually extracted is never
+// padded: the caller returns only what the sources list.
+const FA_NUMBER_WORDS: Record<string, number> = {
+  'یک': 1, 'دو': 2, 'سه': 3, 'چهار': 4, 'پنج': 5,
+  'شش': 6, 'هفت': 7, 'هشت': 8, 'نه': 9, 'ده': 10,
+}
+const EN_NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+}
+export function extractRequestedCount(question: string): number | null {
+  const toks = normalizeCommand(question).split(' ').map(cleanToken).filter(Boolean)
+  for (const t of toks) {
+    if (/^\d+$/.test(t)) {
+      const n = parseInt(t, 10)
+      if (n >= 1) return n
+    }
+    if (FA_NUMBER_WORDS[t] !== undefined) return FA_NUMBER_WORDS[t]
+    if (EN_NUMBER_WORDS[t] !== undefined) return EN_NUMBER_WORDS[t]
+  }
+  return null
+}
+
 /** Answer a free-form question from the fetched sources (owner order
  *  2026-11-03: any kind of question, answered in seconds). The
  *  answer is the sources' own sentences that best match the
@@ -1527,12 +1558,31 @@ export function buildAnswer(
       return enumContent.some((t) => toks.has(t))
     }).slice(0, 2)
     if (listed.length > 0) {
-      const lines = listed.map((c) => c.text)
-      for (const url of [...new Set(listed.map((c) => c.url))].slice(0, 2)) {
-        const cand = listed.find((c) => c.url === url) as Cand
-        lines.push(lang === 'fa' ? `منبع: ${sourceSiteName({ url, site: cand.site }, lang)} — ${url}` : `Source: ${sourceSiteName({ url, site: cand.site }, lang)} — ${url}`)
+      // A-07b ENUMERATION PRESENTATION: return the EXTRACTED ITEMS
+      // as separate lines, not the raw prose sentence — the panels
+      // already render answer lines one-per-line, so items display
+      // as a list, and the insert path (asList false) keeps them as
+      // plain paragraphs. The count the question names caps the
+      // items exactly; with no named count, at most 10 ship, so a
+      // 15-item dump never reaches the user. Credits name only the
+      // sources that actually contributed a shown item, and the
+      // credit line itself is never an item.
+      const shown: { item: string; url: string; site?: string }[] = []
+      for (const c of listed) {
+        for (const item of extractListItems(c.text) ?? []) {
+          if (!shown.some((s) => s.item === item)) shown.push({ item, url: c.url, site: c.site })
+        }
       }
-      return { lines, found: true }
+      const requested = extractRequestedCount(question)
+      const capped = shown.slice(0, requested ?? 10)
+      if (capped.length > 0) {
+        const lines = capped.map((s) => s.item)
+        for (const url of [...new Set(capped.map((s) => s.url))].slice(0, 2)) {
+          const s = capped.find((x) => x.url === url) as { url: string; site?: string }
+          lines.push(lang === 'fa' ? `منبع: ${sourceSiteName({ url, site: s.site }, lang)} — ${url}` : `Source: ${sourceSiteName({ url, site: s.site }, lang)} — ${url}`)
+        }
+        return { lines, found: true }
+      }
     }
   }
   // A-01e QUESTION-ANALYSIS PASS (runs before the generic strict

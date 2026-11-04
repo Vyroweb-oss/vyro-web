@@ -66,6 +66,12 @@ describe('agentPage linesToNodes + nodesToText', () => {
     expect(nodesToText(nodes)).toContain('a')
   })
 
+  it('A-07b: enumeration answer lines insert as paragraphs, credit never a bullet', () => {
+    const nodes = linesToNodes(['انبه', 'موز', 'آناناس', 'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/X'])
+    expect(nodes.every((n) => n.type === 'paragraph')).toBe(true)
+    expect(nodesToText(nodes)).toBe('انبه\nموز\nآناناس\nمنبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/X')
+  })
+
   it('flattens table nodes with cell separators', () => {
     const text = nodesToText(tableNodes(2, 2))
     expect(typeof text).toBe('string')
