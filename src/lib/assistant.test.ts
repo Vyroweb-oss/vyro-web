@@ -1545,3 +1545,51 @@ describe('A-13c meaning-gate substring fix (general sense rule, not per-word)', 
     expect(azadi.lines.join(' ')).toContain('آزادی')
   })
 })
+
+describe('A-14 research multi-source payload cap (A-03 caveat: long research shipped single-source)', () => {
+  // This pins the CONTRACT the function-side fair-share cap must
+  // satisfy: a 3-page payload in which the main article is truncated
+  // to its fair share (not starved to zero, not swallowing the cap)
+  // and supplementary sources survive with real sections. Under the
+  // old sequential cap the second/third sources would never reach
+  // the client at all, so their headings and credits would be absent.
+  const sent = (topic: string, i: number) =>
+    `این جمله شماره ${i + 1} درباره ${topic} است و اطلاعات مهم و دقیقی درباره آن ارائه می کند و شرح می دهد.`
+  const section = (heading: string, topic: string, n: number) =>
+    `== ${heading} ==\n` + Array.from({ length: n }, (_, i) => sent(topic, i)).join(' ')
+  it('a fair-share 3-page payload uses and credits every source, with later sources sections in the body', () => {
+    const main = {
+      title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France',
+      extract: `${sent('فرانسه', 0)} ${sent('فرانسه', 1)}\n${section('جغرافیا', 'جغرافیای فرانسه', 12)}`,
+    }
+    const second = {
+      title: 'اقتصاد فرانسه', url: 'https://fa.wikipedia.org/wiki/Economy_of_France',
+      extract: section('اقتصاد', 'اقتصاد فرانسه', 20),
+    }
+    const third = {
+      title: 'فرهنگ فرانسه', url: 'https://fa.wikipedia.org/wiki/Culture_of_France',
+      extract: section('فرهنگ', 'فرهنگ فرانسه', 20),
+    }
+    const out = assembleResearch([main, second, third], 'fa', { pages: 3 })
+    const all = JSON.stringify(out.nodes)
+    expect(all).toContain('منابع:')
+    expect(all).toContain('https://fa.wikipedia.org/wiki/France')
+    expect(all).toContain('https://fa.wikipedia.org/wiki/Economy_of_France')
+    expect(all).toContain('https://fa.wikipedia.org/wiki/Culture_of_France')
+    // Later sources contribute body, not just a credit line.
+    expect(all).toContain('اقتصاد')
+    expect(all).toContain('فرهنگ')
+    expect(out.words).toBeGreaterThan(300)
+  })
+  it('France regression still passes (single-source research + capital answer)', () => {
+    const france = buildAnswer(
+      [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: 'فرانسه کشوری در اروپای غربی است. پاریس پایتخت فرانسه است و این شهر بزرگ است.' }],
+      'پایتخت فرانسه کجاست؟', 'fa')
+    expect(france.found).toBe(true)
+    expect(france.lines.join(' ')).toContain('پاریس')
+    const research = assembleResearch(
+      [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: `${sent('فرانسه', 0)} ${sent('فرانسه', 1)}` }],
+      'fa', { pages: 1 })
+    expect(JSON.stringify(research.nodes)).toContain('https://fa.wikipedia.org/wiki/France')
+  })
+})
