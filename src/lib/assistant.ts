@@ -1918,7 +1918,16 @@ export interface ThoughtPartResult { question: string; lines: string[]; found: b
  *  stable within each rank): found parts contribute their own
  *  sentences + credit lines, unanswered parts contribute one honest
  *  line naming the part, never a guessed answer. Duplicate sentences
- *  are kept once. No part found at all → found false, no lines. */
+ *  are kept once. No part found at all → found false, no lines.
+ *  A-12 MULTI-PART BREATH CAP: a multi-part answer keeps at most
+ *  TWO non-credit lines per part — the type-matching sentence first
+ *  (sentenceMatchesQuestionType against that part's own analysis),
+ *  then the strongest additional line in buildAnswer order — so a
+ *  loosely related third line can no longer ride along (the A-01f
+ *  leftover: up to 3 sentences per part, e.g. the 963 km line in
+ *  the live multi-part France reply). Credit lines are never
+ *  capped and never reordered. Single-part answers are untouched
+ *  (the early return above). */
 export function assembleThoughtAnswer(parts: ThoughtPartResult[], lang: 'fa' | 'en'): { lines: string[]; found: boolean } {
   if (parts.length === 0) return { lines: [], found: false }
   if (parts.length === 1) return { lines: parts[0].lines, found: parts[0].found }
@@ -1937,12 +1946,18 @@ export function assembleThoughtAnswer(parts: ThoughtPartResult[], lang: 'fa' | '
   for (const { p } of ordered) {
     if (p.found) {
       anyFound = true
-      for (const line of p.lines) {
-        if (line.startsWith('منبع:') || line.startsWith('Source:')) { lines.push(line); continue }
-        if (seen.has(line)) continue
-        seen.add(line)
-        lines.push(line)
-      }
+      const credits = p.lines.filter((l) => l.startsWith('منبع:') || l.startsWith('Source:'))
+      const sentences = p.lines.filter((l) => !l.startsWith('منبع:') && !l.startsWith('Source:'))
+      // Dedup against lines already SHOWN (a line dropped by the
+      // cap below stays eligible for a later part, since the user
+      // never saw it).
+      const unseen = sentences.filter((l) => !seen.has(l))
+      const analysis = analyzeQuestion(p.question)
+      const typeFirst = unseen.filter((l) => sentenceMatchesQuestionType(l, analysis))
+      const rest = unseen.filter((l) => !sentenceMatchesQuestionType(l, analysis))
+      const kept = [...typeFirst, ...rest].slice(0, 2)
+      kept.forEach((l) => seen.add(l))
+      lines.push(...kept, ...credits)
     } else {
       lines.push(lang === 'fa'
         ? `برای این بخش پاسخی در منابع پیدا نشد: ${p.question}`

@@ -761,6 +761,49 @@ describe('A-01f thinking brain (owner order 2026-11-03: a reasoning layer, gener
     expect(out.lines.join(' ')).toContain('پاریس')
     expect(out.lines.join(' ')).toContain('۶۸ میلیون')
   })
+  it('A-12 MULTI-PART BREATH CAP: at most 2 sentences per part, type-matching first, credits unchanged', () => {
+    const assembled = assembleThoughtAnswer([
+      { question: 'پایتخت فرانسه چیست؟', lines: [
+        'فرانسه کشوری در اروپای غربی است.',
+        'مساحت فرانسه حدود ۶۴۳ هزار کیلومتر مربع است.',
+        'پاریس پایتخت فرانسه است.',
+        'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/France',
+      ], found: true },
+      { question: 'جمعیت فرانسه چقدر است؟', lines: [
+        'جمعیت فرانسه حدود ۶۸ میلیون نفر است.',
+        'فرانسه در سال ۲۰۲۴ حدود ۶۸ میلیون نفر جمعیت داشت.',
+        'پاریس بزرگ‌ترین شهر فرانسه است.',
+        'منبع: ویکی‌پدیا — https://fa.wikipedia.org/wiki/France',
+      ], found: true },
+    ], 'fa')
+    expect(assembled.found).toBe(true)
+    const nonCredit = assembled.lines.filter((l) => !l.startsWith('منبع:'))
+    expect(nonCredit).toHaveLength(4)
+    // Capital part: the place-bearing sentence jumps first, the
+    // loosely related area line is the one dropped by the cap.
+    expect(nonCredit[0]).toContain('پاریس پایتخت فرانسه است')
+    expect(assembled.lines.join(' ')).not.toContain('۶۴۳ هزار')
+    expect(assembled.lines.join(' ')).not.toContain('بزرگ‌ترین شهر فرانسه')
+    // Both parts' credits survive the cap unchanged.
+    expect(assembled.lines.filter((l) => l.startsWith('منبع:'))).toHaveLength(2)
+  })
+  it('A-12 SINGLE-PART UNTOUCHED + France/Shahnameh regressions', () => {
+    const single = assembleThoughtAnswer([
+      { question: 'پایتخت فرانسه چیست؟', lines: ['الف.', 'ب.', 'ج.', 'منبع: ویکی‌پدیا — https://example.org/x'], found: true },
+    ], 'fa')
+    expect(single.lines).toHaveLength(4)
+    const france = buildAnswer(
+      [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: 'فرانسه کشوری در اروپای غربی است. پاریس پایتخت فرانسه است و این شهر بزرگ است.' }],
+      'پایتخت فرانسه کجاست؟', 'fa')
+    expect(france.found).toBe(true)
+    expect(france.lines.join(' ')).toContain('پاریس')
+    expect(france.lines.join(' ')).not.toContain('کره')
+    const shahnameh = buildAnswer(
+      [{ title: 'شاهنامه', url: 'https://fa.wikipedia.org/wiki/Shahnameh', extract: 'شاهنامه اثر ابوالقاسم فردوسی شاعر بزرگ ایرانی است.' }],
+      'نویسنده شاهنامه کیست؟', 'fa')
+    expect(shahnameh.found).toBe(true)
+    expect(shahnameh.lines.join(' ')).toContain('فردوسی')
+  })
   it('CROSS-CHECK: two sources with different population numbers show the disagreement with both credits, never one silently', () => {
     const a = [{ title: 'فرانسه', url: 'https://fa.wikipedia.org/wiki/France', extract: 'جمعیت فرانسه حدود ۶۸ میلیون نفر است.' }]
     const b = [{ title: 'جمعیت فرانسه', url: 'https://example.org/fr-pop', extract: 'جمعیت فرانسه حدود ۶۶ میلیون نفر است.' }]
