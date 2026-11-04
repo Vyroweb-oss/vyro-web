@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { nodesForBuildAction, linesToNodes, nodesToText, tableNodes } from './agentPage'
+import { nodesForBuildAction, linesToNodes, nodesToText, tableNodes, formatResultLines } from './agentPage'
 
 describe('agentPage nodesForBuildAction', () => {
   it('builds a table with a header row and the requested size', () => {
@@ -75,5 +75,11 @@ describe('agentPage linesToNodes + nodesToText', () => {
   it('flattens table nodes with cell separators', () => {
     const text = nodesToText(tableNodes(2, 2))
     expect(typeof text).toBe('string')
+  })
+
+  it('A-09: copy text matches the displayed lines, bullets included for lists', () => {
+    expect(formatResultLines(['one', 'two'])).toBe('one\ntwo')
+    expect(formatResultLines(['a', 'b'], true)).toBe('• a\n• b')
+    expect(formatResultLines([])).toBe('')
   })
 })

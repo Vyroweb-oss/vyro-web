@@ -36,6 +36,9 @@ type Entry = {
   lines?: string[]
   asList?: boolean
   nodes?: object[]
+  // A-09: what kind of result this is, so the history can label an
+  // answer and a research draft differently at a glance.
+  kind?: 'answer' | 'research'
   // A-01g: the question behind an answer, so feedback and the local
   // weak list can attach to it (never leaves this device).
   question?: string
@@ -50,6 +53,8 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
   const t = (k: I18nKey) => tr(lang, k)
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  // A-09: which search is in flight, so the progress line can name it.
+  const [busyKind, setBusyKind] = useState<'answer' | 'research' | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
   const [notice, setNotice] = useState('')
   // A-01g learning from users (local only): voted answer ids and the
@@ -148,6 +153,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
 
   const doResearch = async (action: Extract<AssistantAction, { kind: 'research' }>) => {
     setBusy(true)
+    setBusyKind('research')
     try {
       const sources = await fetchSources({ query: action.topic, lang, pages: action.pages ?? 1 })
       if (typeof sources === 'string') { push({ from: 'agent', text: failText(sources) }); return }
@@ -161,9 +167,10 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
       // The Agent page ALWAYS prepares the result here first (it is the
       // one place for requests); inserting or creating a document is
       // the user's tap on the result's own buttons.
-      push({ from: 'agent', title: sources[0].title, text: `${meta}${short}`, nodes: built.nodes as object[] })
+      push({ from: 'agent', title: sources[0].title, text: `${meta}${short}`, nodes: built.nodes as object[], kind: 'research' })
     } finally {
       setBusy(false)
+      setBusyKind(null)
     }
   }
 
@@ -174,6 +181,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
   // shows a disagreement instead of silently picking one number.
   const doAnswer = async (action: Extract<AssistantAction, { kind: 'answer' }>) => {
     setBusy(true)
+    setBusyKind('answer')
     try {
       // A-01g: a Dari-speaking user's question is searched and
       // answered in Dari even when the UI language is English.
@@ -197,7 +205,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
         // No applyDetailPreference here: its short mode keeps only
         // the first sentence plus credits, which would break the
         // two-side structure.
-        push({ from: 'agent', title: t('assistantAnswerTitle'), lines: compared.lines, question: action.question })
+        push({ from: 'agent', title: t('assistantAnswerTitle'), lines: compared.lines, question: action.question, kind: 'answer' })
         return
       }
       const subs = subQuestionQueries(action.question)
@@ -208,10 +216,10 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
           push({ from: 'agent', text: failText(sources) }); return
         }
         const conflict = findNumericConflict(sources, action.question, qLang)
-        if (conflict) { push({ from: 'agent', title: t('assistantAnswerTitle'), lines: applyDetailPreference(conflict, feedbackPreference()), question: action.question }); return }
+        if (conflict) { push({ from: 'agent', title: t('assistantAnswerTitle'), lines: applyDetailPreference(conflict, feedbackPreference()), question: action.question, kind: 'answer' }); return }
         const answer = buildAnswer(sources, action.question, qLang)
         if (!answer.found) { recordWeakQuestion(action.question, 'not-found'); push({ from: 'agent', text: t('assistantAnswerNotFound') }); return }
-        push({ from: 'agent', title: t('assistantAnswerTitle'), lines: applyDetailPreference(answer.lines, feedbackPreference()), question: action.question })
+        push({ from: 'agent', title: t('assistantAnswerTitle'), lines: applyDetailPreference(answer.lines, feedbackPreference()), question: action.question, kind: 'answer' })
         return
       }
       const results: { question: string; lines: string[]; found: boolean }[] = []
@@ -241,9 +249,10 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
         for (const r of results) if (!r.found) recordWeakQuestion(r.question, 'not-found')
         push({ from: 'agent', text: t('assistantAnswerNotFound') }); return
       }
-      push({ from: 'agent', title: t('assistantAnswerTitle'), lines: applyDetailPreference(assembled.lines, feedbackPreference()), question: action.question })
+      push({ from: 'agent', title: t('assistantAnswerTitle'), lines: applyDetailPreference(assembled.lines, feedbackPreference()), question: action.question, kind: 'answer' })
     } finally {
       setBusy(false)
+      setBusyKind(null)
     }
   }
 
@@ -347,7 +356,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
       .replace('{w}', String(trueWords))
       .replace('{p}', String(estimateResearchPages(built.nodes)))
     const short = built.words < built.targetWords * 0.85 ? ` ${t('assistantResearchShort')}` : ''
-    push({ from: 'agent', title: lastResearch.sources[0].title, text: `${meta}${short}`, nodes: built.nodes as object[] })
+    push({ from: 'agent', title: lastResearch.sources[0].title, text: `${meta}${short}`, nodes: built.nodes as object[], kind: 'research' })
     setLastResearch({ ...lastResearch, pages, words: trueWords, nodes: built.nodes as object[] })
   }
 
@@ -423,7 +432,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
             {e.from === 'user'
               ? <div className="agent-entry-text" dir="auto">{e.text}</div>
               : <>
-                  {e.title && <div className="agent-entry-title" dir="auto">{e.title}</div>}
+                  {e.title && <div className="agent-entry-title" dir="auto">{e.kind && <span className="find-meta">{t(e.kind === 'answer' ? 'assistantResultAnswer' : 'assistantResultResearch')} · </span>}{e.title}</div>}
                   {e.text && <div className="agent-entry-text" dir="auto">{e.text}</div>}
                   {e.lines && (
                     <div className="agent-entry-text" dir="auto">
@@ -451,7 +460,7 @@ export default function AgentPage({ lang, editor, onClose, onCreateDoc }: {
                 </>}
           </div>
         ))}
-        {busy && <div className="agent-entry agent" role="status">{t('assistantSearching')}</div>}
+        {busy && <div className="agent-entry agent" role="status">{t('assistantSearching')}{busyKind ? ` — ${t(busyKind === 'answer' ? 'assistantResultAnswer' : 'assistantResultResearch')}` : ''}</div>}
       </div>
       {weakList.length > 0 && (
         <div className="agent-chips">

@@ -76,6 +76,15 @@ export function linesToNodes(lines: string[], asList = false): JsonNode[] {
   return lines.map((l) => para(l))
 }
 
+/**
+ * A-09: the exact text a result shows on screen, for the Copy
+ * action — list results copy with their • bullets, plain results
+ * line by line, so the clipboard always matches what the user saw.
+ */
+export function formatResultLines(lines: string[], asList = false): string {
+  return asList ? lines.map((l) => `• ${l}`).join('\n') : lines.join('\n')
+}
+
 /** Flatten document nodes to plain text (for the Copy action). */
 export function nodesToText(nodes: unknown[]): string {
   const out: string[] = []

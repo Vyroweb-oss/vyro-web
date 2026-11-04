@@ -11,6 +11,7 @@ import {
   detectFollowUp, expandResearchOpts, researchBodyText,
   type AssistantAction, type ResearchData,
 } from '../lib/assistant'
+import { formatResultLines } from '../lib/agentPage'
 import { computeDocumentStats } from '../lib/stats'
 import { supabase } from '../lib/supabase'
 import {
@@ -36,7 +37,10 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
   const [command, setCommand] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
-  const [result, setResult] = useState<{ title: string; lines: string[]; asList: boolean; question?: string } | null>(null)
+  const [result, setResult] = useState<{ title: string; lines: string[]; asList: boolean; question?: string; kind?: 'answer' | 'research' } | null>(null)
+  // A-09: which search is in flight, so the progress state can say
+  // so (an answer search and a research draft are not the same wait).
+  const [busyKind, setBusyKind] = useState<'answer' | 'research' | null>(null)
   const [pendingResearch, setPendingResearch] = useState<object[] | null>(null)
   // A-01g: the last answered question (follow-up topic) + whether
   // the current answer already received feedback (local only).
@@ -194,9 +198,9 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
   const doResearch = async (action: Extract<AssistantAction, { kind: 'research' }>) => {
     if (!supabase) { setMessage(t('assistantSearchOffline')); return }
     setBusy(true)
+    setBusyKind('research')
     setResult(null)
     setPendingResearch(null)
-    setMessage(t('assistantSearching'))
     try {
       const { data: sess } = await supabase.auth.getSession()
       const token = sess.session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
@@ -232,13 +236,14 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         const preview = built.nodes
           .map((n) => (n as { content?: { text?: string }[] }).content?.map((c) => c.text ?? '').join(' ') ?? '')
           .filter(Boolean).slice(0, 3)
-        setResult({ title: sources[0].title, lines: preview, asList: false })
+        setResult({ title: sources[0].title, lines: preview, asList: false, kind: 'research' })
         setMessage(`${t('assistantPreviewReady')} ${meta}${short}`)
       }
     } catch {
       setMessage(t('assistantSearchFailed'))
     } finally {
       setBusy(false)
+      setBusyKind(null)
     }
   }
 
@@ -249,9 +254,9 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
   const doAnswer = async (action: Extract<AssistantAction, { kind: 'answer' }>) => {
     if (!supabase) { setMessage(t('assistantSearchOffline')); return }
     setBusy(true)
+    setBusyKind('answer')
     setResult(null)
     setPendingResearch(null)
-    setMessage(t('assistantSearching'))
     try {
       const fetchAnswer = async (query: string, qLang: UiLang = lang): Promise<ResearchData[] | 'failed' | 'notfound'> => {
         if (!supabase) return 'failed'
@@ -291,7 +296,7 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         // No applyDetailPreference here: its short mode keeps only
         // the first sentence plus credits, which would break the
         // two-side structure.
-        setResult({ title: t('assistantAnswerTitle'), lines: compared.lines, asList: false, question: action.question })
+        setResult({ title: t('assistantAnswerTitle'), lines: compared.lines, asList: false, question: action.question, kind: 'answer' })
         return
       }
       const subs = subQuestionQueries(action.question)
@@ -300,11 +305,11 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         if (sources === 'failed') { setMessage(t('assistantSearchFailed')); return }
         if (sources === 'notfound') { recordWeakQuestion(action.question, 'not-found'); setMessage(t('assistantSearchNotFound')); return }
         const conflict = findNumericConflict(sources, action.question, qLang)
-        if (conflict) { setMessage(''); setResult({ title: t('assistantAnswerTitle'), lines: applyDetailPreference(conflict, feedbackPreference()), asList: false, question: action.question }); return }
+        if (conflict) { setMessage(''); setResult({ title: t('assistantAnswerTitle'), lines: applyDetailPreference(conflict, feedbackPreference()), asList: false, question: action.question, kind: 'answer' }); return }
         const answer = buildAnswer(sources, action.question, qLang)
         if (!answer.found) { recordWeakQuestion(action.question, 'not-found'); setMessage(t('assistantAnswerNotFound')); return }
         setMessage('')
-        setResult({ title: t('assistantAnswerTitle'), lines: applyDetailPreference(answer.lines, feedbackPreference()), asList: false, question: action.question })
+        setResult({ title: t('assistantAnswerTitle'), lines: applyDetailPreference(answer.lines, feedbackPreference()), asList: false, question: action.question, kind: 'answer' })
         return
       }
       const results: { question: string; lines: string[]; found: boolean }[] = []
@@ -333,11 +338,12 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         setMessage(t('assistantAnswerNotFound')); return
       }
       setMessage('')
-      setResult({ title: t('assistantAnswerTitle'), lines: applyDetailPreference(assembled.lines, feedbackPreference()), asList: false, question: action.question })
+      setResult({ title: t('assistantAnswerTitle'), lines: applyDetailPreference(assembled.lines, feedbackPreference()), asList: false, question: action.question, kind: 'answer' })
     } catch {
       setMessage(t('assistantSearchFailed'))
     } finally {
       setBusy(false)
+      setBusyKind(null)
     }
   }
 
@@ -421,6 +427,19 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
     setCommand('')
   }
 
+  // A-09: copy the result exactly as shown (list bullets included).
+  const copyResult = () => {
+    if (!result) return
+    const text = formatResultLines(result.lines, result.asList)
+    if (!text) return
+    try {
+      void navigator.clipboard?.writeText(text)
+      setMessage(t('agentCopied'))
+    } catch {
+      setMessage(t('agentCopied'))
+    }
+  }
+
   const insertResult = () => {
     if (pendingResearch) {
       editor.chain().focus().insertContent(pendingResearch).run()
@@ -449,6 +468,8 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         { label: 'chipEssay', cmd: 'قالب مقاله بساز' }, { label: 'chipLetter', cmd: 'نامه رسمی بنویس' },
         { label: 'chipCv', cmd: 'سی‌وی بساز' }, { label: 'chipSummarize', cmd: 'سند را خلاصه کن' },
         { label: 'chipKeyPoints', cmd: 'نکات کلیدی سند را بگو' }, { label: 'chipCleanup', cmd: 'متن را تمیز کن' },
+        { label: 'agentChipQuestion', cmd: 'پایتخت فرانسه کجاست؟' },
+        { label: 'agentChipResearch', cmd: 'درباره انرژی خورشیدی در اینترنت بگرد و دو صفحه بنویس' },
         { label: 'chipHelp', cmd: 'کمک' },
       ]
     : [
@@ -456,6 +477,8 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         { label: 'chipEssay', cmd: 'essay template' }, { label: 'chipLetter', cmd: 'write a formal letter' },
         { label: 'chipCv', cmd: 'make a cv' }, { label: 'chipSummarize', cmd: 'summarize the document' },
         { label: 'chipKeyPoints', cmd: 'key points' }, { label: 'chipCleanup', cmd: 'clean up the text' },
+        { label: 'agentChipQuestion', cmd: 'what is the capital of France?' },
+        { label: 'agentChipResearch', cmd: 'research solar energy on the web and write two pages' },
         { label: 'chipHelp', cmd: 'help' },
       ]
 
@@ -480,11 +503,16 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
         />
         <button type="submit" className="rbtn small" disabled={busy}>{t('assistantRun')}</button>
       </form>
+      {busy && (
+        <div className="find-meta assistant-message" role="status" dir="auto">
+          {t('assistantSearching')}{busyKind ? ` — ${t(busyKind === 'answer' ? 'assistantResultAnswer' : 'assistantResultResearch')}` : ''}
+        </div>
+      )}
       <div className="find-row">
         <span className="find-preview-label">{t('assistantExamples')}</span>
         <div className="intelligence-actions">
           {CHIPS.map((chip) => (
-            <button key={chip.label} type="button" className="rbtn small" onClick={() => runCommand(chip.cmd)}>
+            <button key={chip.label} type="button" className="rbtn small" disabled={busy} onClick={() => runCommand(chip.cmd)}>
               {t(chip.label)}
             </button>
           ))}
@@ -509,12 +537,16 @@ export default function IntelligencePanel({ editor, lang, onClose }: {
       {message && <div className="find-meta assistant-message" role="status" dir="auto">{message}</div>}
       {result && (
         <div className="intelligence-compare">
-          <div className="find-preview-label">{result.title}</div>
+          <div className="find-preview-label">
+            {result.kind && <span className="find-meta">{t(result.kind === 'answer' ? 'assistantResultAnswer' : 'assistantResultResearch')} · </span>}
+            {result.title}
+          </div>
           <div className="diff-line" dir="auto">
-            {result.asList ? result.lines.map((l) => `• ${l}`).join('\n') : result.lines.join('\n')}
+            {formatResultLines(result.lines, result.asList)}
           </div>
           <div className="find-row">
             <button type="button" className="rbtn small" onClick={insertResult}>{t('assistantInsertResult')}</button>
+            <button type="button" className="rbtn small" onClick={copyResult}>{t('agentCopy')}</button>
           </div>
           {result.question && !votedResult && (
             <div className="find-row">
