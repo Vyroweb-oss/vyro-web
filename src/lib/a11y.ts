@@ -15,11 +15,13 @@
 // Phase 2, P2-41, with two more, and in
 // Phase 2, P2-42, with two more, and in
 // Phase 2, P2-43, with two more, and in
-// Phase 2, P2-44, with two more).
+// Phase 2, P2-44, with two more, and in Phase 2, P2-45, with
+// one more — the image-alt phone-number rule deferred from
+// P2-43/P2-44, completing the contains-matrix).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// fifty-four local, JSON-derivable rules — nothing is faked:
+// fifty-five local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -530,6 +532,24 @@
 //       issue also carries level; independent of
 //       all other heading rules, so co-firing is
 //       legitimate).
+//   (55) images whose TRIMMED alt text CONTAINS
+//       a phone-number substring but is NOT exactly
+//       a phone number (imageAltContainsPhoneNumber —
+//       the same containsPhoneNumberText test as
+//       rules (53)/(54) on the trimmed alt, so 'Call
+//       +98 912 345 6789 today' flags, while an alt
+//       that IS exactly a phone number does NOT flag
+//       here (it is already imageAltIsPhoneNumber,
+//       rule 38), a YYYY-MM-DD date does NOT flag,
+//       and a bare hyphenated 7-digit string does
+//       NOT flag; missing/empty/whitespace alt is
+//       EXCLUDED, it is already imageAltMissing; the
+//       issue carries imageIndex and the trimmed
+//       alt; independent of all other alt branches,
+//       so co-firing is legitimate. This rule was
+//       deliberately deferred from P2-43/P2-44 and
+//       completes the contains-matrix: link/heading/
+//       imageAlt × URL/email/phone).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -611,6 +631,7 @@ export type A11yIssueKind =
   | 'imageAltContainsEmail'
   | 'linkContainsPhoneNumber'
   | 'headingContainsPhoneNumber'
+  | 'imageAltContainsPhoneNumber'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -632,7 +653,7 @@ export interface A11yIssue {
   href?: string
   /** Trimmed visible link text, for linkVagueText / linkTextIsUrl / linkTextNoLetters / linkTextTooLong / linkTextIsEmail / linkTextIsPhoneNumber / linkTextTooShort / linkTextIsFilename / linkTextAllCaps / linkContainsUrl / linkContainsEmail / linkContainsPhoneNumber issues. */
   linkText?: string
-  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail / imageAltAllCaps / imageAltContainsUrl / imageAltContainsEmail issues. */
+  /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail / imageAltAllCaps / imageAltContainsUrl / imageAltContainsEmail / imageAltContainsPhoneNumber issues. */
   altText?: string
 }
 
@@ -699,6 +720,7 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   imageAltContainsEmail: 0,
   linkContainsPhoneNumber: 0,
   headingContainsPhoneNumber: 0,
+  imageAltContainsPhoneNumber: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -769,7 +791,7 @@ function containsEmailText(trimmed: string): boolean {
 }
 
 /**
- * Phone-substring test for rules (53) and (54) (P2-44): the input must
+ * Phone-substring test for rules (53), (54), and (55) (P2-44/P2-45): the input must
  * already be trimmed. Each phone-like candidate substring — a run of
  * digits, spaces, parentheses, hyphens, and dots, optionally starting
  * with '+' — is put through the same date guard as the exact test
@@ -1295,6 +1317,23 @@ export function analyzeDoc(docJson: any): A11yResult {
         // so co-firing is legitimate.
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(trimmedAlt) && containsEmailText(trimmedAlt)) {
           push({ kind: 'imageAltContainsEmail', imageIndex, altText: trimmedAlt })
+        }
+        // Alt text containing a phone number (P2-45, rule 55):
+        // the TRIMMED alt CONTAINS a phone-number substring
+        // but is NOT exactly a phone number, reusing
+        // containsPhoneNumberText with the same date guard
+        // as rules (53)/(54), so 'Call +98 912 345 6789
+        // today' flags, while an alt that IS exactly a
+        // phone number does NOT flag here (it is already
+        // imageAltIsPhoneNumber, rule 38), a YYYY-MM-DD
+        // date does NOT flag, and a bare hyphenated
+        // 7-digit string does NOT flag. Missing/empty alt
+        // is excluded above (already imageAltMissing).
+        // Independent of all other alt branches — no
+        // branch suppresses another, so co-firing is
+        // legitimate.
+        if (!isPhoneNumberText(trimmedAlt) && containsPhoneNumberText(trimmedAlt)) {
+          push({ kind: 'imageAltContainsPhoneNumber', imageIndex, altText: trimmedAlt })
         }
       }
     } else if (node.type === 'table') {
