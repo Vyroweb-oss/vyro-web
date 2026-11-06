@@ -17,11 +17,12 @@
 // Phase 2, P2-43, with two more, and in
 // Phase 2, P2-44, with two more, and in Phase 2, P2-45, with
 // one more — the image-alt phone-number rule deferred from
-// P2-43/P2-44, completing the contains-matrix).
+// P2-43/P2-44, completing the contains-matrix — and in
+// Phase 2, P2-46, with two more).
 //
 // Pure, READ-ONLY analysis over stored TipTap JSON: it never mutates the
 // document, never touches storage, network, or the editor. Exactly
-// fifty-five local, JSON-derivable rules — nothing is faked:
+// fifty-seven local, JSON-derivable rules — nothing is faked:
 //   (1) images missing alt text (attrs.alt missing, empty, or whitespace),
 //   (2) heading level skips (e.g. H1 followed by H3),
 //   (3) empty headings,
@@ -550,6 +551,41 @@
 //       deliberately deferred from P2-43/P2-44 and
 //       completes the contains-matrix: link/heading/
 //       imageAlt × URL/email/phone).
+//   (56) runs of two or more CONSECUTIVE EMPTY top-level
+//       paragraphs (consecutiveEmptyParagraphs — blank
+//       paragraphs used as vertical spacing, which screen
+//       readers announce as repeated "blank" and which Word
+//       guidance replaces with paragraph spacing; ONLY
+//       top-level paragraphs are scanned — paragraphs inside
+//       list items, blockquotes, or table cells are NOT
+//       counted; a paragraph is empty when its recursive
+//       text trims to '' AND it contains no image node (an
+//       image-only paragraph is content, the rule (14)
+//       test); any non-paragraph top-level block breaks a
+//       run; ONE issue per maximal run, carrying
+//       paragraphIndex (1-based ordinal among top-level
+//       paragraphs, of the run's FIRST empty paragraph) and
+//       paragraphCount (the run's length); a single empty
+//       paragraph never flags; independent of all other
+//       rules).
+//   (57) text runs that are UNDERLINED but NOT a link
+//       (underlinedTextNotLink — underline is the universal
+//       visual signal for a link, so underlined ordinary
+//       text misleads readers; per UNDERLINE RUN, defined
+//       below: consecutive text nodes in one parent's
+//       content array carrying an 'underline' mark and NO
+//       'link' mark; a text node with a link mark NEVER
+//       joins a run — an underlined link is a real link,
+//       however it is styled — and any other text node or
+//       non-text node breaks the run, with nested containers
+//       recursed into under a fresh run state, exactly as
+//       for link runs; a run whose trimmed text is empty
+//       never flags; ONE issue per run, carrying textIndex
+//       (1-based ordinal among underlined-not-link runs)
+//       and the trimmed text; other marks (bold, italic,
+//       ...) are irrelevant; independent of the link rules
+//       — by definition these runs are not link runs, so no
+//       link rule can fire on them).
 //       LIMITATION, documented deliberately: only top-level headings are
 //       evaluated for rule (14) — a heading nested inside a blockquote
 //       or list item is never flagged by this rule (it is still covered
@@ -566,6 +602,12 @@
 // Any non-link text node, or any non-text node, breaks a run, and runs
 // never span across different parents (e.g. a paragraph boundary or a
 // list item / table cell boundary starts a fresh run).
+//
+// An UNDERLINE RUN (rule 57) has the same shape with a different
+// membership test: consecutive text nodes carrying an 'underline'
+// mark and NO 'link' mark. A linked text node never joins one; any
+// other text node, or any non-text node, breaks the run, and the
+// same recurse-with-fresh-state rule applies to nested containers.
 //
 // Heading rules reuse the existing helpers instead of duplicating them:
 // extractHeadings (headings.ts) for the heading list and levelSkipWarnings
@@ -632,6 +674,8 @@ export type A11yIssueKind =
   | 'linkContainsPhoneNumber'
   | 'headingContainsPhoneNumber'
   | 'imageAltContainsPhoneNumber'
+  | 'consecutiveEmptyParagraphs'
+  | 'underlinedTextNotLink'
 
 export interface A11yIssue {
   kind: A11yIssueKind
@@ -655,6 +699,14 @@ export interface A11yIssue {
   linkText?: string
   /** Trimmed alt text, for imageAltDuplicate / imageAltIsFilename / imageAltVague / imageAltRedundantPrefix / imageAltMatchesNearbyText / imageAltIsUrl / imageAltNoLetters / imageAltVeryShort / imageAltIsPhoneNumber / imageAltIsEmail / imageAltAllCaps / imageAltContainsUrl / imageAltContainsEmail / imageAltContainsPhoneNumber issues. */
   altText?: string
+  /** 1-based ordinal among top-level paragraphs, of the run's first empty paragraph, for consecutiveEmptyParagraphs issues. */
+  paragraphIndex?: number
+  /** Length of the consecutive-empty-paragraph run, for consecutiveEmptyParagraphs issues. */
+  paragraphCount?: number
+  /** 1-based ordinal among underlined-not-link text runs, for underlinedTextNotLink issues. */
+  textIndex?: number
+  /** Trimmed visible text, for underlinedTextNotLink issues. */
+  text?: string
 }
 
 export interface A11yResult {
@@ -721,6 +773,8 @@ const EMPTY_COUNTS: Record<A11yIssueKind, number> = {
   linkContainsPhoneNumber: 0,
   headingContainsPhoneNumber: 0,
   imageAltContainsPhoneNumber: 0,
+  consecutiveEmptyParagraphs: 0,
+  underlinedTextNotLink: 0,
 }
 
 function isHeaderCell(cell: any): boolean {
@@ -1793,6 +1847,101 @@ export function analyzeDoc(docJson: any): A11yResult {
       push({ kind: 'linkSameTargetDifferentText', linkIndex: run.linkIndex, href: run.href, linkText: run.linkText })
     }
     texts.add(normalized)
+  }
+
+  // Runs of consecutive empty top-level paragraphs (P2-46, rule 56):
+  // blank paragraphs used as vertical spacing, which screen readers
+  // announce as repeated "blank" and which Word guidance replaces
+  // with paragraph spacing. ONLY the document's top-level blocks are
+  // scanned, and only 'paragraph' blocks take part: the ordinal
+  // counts top-level paragraphs only; a paragraph is empty when its
+  // recursive text trims to '' AND it contains no image node (an
+  // image-only paragraph is content — the rule (14) test); any
+  // non-paragraph block (heading, list, table, ...) breaks a run, as
+  // does a non-empty paragraph. ONE issue per maximal run of length
+  // >= 2, carrying the ordinal of the run's FIRST empty paragraph
+  // and the run's length; a single empty paragraph never flags.
+  // Independent of every other rule.
+  {
+    const topBlocks: any[] = Array.isArray(docJson?.content) ? docJson.content : []
+    let paragraphOrdinal = 0
+    let runStart = 0
+    let runLength = 0
+    const flushParagraphRun = () => {
+      if (runLength >= 2) {
+        push({ kind: 'consecutiveEmptyParagraphs', paragraphIndex: runStart, paragraphCount: runLength })
+      }
+      runLength = 0
+    }
+    for (const block of topBlocks) {
+      if (block && typeof block === 'object' && block.type === 'paragraph') {
+        paragraphOrdinal += 1
+        const empty = nodeTextRecursive(block).trim() === '' && !nodeHasImage(block)
+        if (empty) {
+          if (runLength === 0) runStart = paragraphOrdinal
+          runLength += 1
+        } else {
+          flushParagraphRun()
+        }
+      } else {
+        flushParagraphRun()
+      }
+    }
+    flushParagraphRun()
+  }
+
+  // Underlined text that is not a link (P2-46, rule 57): a walk over
+  // every content array, mirroring walkLinks, that collects UNDERLINE
+  // RUNS — consecutive text nodes carrying an 'underline' mark and
+  // NO 'link' mark. A linked text node never joins a run (an
+  // underlined link is a real link, however it is styled); any other
+  // node breaks the run, and nested containers are recursed into
+  // with a fresh run state, so runs never span parents. A run whose
+  // trimmed text is empty never flags. ONE issue per run, carrying
+  // its 1-based ordinal among underlined-not-link runs and the
+  // trimmed text. Other marks (bold, italic, ...) are irrelevant.
+  // Independent of the link rules — by definition these runs are
+  // not link runs, so no link rule can fire on them.
+  {
+    let textIndex = 0
+    const underlineStateOf = (node: any): boolean | null => {
+      if (!node || typeof node !== 'object' || node.type !== 'text' || !Array.isArray(node.marks)) return null
+      const has = (type: string) => node.marks.some((m: any) => m && typeof m === 'object' && m.type === type)
+      if (has('link')) return null
+      return has('underline')
+    }
+    const walkUnderlined = (node: any) => {
+      if (!node || typeof node !== 'object' || !Array.isArray(node.content)) return
+      let inRun = false
+      let runText = ''
+      const flush = () => {
+        if (inRun) {
+          const trimmed = runText.trim()
+          if (trimmed !== '') {
+            textIndex += 1
+            push({ kind: 'underlinedTextNotLink', textIndex, text: trimmed })
+          }
+        }
+        inRun = false
+        runText = ''
+      }
+      for (const child of node.content) {
+        const state = underlineStateOf(child)
+        if (state === true) {
+          inRun = true
+          runText += typeof child.text === 'string' ? child.text : ''
+        } else {
+          flush()
+          // Non-text containers are recursed into with a fresh run
+          // state (mirroring walkLinks); a LINKED text node returns
+          // null here too but has no content array, so the recursion
+          // is a no-op for it.
+          if (state === null) walkUnderlined(child)
+        }
+      }
+      flush()
+    }
+    walkUnderlined(docJson)
   }
 
   return { issues, total: issues.length, counts }

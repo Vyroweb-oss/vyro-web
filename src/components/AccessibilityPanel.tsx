@@ -65,6 +65,8 @@ const GROUP_ORDER: { kind: A11yIssueKind; labelKey: I18nKey }[] = [
   { kind: 'linkContainsPhoneNumber', labelKey: 'a11yLinkContainsPhoneNumber' },
   { kind: 'headingContainsPhoneNumber', labelKey: 'a11yHeadingContainsPhoneNumber' },
   { kind: 'imageAltContainsPhoneNumber', labelKey: 'a11yImageAltContainsPhoneNumber' },
+  { kind: 'consecutiveEmptyParagraphs', labelKey: 'a11yConsecutiveEmptyParagraphs' },
+  { kind: 'underlinedTextNotLink', labelKey: 'a11yUnderlinedTextNotLink' },
 ]
 
 function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
@@ -271,6 +273,14 @@ function issueLabel(t: (k: I18nKey) => string, issue: A11yIssue): string {
       return issue.altText
         ? `${t('a11yImage')} ${issue.imageIndex}: ${issue.altText}`
         : `${t('a11yImage')} ${issue.imageIndex}`
+    case 'consecutiveEmptyParagraphs':
+      return issue.paragraphIndex && issue.paragraphCount && issue.paragraphCount > 1
+        ? `${t('a11yParagraph')} ${issue.paragraphIndex}–${issue.paragraphIndex + issue.paragraphCount - 1}`
+        : `${t('a11yParagraph')} ${issue.paragraphIndex}`
+    case 'underlinedTextNotLink':
+      return issue.text
+        ? `${t('a11yText')} ${issue.textIndex}: ${issue.text}`
+        : `${t('a11yText')} ${issue.textIndex}`
     default:
       return ''
   }
